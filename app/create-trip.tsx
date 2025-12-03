@@ -18,12 +18,13 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-// Import all step components
 import StepFive from '@/components/create-trip/step-five';
 import StepFour from '@/components/create-trip/step-four';
 import StepOne from '@/components/create-trip/step-one';
 import StepThree from '@/components/create-trip/step-three';
 import StepTwo from '@/components/create-trip/step-two';
+// 1. Import the new modal
+import { ProcessingModal } from '@/components/ui/processing-modal';
 
 export default function CreateTripScreen() {
     const router = useRouter();
@@ -31,30 +32,26 @@ export default function CreateTripScreen() {
     const colors = Colors[theme];
 
     const [step, setStep] = useState(1);
-    const totalSteps = 5; // Updated to 5
+    const totalSteps = 5;
+    // 2. Add loading state
+    const [isLoading, setIsLoading] = useState(false);
 
     const [form, setForm] = useState({
-        // Step 1: Location
         origin: '',
         destination: '',
-        // Step 2: Dates
         startDate: null,
         duration: '5',
         isRoundTrip: false,
-        // Step 3: People
         adults: 1,
         children: 0,
-        // Step 4: Vehicle
         carName: '',
         mpg: '',
-        gasPrice: '3.20', // Default National Avg
-        // Step 5: Budget
+        gasPrice: '3.20',
         budget: 1000,
-        budgetType: 'manual' as 'auto' | 'manual',
     });
 
     const handleNext = () => {
-        // --- Validation Logic ---
+        // --- Validation Logic (Same as before) ---
         if (step === 1) {
             if (!form.origin || !form.destination) {
                 Alert.alert('Incomplete', 'Please select both origin and destination.');
@@ -65,8 +62,6 @@ export default function CreateTripScreen() {
                 Alert.alert('Incomplete', 'Please fill in all date details.');
                 return;
             }
-        } else if (step === 3) {
-            // Defaults are usually fine for Step 3
         } else if (step === 4) {
             if (!form.mpg || !form.gasPrice) {
                 Alert.alert('Incomplete', 'Please select a vehicle or enter MPG.');
@@ -78,16 +73,28 @@ export default function CreateTripScreen() {
         if (step < totalSteps) {
             setStep(step + 1);
         } else {
-            // --- Final Submission ---
-            console.log('Final Trip Data:', form);
-            // TODO: Save to Firebase here
-            router.back();
+            // 3. Trigger Loading instead of immediate submit
+            startTripGeneration();
         }
+    };
+
+    const startTripGeneration = () => {
+        setIsLoading(true);
+
+        // 4. Simulate API Call (5 Seconds)
+        setTimeout(() => {
+            console.log('Final Trip Data:', form);
+            // Here you would normally receive the AI response
+
+            setIsLoading(false);
+            // Navigate to your result page or back home
+            router.replace('/(tabs)');
+        }, 5000);
     };
 
     const handleBack = () => {
         if (step === 1) {
-            router.back(); // Close modal if on first step
+            router.back();
         } else {
             setStep(step - 1);
         }
@@ -95,14 +102,13 @@ export default function CreateTripScreen() {
 
     return (
         <ThemedView style={styles.container}>
+            {/* 5. Add the Modal Component */}
+            <ProcessingModal visible={isLoading} />
+
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                    <IconSymbol
-                        name="chevron.left"
-                        size={24}
-                        color={colors.text}
-                    />
+                <TouchableOpacity onPress={handleBack} style={styles.backButton} disabled={isLoading}>
+                    <IconSymbol name="chevron.left" size={24} color={colors.text} />
                     <ThemedText style={{ marginLeft: 5 }}>
                         {step === 1 ? 'Cancel' : 'Back'}
                     </ThemedText>
@@ -112,15 +118,14 @@ export default function CreateTripScreen() {
                     Step {step} of {totalSteps}
                 </ThemedText>
 
-                {/* Spacer to keep title centered */}
                 <View style={{ width: 80 }} />
             </View>
 
-            {/* Content Area with Keyboard Fix */}
+            {/* Content Area */}
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 180 : 0} // Increased offset
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 180 : 0}
             >
                 <ScrollView
                     contentContainerStyle={styles.content}
@@ -144,6 +149,7 @@ export default function CreateTripScreen() {
                 <TouchableOpacity
                     style={[styles.button, { backgroundColor: colors.tint }]}
                     onPress={handleNext}
+                    disabled={isLoading} // Disable button while loading
                 >
                     <ThemedText style={styles.buttonText}>
                         {step === totalSteps ? 'Create Trip' : 'Next'}
@@ -178,7 +184,7 @@ const styles = StyleSheet.create({
     content: {
         paddingHorizontal: 24,
         paddingTop: 30,
-        paddingBottom: 100, // Extra padding for scrolling past keyboard
+        paddingBottom: 100,
     },
     footer: {
         padding: 24,
