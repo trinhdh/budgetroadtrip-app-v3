@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient'; // Import Gradient
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -9,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import Animated, {
+  FadeInDown,
   useAnimatedStyle,
   withSpring,
   withTiming
@@ -16,17 +18,51 @@ import Animated, {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-// Replace these with your actual travel photos
-const HERO_IMAGES = [
-  require('@/assets/images/empty1.jpg'), // Photo 1
-  require('@/assets/images/empty2.jpg'), // Photo 2
-  require('@/assets/images/empty3.jpg'), // Photo 3
+// --- MOCK DATA ---
+const MOCK_TRIPS = [
+  {
+    id: '1',
+    origin: 'Atlanta, GA',
+    destination: 'New York City',
+    startDate: 'Dec 01',
+    endDate: 'Dec 05',
+    status: 'Upcoming',
+    budget: 1500,
+    image: 'https://images.unsplash.com/photo-1496442226666-8d4a0e62e6e9?q=80&w=1000&auto=format&fit=crop',
+  },
+  {
+    id: '2',
+    origin: 'Seattle, WA',
+    destination: 'Tokyo, Japan',
+    startDate: 'Jan 10',
+    endDate: 'Jan 24',
+    status: 'Planning',
+    budget: 3500,
+    image: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?q=80&w=1000&auto=format&fit=crop',
+  },
+  {
+    id: '3',
+    origin: 'San Fran, CA',
+    destination: 'Las Vegas, NV',
+    startDate: 'Feb 14',
+    endDate: 'Feb 16',
+    status: 'Confirmed',
+    budget: 800,
+    image: 'https://images.unsplash.com/photo-1605833556294-ea5c7a74f57d?q=80&w=1000&auto=format&fit=crop',
+  },
 ];
 
-// Fixed rotations for the "scattered" look
+// --- HERO IMAGES FOR EMPTY STATE ---
+const HERO_IMAGES = [
+  require('@/assets/images/empty1.jpg'),
+  require('@/assets/images/empty2.jpg'),
+  require('@/assets/images/empty3.jpg'),
+];
+
 const ROTATIONS = [-6, 8, -4];
 
 export default function HomeScreen() {
@@ -35,12 +71,9 @@ export default function HomeScreen() {
   const colors = Colors[theme];
 
   const [activeTab, setActiveTab] = useState<'Active' | 'Past'>('Active');
-  const [userTrips, setUserTrips] = useState([]);
-
-  // Carousel State
+  const [userTrips, setUserTrips] = useState(MOCK_TRIPS);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
-  // Auto-switch images every 3.5 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       setActiveImageIndex((prev) => (prev + 1) % HERO_IMAGES.length);
@@ -50,39 +83,30 @@ export default function HomeScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* 1. Custom Header */}
+      {/* Header */}
       <View style={styles.header}>
-        {/* Toggle Switch */}
         <View style={styles.toggleContainer}>
           <TouchableOpacity
-            style={[
-              styles.toggleButton,
-              activeTab === 'Active' && styles.activeToggleButton,
-            ]}
+            style={[styles.toggleButton, activeTab === 'Active' && styles.activeToggleButton]}
             onPress={() => setActiveTab('Active')}>
-            <ThemedText
-              style={[
-                styles.toggleText,
-                activeTab === 'Active' && styles.activeToggleText,
-              ]}>
+            <ThemedText style={[styles.toggleText, activeTab === 'Active' && styles.activeToggleText]}>
               Active
             </ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[
-              styles.toggleButton,
-              activeTab === 'Past' && styles.activeToggleButton,
-            ]}
+            style={[styles.toggleButton, activeTab === 'Past' && styles.activeToggleButton]}
             onPress={() => setActiveTab('Past')}>
-            <ThemedText
-              style={[
-                styles.toggleText,
-                activeTab === 'Past' && styles.activeToggleText,
-              ]}>
+            <ThemedText style={[styles.toggleText, activeTab === 'Past' && styles.activeToggleText]}>
               Past
             </ThemedText>
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          onPress={() => router.push('/create-trip')}
+          style={[styles.circleButton, { backgroundColor: colors.tint }]}>
+          <IconSymbol name="plus" size={24} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -90,65 +114,82 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}>
 
         {userTrips.length === 0 ? (
-          /* 2. Empty State Content */
+          /* --- EMPTY STATE (Polaroid Stack) --- */
           <View style={styles.emptyStateContainer}>
-
-            {/* Scattered Image Stack */}
             <View style={styles.heroContainer}>
               {HERO_IMAGES.map((image, index) => {
                 const isActive = index === activeImageIndex;
-
-                // Animated Style for Shuffle Effect
-                const animatedStyle = useAnimatedStyle(() => {
-                  return {
-                    // Animate Scale: Active pops up, others shrink slightly
-                    transform: [
-                      { scale: withSpring(isActive ? 1 : 0.96) },
-                      { rotate: `${ROTATIONS[index % ROTATIONS.length]}deg` } // Keep static rotation
-                    ],
-                    // Animate Z-Index: Active sits on top
-                    zIndex: isActive ? 10 : 1,
-                    // Optional: slight opacity drop for background cards
-                    opacity: withTiming(isActive ? 1 : 0.8, { duration: 300 })
-                  };
-                });
-
+                const animatedStyle = useAnimatedStyle(() => ({
+                  transform: [
+                    { scale: withSpring(isActive ? 1 : 0.96) },
+                    { rotate: `${ROTATIONS[index % ROTATIONS.length]}deg` }
+                  ],
+                  zIndex: isActive ? 10 : 1,
+                  opacity: withTiming(isActive ? 1 : 0.8, { duration: 300 })
+                }));
                 return (
-                  <Animated.View
-                    key={index}
-                    style={[styles.heroImageWrapper, animatedStyle]}
-                  >
-                    <Image
-                      source={image}
-                      style={styles.heroImage}
-                      contentFit="cover"
-                    />
+                  <Animated.View key={index} style={[styles.heroImageWrapper, animatedStyle]}>
+                    <Image source={image} style={styles.heroImage} contentFit="cover" />
                   </Animated.View>
                 );
               })}
             </View>
-
-            <ThemedText type="title" style={styles.heroTitle}>
-              Big trips, small budgets
-            </ThemedText>
-
-            <ThemedText style={styles.heroSubtitle}>
-              Discover more without spending more
-            </ThemedText>
-
+            <ThemedText type="title" style={styles.heroTitle}>Big trips, small budgets</ThemedText>
+            <ThemedText style={styles.heroSubtitle}>Discover more without spending more</ThemedText>
             <TouchableOpacity
               style={[styles.ctaButton, { backgroundColor: colors.tint }]}
               onPress={() => router.push('/create-trip')}
               activeOpacity={0.8}>
-              <ThemedText style={styles.ctaButtonText}>
-                Create your first trip
-              </ThemedText>
+              <ThemedText style={styles.ctaButtonText}>Create your first trip</ThemedText>
             </TouchableOpacity>
           </View>
         ) : (
-          /* List of Trips (Coming Soon) */
-          <View>
-            <ThemedText>List of trips will go here...</ThemedText>
+          /* --- LIST STATE (Immersive Cards) --- */
+          <View style={styles.listContainer}>
+            {userTrips.map((trip, index) => (
+              <Animated.View
+                key={trip.id}
+                entering={FadeInDown.delay(index * 100).springify()}
+              >
+                <TouchableOpacity
+                  style={styles.immersiveCard}
+                  activeOpacity={0.95}
+                >
+                  {/* Full Background Image */}
+                  <Image source={{ uri: trip.image }} style={StyleSheet.absoluteFill} contentFit="cover" />
+
+                  {/* Gradient Overlay for Readability */}
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.8)']}
+                    style={styles.cardOverlay}
+                  />
+
+                  {/* Top Row: Status & Budget */}
+                  <View style={styles.cardTopRow}>
+                    <View style={[styles.statusBadge, { backgroundColor: colors.tint }]}>
+                      <ThemedText style={styles.statusText}>{trip.status}</ThemedText>
+                    </View>
+                    <View style={styles.budgetBadge}>
+                      <ThemedText style={styles.budgetText}>${trip.budget}</ThemedText>
+                    </View>
+                  </View>
+
+                  {/* Bottom Content */}
+                  <View style={styles.cardBottomContent}>
+                    <View>
+                      <ThemedText style={styles.dateText}>{trip.startDate} - {trip.endDate}</ThemedText>
+                      <ThemedText style={styles.destinationTitle}>{trip.destination}</ThemedText>
+                    </View>
+
+                    <View style={styles.arrowButton}>
+                      <IconSymbol name="chevron.right" size={20} color="#fff" />
+                    </View>
+                  </View>
+
+                </TouchableOpacity>
+              </Animated.View>
+            ))}
+            <View style={{ height: 100 }} />
           </View>
         )}
       </ScrollView>
@@ -166,9 +207,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    marginBottom: 10,
+    marginBottom: 24,
   },
-  // Toggle Styles
   toggleContainer: {
     flexDirection: 'row',
     backgroundColor: '#F2F2F2',
@@ -206,6 +246,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
   },
+  // Empty State
   emptyStateContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -213,11 +254,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     paddingBottom: 100,
   },
-
-  // --- CAROUSEL STYLES ---
   heroContainer: {
     width: 250,
-    height: 320, // Increased height to accommodate rotation
+    height: 320,
     marginBottom: 10,
     position: 'relative',
     alignItems: 'center',
@@ -225,25 +264,19 @@ const styles = StyleSheet.create({
   },
   heroImageWrapper: {
     position: 'absolute',
-    width: 240,  // Fixed width for the card look
-    height: 280, // Fixed height
+    width: 240,
+    height: 280,
     borderRadius: 24,
     overflow: 'hidden',
-    // White Border effect
     borderWidth: 6,
     borderColor: '#fff',
-    // Shadow for depth
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 10,
     elevation: 8,
   },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-
+  heroImage: { width: '100%', height: '100%' },
   heroTitle: {
     fontSize: 28,
     textAlign: 'center',
@@ -269,9 +302,89 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  ctaButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontFamily: Fonts.bold,
+  ctaButtonText: { color: '#fff', fontSize: 18, fontFamily: Fonts.bold },
+
+  // --- LIST STYLES ---
+  listContainer: {
+    paddingHorizontal: 20,
+    gap: 20,
   },
+  immersiveCard: {
+    height: 220,
+    borderRadius: 24,
+    overflow: 'hidden',
+    justifyContent: 'space-between',
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    backgroundColor: '#000', // Fallback color
+  },
+  cardOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '60%', // Gradients over bottom 60%
+  },
+  cardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  budgetBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+  },
+  budgetText: {
+    color: '#000',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  cardBottomContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  dateText: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 14,
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  destinationTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontFamily: Fonts.bold,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  arrowButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  }
 });

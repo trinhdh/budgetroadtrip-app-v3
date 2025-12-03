@@ -30,6 +30,7 @@ const MAPPING = createMapping({
   'leaf': 'eco',
   'list.bullet': 'list',
   'wand.and.stars': 'auto-awesome',
+  'person.2.fill': 'people'
 });
 
 export type IconSymbolName = keyof typeof MAPPING;
