@@ -1,8 +1,9 @@
 import { ThemedText } from '@/components/themed-text';
+import { LocationSearchModal } from '@/components/ui/location-search-modal';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import React from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
 type Props = {
     form: {
@@ -16,6 +17,20 @@ export default function StepOne({ form, setForm }: Props) {
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
 
+    // Track which field is currently searching
+    const [activeField, setActiveField] = useState<'origin' | 'destination' | null>(null);
+
+    const handleSelectLocation = (data: any, details: any) => {
+        // data.description usually contains "City, State, Country"
+        const locationName = data.description;
+
+        if (activeField === 'origin') {
+            setForm({ ...form, origin: locationName });
+        } else if (activeField === 'destination') {
+            setForm({ ...form, destination: locationName });
+        }
+    };
+
     return (
         <View style={styles.stepContainer}>
             <ThemedText type="title" style={styles.headline}>
@@ -25,33 +40,53 @@ export default function StepOne({ form, setForm }: Props) {
                 Start by entering your route details.
             </ThemedText>
 
-            {/* Origin Input */}
+            {/* Origin Input (Pressable) */}
             <View style={styles.inputGroup}>
                 <ThemedText type="defaultSemiBold" style={styles.label}>
                     Leaving From
                 </ThemedText>
-                <TextInput
-                    style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
-                    placeholder="e.g. Los Angeles, CA"
-                    placeholderTextColor="#999"
-                    value={form.origin}
-                    onChangeText={(text) => setForm({ ...form, origin: text })}
-                />
+                <TouchableOpacity
+                    style={[styles.input, { borderColor: colors.icon }]}
+                    onPress={() => setActiveField('origin')}
+                >
+                    <ThemedText
+                        style={[
+                            styles.inputText,
+                            !form.origin && { color: '#999' } // Grey out placeholder
+                        ]}
+                    >
+                        {form.origin || 'Search Origin City'}
+                    </ThemedText>
+                </TouchableOpacity>
             </View>
 
-            {/* Destination Input */}
+            {/* Destination Input (Pressable) */}
             <View style={styles.inputGroup}>
                 <ThemedText type="defaultSemiBold" style={styles.label}>
                     Going To
                 </ThemedText>
-                <TextInput
-                    style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
-                    placeholder="e.g. Grand Canyon, AZ"
-                    placeholderTextColor="#999"
-                    value={form.destination}
-                    onChangeText={(text) => setForm({ ...form, destination: text })}
-                />
+                <TouchableOpacity
+                    style={[styles.input, { borderColor: colors.icon }]}
+                    onPress={() => setActiveField('destination')}
+                >
+                    <ThemedText
+                        style={[
+                            styles.inputText,
+                            !form.destination && { color: '#999' }
+                        ]}
+                    >
+                        {form.destination || 'Search Destination City'}
+                    </ThemedText>
+                </TouchableOpacity>
             </View>
+
+            {/* The Search Modal */}
+            <LocationSearchModal
+                visible={activeField !== null}
+                placeholder={activeField === 'origin' ? "Where are you leaving from?" : "Where are you going?"}
+                onClose={() => setActiveField(null)}
+                onSelect={handleSelectLocation}
+            />
         </View>
     );
 }
@@ -79,6 +114,10 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderRadius: 12,
         padding: 16,
+        justifyContent: 'center',
+        height: 56, // Fixed height to match standard input feel
+    },
+    inputText: {
         fontSize: 16,
         fontFamily: Fonts.regular,
     },
