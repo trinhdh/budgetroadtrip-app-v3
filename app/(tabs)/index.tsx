@@ -101,12 +101,6 @@ export default function HomeScreen() {
             </ThemedText>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          onPress={() => router.push('/create-trip')}
-          style={[styles.circleButton, { backgroundColor: colors.tint }]}>
-          <IconSymbol name="plus" size={24} color="#fff" />
-        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -154,6 +148,10 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   style={styles.immersiveCard}
                   activeOpacity={0.95}
+                  onPress={() => router.push({
+                    pathname: '/trip-details/[id]',
+                    params: { id: trip.id }
+                  })}
                 >
                   {/* Full Background Image */}
                   <Image source={{ uri: trip.image }} style={StyleSheet.absoluteFill} contentFit="cover" />
