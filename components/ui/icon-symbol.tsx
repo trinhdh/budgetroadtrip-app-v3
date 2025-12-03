@@ -21,6 +21,10 @@ const MAPPING = {
   'plus': 'add',
   'minus': 'remove',
   'calendar': 'calendar-today',
+  'car': 'directions-car',
+  'speedometer': 'speed',
+  'dollarsign': 'attach-money',
+  'leaf': 'eco',
 } as IconMapping;
 
 /**

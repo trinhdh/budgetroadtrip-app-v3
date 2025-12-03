@@ -5,6 +5,7 @@ import {
     Keyboard,
     KeyboardAvoidingView,
     Platform,
+    ScrollView, // 1. Import ScrollView
     StyleSheet,
     TouchableOpacity,
     TouchableWithoutFeedback,
@@ -17,9 +18,9 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-// Import step components
+import StepFour from '@/components/create-trip/step-four';
 import StepOne from '@/components/create-trip/step-one';
-import StepThree from '@/components/create-trip/step-three'; // 1. Import Step 3
+import StepThree from '@/components/create-trip/step-three';
 import StepTwo from '@/components/create-trip/step-two';
 
 export default function CreateTripScreen() {
@@ -28,28 +29,25 @@ export default function CreateTripScreen() {
     const colors = Colors[theme];
 
     const [step, setStep] = useState(1);
-    const totalSteps = 4; // Increased total steps (assuming Budget is Step 4)
+    const totalSteps = 4;
 
     const [form, setForm] = useState({
-        // Step 1
         origin: '',
         destination: '',
-        // Step 2
         startDate: null,
-        duration: '5', // Default 5 days
-        isRoundTrip: false, // Default one-way
-        // Step 3 (New Fields)
+        duration: '5',
+        isRoundTrip: false,
         adults: 1,
         children: 0,
-        // Step 4
-        budget: '',
+        carName: '',
+        mpg: '',
+        gasPrice: '3.50',
     });
 
     const handleNext = () => {
-        // 1. Validation Logic
         if (step === 1) {
             if (!form.origin || !form.destination) {
-                Alert.alert('Incomplete', 'Please fill in both origin and destination.');
+                Alert.alert('Incomplete', 'Please select both origin and destination.');
                 return;
             }
         } else if (step === 2) {
@@ -57,17 +55,17 @@ export default function CreateTripScreen() {
                 Alert.alert('Incomplete', 'Please fill in all date details.');
                 return;
             }
+        } else if (step === 4) {
+            if (!form.carName || !form.mpg || !form.gasPrice) {
+                Alert.alert('Incomplete', 'Please fill in all vehicle details.');
+                return;
+            }
         }
-        // Step 3 validation is usually not needed if we set defaults (1 adult)
-        // but you can add specific checks here if required.
 
-        // 2. Navigation Logic
         if (step < totalSteps) {
             setStep(step + 1);
         } else {
-            // 3. Final Submission
             console.log('Trip Created:', form);
-            // TODO: Save to Firebase here
             router.back();
         }
     };
@@ -81,57 +79,53 @@ export default function CreateTripScreen() {
     };
 
     return (
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <ThemedView style={styles.container}>
-                {/* Header */}
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                        <IconSymbol
-                            name="chevron.left"
-                            size={24}
-                            color={colors.text}
-                        />
-                        <ThemedText style={{ marginLeft: 5 }}>
-                            {step === 1 ? 'Cancel' : 'Back'}
-                        </ThemedText>
-                    </TouchableOpacity>
+        <ThemedView style={styles.container}>
+            {/* Header */}
+            <View style={styles.header}>
+                <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+                    <IconSymbol name="chevron.left" size={24} color={colors.text} />
+                    <ThemedText style={{ marginLeft: 5 }}>{step === 1 ? 'Cancel' : 'Back'}</ThemedText>
+                </TouchableOpacity>
+                <ThemedText type="subtitle" style={styles.headerTitle}>
+                    Step {step} of {totalSteps}
+                </ThemedText>
+                <View style={{ width: 80 }} />
+            </View>
 
-                    <ThemedText type="subtitle" style={styles.headerTitle}>
-                        Step {step} of {totalSteps}
-                    </ThemedText>
-
-                    <View style={{ width: 80 }} />
-                </View>
-
-                {/* Content Area */}
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    style={styles.content}
+            {/* 2. Wrap content in KeyboardAvoidingView AND ScrollView */}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0} // Adjusts for header height
+            >
+                <ScrollView
+                    contentContainerStyle={styles.content}
+                    keyboardShouldPersistTaps="handled" // Ensures buttons work when keyboard is open
+                    showsVerticalScrollIndicator={false}
                 >
-                    {step === 1 && <StepOne form={form} setForm={setForm} />}
-                    {step === 2 && <StepTwo form={form} setForm={setForm} />}
-                    {step === 3 && <StepThree form={form} setForm={setForm} />}
-
-                    {step > 3 && (
-                        <View style={{ alignItems: 'center', marginTop: 50 }}>
-                            <ThemedText>Step 4: Budget (Coming Soon)</ThemedText>
+                    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                        <View>
+                            {step === 1 && <StepOne form={form} setForm={setForm} />}
+                            {step === 2 && <StepTwo form={form} setForm={setForm} />}
+                            {step === 3 && <StepThree form={form} setForm={setForm} />}
+                            {step === 4 && <StepFour form={form} setForm={setForm} />}
                         </View>
-                    )}
-                </KeyboardAvoidingView>
+                    </TouchableWithoutFeedback>
+                </ScrollView>
+            </KeyboardAvoidingView>
 
-                {/* Footer */}
-                <View style={[styles.footer, { borderTopColor: colors.icon }]}>
-                    <TouchableOpacity
-                        style={[styles.button, { backgroundColor: colors.tint }]}
-                        onPress={handleNext}
-                    >
-                        <ThemedText style={styles.buttonText}>
-                            {step === totalSteps ? 'Create Trip' : 'Next'}
-                        </ThemedText>
-                    </TouchableOpacity>
-                </View>
-            </ThemedView>
-        </TouchableWithoutFeedback>
+            {/* Footer */}
+            <View style={[styles.footer, { borderTopColor: colors.icon }]}>
+                <TouchableOpacity
+                    style={[styles.button, { backgroundColor: colors.tint }]}
+                    onPress={handleNext}
+                >
+                    <ThemedText style={styles.buttonText}>
+                        {step === totalSteps ? 'Create Trip' : 'Next'}
+                    </ThemedText>
+                </TouchableOpacity>
+            </View>
+        </ThemedView>
     );
 }
 
@@ -157,13 +151,15 @@ const styles = StyleSheet.create({
         width: 80,
     },
     content: {
-        flex: 1,
         paddingHorizontal: 24,
         paddingTop: 30,
+        paddingBottom: 100, // Extra padding at bottom for scrolling past keyboard
     },
     footer: {
         padding: 24,
+        paddingBottom: Platform.OS === 'ios' ? 40 : 24,
         borderTopWidth: StyleSheet.hairlineWidth,
+        backgroundColor: 'transparent', // Ensure it doesn't block background
     },
     button: {
         height: 56,
