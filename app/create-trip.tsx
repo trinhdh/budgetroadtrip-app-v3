@@ -8,7 +8,7 @@ import {
     StyleSheet,
     TouchableOpacity,
     TouchableWithoutFeedback,
-    View
+    View,
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -17,9 +17,10 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-// Import the step components
+// Import step components
 import StepOne from '@/components/create-trip/step-one';
-// import StepTwo from '@/components/create-trip/step-two'; // Create later
+import StepThree from '@/components/create-trip/step-three'; // 1. Import Step 3
+import StepTwo from '@/components/create-trip/step-two';
 
 export default function CreateTripScreen() {
     const router = useRouter();
@@ -27,33 +28,46 @@ export default function CreateTripScreen() {
     const colors = Colors[theme];
 
     const [step, setStep] = useState(1);
-    const totalSteps = 5; // Set your total steps here
+    const totalSteps = 4; // Increased total steps (assuming Budget is Step 4)
 
     const [form, setForm] = useState({
+        // Step 1
         origin: '',
         destination: '',
-        dates: null, // For Step 2
-        budget: '',  // For Step 3
+        // Step 2
+        startDate: null,
+        duration: '5', // Default 5 days
+        isRoundTrip: false, // Default one-way
+        // Step 3 (New Fields)
+        adults: 1,
+        children: 0,
+        // Step 4
+        budget: '',
     });
 
     const handleNext = () => {
-        // 1. VALIDATION LOGIC
+        // 1. Validation Logic
         if (step === 1) {
             if (!form.origin || !form.destination) {
                 Alert.alert('Incomplete', 'Please fill in both origin and destination.');
                 return;
             }
+        } else if (step === 2) {
+            if (!form.startDate || !form.duration) {
+                Alert.alert('Incomplete', 'Please fill in all date details.');
+                return;
+            }
         }
+        // Step 3 validation is usually not needed if we set defaults (1 adult)
+        // but you can add specific checks here if required.
 
-        // Add checks for step 2, 3, etc.
-        // if (step === 2 && !form.dates) ...
-
-        // 2. MOVE TO NEXT STEP
+        // 2. Navigation Logic
         if (step < totalSteps) {
             setStep(step + 1);
         } else {
-            // 3. SUBMIT FORM
+            // 3. Final Submission
             console.log('Trip Created:', form);
+            // TODO: Save to Firebase here
             router.back();
         }
     };
@@ -85,6 +99,7 @@ export default function CreateTripScreen() {
                     <ThemedText type="subtitle" style={styles.headerTitle}>
                         Step {step} of {totalSteps}
                     </ThemedText>
+
                     <View style={{ width: 80 }} />
                 </View>
 
@@ -93,14 +108,13 @@ export default function CreateTripScreen() {
                     behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                     style={styles.content}
                 >
-                    {/* RENDER STEPS CONDITIONALLY */}
                     {step === 1 && <StepOne form={form} setForm={setForm} />}
+                    {step === 2 && <StepTwo form={form} setForm={setForm} />}
+                    {step === 3 && <StepThree form={form} setForm={setForm} />}
 
-                    {/* {step === 2 && <StepTwo form={form} setForm={setForm} />} */}
-
-                    {step > 1 && (
+                    {step > 3 && (
                         <View style={{ alignItems: 'center', marginTop: 50 }}>
-                            <ThemedText>Step {step} content goes here...</ThemedText>
+                            <ThemedText>Step 4: Budget (Coming Soon)</ThemedText>
                         </View>
                     )}
                 </KeyboardAvoidingView>
