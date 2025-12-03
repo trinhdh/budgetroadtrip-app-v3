@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router'; // 1. Make sure useRouter is imported
 import React, { useRef } from 'react';
 import { Animated, Pressable, StyleSheet } from 'react-native';
 
@@ -10,10 +10,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
+  const router = useRouter(); // 2. Get the router
 
   const activeColor = theme.tint;
-
-  // Animation value
   const scale = useRef(new Animated.Value(1)).current;
 
   const animate = (to: number) => {
@@ -26,7 +25,9 @@ export default function TabLayout() {
   };
 
   const onFabPress = () => {
+    // 3. Handle everything here directly
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push('/create-trip');
   };
 
   return (
@@ -34,7 +35,6 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: activeColor,
-        // Remove custom tabBarButton for FAB only
         tabBarStyle: {
           height: 60,
           paddingBottom: 5,
@@ -42,7 +42,6 @@ export default function TabLayout() {
         },
       }}
     >
-      {/* HOME */}
       <Tabs.Screen
         name="index"
         options={{
@@ -53,15 +52,21 @@ export default function TabLayout() {
         }}
       />
 
-      {/* FAB MIDDLE BUTTON */}
+      {/* CREATE TAB */}
       <Tabs.Screen
         name="create"
+        listeners={{
+          // 4. We can technically remove this listener now since we handle it in onPress below
+          tabPress: (e) => {
+            e.preventDefault(); // Keep this just in case the edge of the tab is clicked
+          },
+        }}
         options={{
           title: 'New',
           tabBarLabel: () => null,
           tabBarIcon: ({ focused }) => (
             <Pressable
-              onPress={onFabPress}
+              onPress={onFabPress} // <--- Navigation is triggered here now
               onPressIn={() => animate(0.9)}
               onPressOut={() => animate(1)}
               style={({ pressed }) => [
@@ -85,7 +90,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* EXPLORE */}
       <Tabs.Screen
         name="explore"
         options={{
