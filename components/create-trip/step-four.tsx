@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -20,12 +20,7 @@ export default function StepFour({ form, setForm }: Props) {
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
 
-    // Smart Default: Set gas price on mount if empty
-    useEffect(() => {
-        if (!form.gasPrice) {
-            setForm({ ...form, gasPrice: '3.20' }); // National Avg
-        }
-    }, []);
+
 
     const handleVehicleSelect = (mpg: string, label: string) => {
         setForm({

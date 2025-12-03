@@ -1,3 +1,4 @@
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -30,7 +31,7 @@ export default function CreateTripScreen() {
     const router = useRouter();
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
-
+    const headerHeight = useHeaderHeight();
     const [step, setStep] = useState(1);
     const totalSteps = 5;
     // 2. Add loading state
@@ -40,7 +41,7 @@ export default function CreateTripScreen() {
         origin: '',
         destination: '',
         startDate: null,
-        duration: '5',
+        duration: 5,
         isRoundTrip: false,
         adults: 1,
         children: 0,
@@ -125,8 +126,7 @@ export default function CreateTripScreen() {
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 180 : 0}
-            >
+                keyboardVerticalOffset={headerHeight + 20}>
                 <ScrollView
                     contentContainerStyle={styles.content}
                     keyboardShouldPersistTaps="handled"

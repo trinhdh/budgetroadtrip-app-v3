@@ -17,7 +17,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 type Props = {
     form: {
         startDate: Date | null;
-        duration: string; // Stored as string in parent, handled as number here
+        duration: number;
         isRoundTrip: boolean | null;
     };
     setForm: (data: any) => void;
@@ -29,7 +29,7 @@ export default function StepTwo({ form, setForm }: Props) {
     const [showDatePicker, setShowDatePicker] = useState(false);
 
     // Helper to parse duration safely
-    const currentDuration = parseInt(form.duration) || 1;
+    const currentDuration = form.duration || 1;
 
     const handleDateChange = (event: any, selectedDate?: Date) => {
         if (Platform.OS === 'android') {

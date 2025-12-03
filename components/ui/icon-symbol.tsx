@@ -28,6 +28,7 @@ const MAPPING = createMapping({
   'speedometer': 'speed',
   'dollarsign': 'attach-money',
   'leaf': 'eco',
+  'list.bullet': 'list',
   'wand.and.stars': 'auto-awesome',
 });
 
