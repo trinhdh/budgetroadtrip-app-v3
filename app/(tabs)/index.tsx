@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Platform,
   ScrollView,
@@ -8,27 +8,51 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  withSpring,
+  withTiming
+} from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+
+// Replace these with your actual travel photos
+const HERO_IMAGES = [
+  require('@/assets/images/empty1.jpg'), // Photo 1
+  require('@/assets/images/empty2.jpg'), // Photo 2
+  require('@/assets/images/empty3.jpg'), // Photo 3
+];
+
+// Fixed rotations for the "scattered" look
+const ROTATIONS = [-6, 8, -4];
 
 export default function HomeScreen() {
   const router = useRouter();
   const theme = useColorScheme() ?? 'light';
   const colors = Colors[theme];
-  const [activeTab, setActiveTab] = useState<'Active' | 'Past'>('Active');
 
-  // Placeholder for future data fetching
+  const [activeTab, setActiveTab] = useState<'Active' | 'Past'>('Active');
   const [userTrips, setUserTrips] = useState([]);
+
+  // Carousel State
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+  // Auto-switch images every 3.5 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveImageIndex((prev) => (prev + 1) % HERO_IMAGES.length);
+    }, 3500);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <ThemedView style={styles.container}>
       {/* 1. Custom Header */}
       <View style={styles.header}>
-        {/* Toggle Switch (Active / Past) */}
+        {/* Toggle Switch */}
         <View style={styles.toggleContainer}>
           <TouchableOpacity
             style={[
@@ -59,34 +83,57 @@ export default function HomeScreen() {
             </ThemedText>
           </TouchableOpacity>
         </View>
-
-        {/* Plus Button (Top Right) */}
-        <TouchableOpacity
-          onPress={() => router.push('/create-trip')}
-          style={[styles.circleButton, { backgroundColor: colors.tint }]}>
-          <IconSymbol name="plus" size={24} color="#fff" />
-        </TouchableOpacity>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
+
         {userTrips.length === 0 ? (
           /* 2. Empty State Content */
           <View style={styles.emptyStateContainer}>
-            {/* Image Placeholder - Replace this source with your collage image */}
-            <Image
-              source={require('@/assets/images/react-logo.png')}
-              style={styles.heroImage}
-              contentFit="contain"
-            />
+
+            {/* Scattered Image Stack */}
+            <View style={styles.heroContainer}>
+              {HERO_IMAGES.map((image, index) => {
+                const isActive = index === activeImageIndex;
+
+                // Animated Style for Shuffle Effect
+                const animatedStyle = useAnimatedStyle(() => {
+                  return {
+                    // Animate Scale: Active pops up, others shrink slightly
+                    transform: [
+                      { scale: withSpring(isActive ? 1 : 0.96) },
+                      { rotate: `${ROTATIONS[index % ROTATIONS.length]}deg` } // Keep static rotation
+                    ],
+                    // Animate Z-Index: Active sits on top
+                    zIndex: isActive ? 10 : 1,
+                    // Optional: slight opacity drop for background cards
+                    opacity: withTiming(isActive ? 1 : 0.8, { duration: 300 })
+                  };
+                });
+
+                return (
+                  <Animated.View
+                    key={index}
+                    style={[styles.heroImageWrapper, animatedStyle]}
+                  >
+                    <Image
+                      source={image}
+                      style={styles.heroImage}
+                      contentFit="cover"
+                    />
+                  </Animated.View>
+                );
+              })}
+            </View>
 
             <ThemedText type="title" style={styles.heroTitle}>
-              When if not today?
+              Big trips, small budgets
             </ThemedText>
 
             <ThemedText style={styles.heroSubtitle}>
-              It's time to start a new adventure
+              Discover more without spending more
             </ThemedText>
 
             <TouchableOpacity
@@ -124,7 +171,7 @@ const styles = StyleSheet.create({
   // Toggle Styles
   toggleContainer: {
     flexDirection: 'row',
-    backgroundColor: '#F2F2F2', // Light grey background for the pill
+    backgroundColor: '#F2F2F2',
     borderRadius: 30,
     padding: 4,
   },
@@ -147,9 +194,8 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.medium,
   },
   activeToggleText: {
-    color: '#000', // Active text color
+    color: '#000',
   },
-  // Circle Button
   circleButton: {
     width: 44,
     height: 44,
@@ -157,7 +203,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // Content Styles
   scrollContent: {
     flexGrow: 1,
   },
@@ -166,14 +211,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 30,
-    paddingBottom: 100, // Move content slightly up visually
+    paddingBottom: 100,
+  },
+
+  // --- CAROUSEL STYLES ---
+  heroContainer: {
+    width: 250,
+    height: 320, // Increased height to accommodate rotation
+    marginBottom: 10,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroImageWrapper: {
+    position: 'absolute',
+    width: 240,  // Fixed width for the card look
+    height: 280, // Fixed height
+    borderRadius: 24,
+    overflow: 'hidden',
+    // White Border effect
+    borderWidth: 6,
+    borderColor: '#fff',
+    // Shadow for depth
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
   },
   heroImage: {
-    width: 250,
-    height: 250,
-    marginBottom: 30,
-    opacity: 0.8, // Adjust opacity if using the placeholder logo
+    width: '100%',
+    height: '100%',
   },
+
   heroTitle: {
     fontSize: 28,
     textAlign: 'center',
