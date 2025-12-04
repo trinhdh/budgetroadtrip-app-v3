@@ -45,6 +45,12 @@ export function LocationSearchModal({ visible, onClose, onSelect, placeholder }:
                             onSelect(data, details);
                             onClose();
                         }}
+                        // Add this prop to auto-focus the input
+                        textInputProps={{
+                            autoFocus: true,
+                            placeholderTextColor: '#808080',
+                            clearButtonMode: 'always',
+                        }}
                         query={{
                             key: GOOGLE_PLACES_API_KEY,
                             language: 'en',

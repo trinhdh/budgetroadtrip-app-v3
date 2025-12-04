@@ -38,6 +38,7 @@ const MAPPING = createMapping({
   'mappin.circle.fill': 'pin-drop',  // For Locations
   'clock.fill': 'access-time',       // For Time
   'star.fill': 'star',
+  'line.3.horizontal': 'menu'
 });
 
 export type IconSymbolName = keyof typeof MAPPING;
