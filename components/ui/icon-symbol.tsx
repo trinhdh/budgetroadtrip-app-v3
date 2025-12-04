@@ -38,7 +38,19 @@ const MAPPING = createMapping({
   'clock.fill': 'access-time',       // For Time
   'star.fill': 'star',
   'line.3.horizontal': 'menu',
-  'google': 'group'
+  'google': 'group',
+
+  'gear': 'settings',
+  'bell.fill': 'notifications',
+  'paintbrush.fill': 'palette',
+  'envelope.fill': 'mail',
+  'doc.text.fill': 'description',
+  'trash.fill': 'delete',
+  'arrow.right.rectangle': 'logout', // SF Symbol for logout
+  'person.crop.circle': 'account-circle',
+  'lock.fill': 'lock',
+  'ellipsis.circle.fill': 'more-horiz',
+  'camera': 'camera'
 });
 
 export type IconSymbolName = keyof typeof MAPPING;
