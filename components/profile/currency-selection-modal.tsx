@@ -1,10 +1,9 @@
 import { ThemedText } from '@/components/themed-text';
+import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import React from 'react';
-import { Dimensions, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
-
-const { height } = Dimensions.get('window');
+import { ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
 type Currency = { label: string, symbol: string, value: string };
 
@@ -24,9 +23,6 @@ type Props = {
 };
 
 export function CurrencySelectionModal({ visible, currentCurrency, onClose, onSelect }: Props) {
-    // Use a neutral theme for the modal overlay/backdrop
-    const theme = 'light';
-    const colors = Colors[theme];
     const tintColor = Colors.light.tint;
 
     const handleSelect = (currencyValue: string) => {
@@ -35,83 +31,63 @@ export function CurrencySelectionModal({ visible, currentCurrency, onClose, onSe
     };
 
     return (
-        <Modal
-            visible={visible}
-            transparent={true}
-            animationType="slide"
-            onRequestClose={onClose}
+        <BottomSheetModal
+            isVisible={visible}
+            onClose={onClose}
+            title="Select Currency"
+            height="50%"
         >
-            <View style={styles.modalOverlay}>
-                <TouchableOpacity style={styles.modalBackdrop} onPress={onClose} />
-
-                <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-                    <ThemedText type="subtitle" style={styles.headerTitle}>Select Currency</ThemedText>
-
-                    {CURRENCY_OPTIONS.map(option => {
-                        const isSelected = currentCurrency === option.value;
-                        return (
-                            <TouchableOpacity
-                                key={option.value}
-                                style={[styles.row, isSelected && { backgroundColor: tintColor + '10' }]} // Highlight selected row
-                                onPress={() => handleSelect(option.value)}
-                                activeOpacity={0.8}
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                {CURRENCY_OPTIONS.map(option => {
+                    const isSelected = currentCurrency === option.value;
+                    return (
+                        <TouchableOpacity
+                            key={option.value}
+                            style={[
+                                styles.row,
+                                isSelected && { backgroundColor: tintColor + '10' } // 10% opacity tint
+                            ]}
+                            onPress={() => handleSelect(option.value)}
+                            activeOpacity={0.7}
+                        >
+                            <ThemedText
+                                style={[
+                                    styles.rowLabel,
+                                    isSelected && { color: tintColor, fontFamily: Fonts.bold }
+                                ]}
                             >
-                                <ThemedText
-                                    style={[
-                                        styles.rowLabel,
-                                        isSelected && { color: tintColor, fontFamily: Fonts.bold }
-                                    ]}
-                                >
-                                    {option.label}
-                                </ThemedText>
-                                <ThemedText style={[styles.rowValue, isSelected && { color: tintColor, fontFamily: Fonts.bold }]}>
-                                    {option.value}
-                                </ThemedText>
-                                {isSelected && <IconSymbol name="checkmark.circle.fill" size={20} color={tintColor} />}
-                            </TouchableOpacity>
-                        );
-                    })}
-                    <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-                        <ThemedText style={styles.cancelText}>Cancel</ThemedText>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </Modal>
+                                {option.label}
+                            </ThemedText>
+
+                            <ThemedText
+                                style={[
+                                    styles.rowValue,
+                                    isSelected && { color: tintColor, fontFamily: Fonts.bold }
+                                ]}
+                            >
+                                {option.value}
+                            </ThemedText>
+
+                            {isSelected && (
+                                <IconSymbol name="checkmark.circle.fill" size={20} color={tintColor} />
+                            )}
+                        </TouchableOpacity>
+                    );
+                })}
+            </ScrollView>
+        </BottomSheetModal>
     );
 }
 
 const styles = StyleSheet.create({
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'flex-end',
-    },
-    modalBackdrop: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-    },
-    modalContent: {
-        padding: 20,
-        paddingBottom: 40,
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        width: '100%',
-        maxHeight: height * 0.6,
-    },
-    headerTitle: {
-        marginBottom: 20,
-        textAlign: 'center',
-    },
     row: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 15,
+        paddingVertical: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: '#E0E0E0',
-        paddingHorizontal: 10,
+        paddingHorizontal: 12,
+        borderRadius: 8, // Adds a subtle touch when highlighted
     },
     rowLabel: {
         flex: 1,
@@ -120,18 +96,7 @@ const styles = StyleSheet.create({
     },
     rowValue: {
         fontSize: 16,
-        marginRight: 10,
+        marginRight: 12,
+        color: '#666',
     },
-    cancelButton: {
-        marginTop: 20,
-        padding: 15,
-        alignItems: 'center',
-        borderRadius: 10,
-        backgroundColor: '#f0f0f0',
-    },
-    cancelText: {
-        fontSize: 16,
-        fontFamily: Fonts.bold,
-        color: '#666'
-    }
 });

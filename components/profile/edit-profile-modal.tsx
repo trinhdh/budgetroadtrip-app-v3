@@ -1,9 +1,8 @@
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { storage } from '@/firebaseConfig'; // Assuming storage is exported from firebaseConfig
+import { storage } from '@/firebaseConfig';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -20,22 +19,23 @@ import {
     ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
-    Modal,
     Platform,
     ScrollView,
     StyleSheet,
     TextInput,
     TouchableOpacity,
-    TouchableWithoutFeedback,
     View
 } from 'react-native';
+
+// Import the reusable component
+import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 
 type Props = {
     visible: boolean;
     onClose: () => void;
 };
 
-// Placeholder URL for default avatar based on email/name (if no photoURL exists)
+// Placeholder URL
 const defaultAvatarUrl = (email: string | null) =>
     `https://ui-avatars.com/api/?name=${email || 'User'}&background=random`;
 
@@ -47,16 +47,13 @@ export function EditProfileModal({ visible, onClose }: Props) {
     // Profile States
     const [displayName, setDisplayName] = useState(user?.displayName || '');
     const [newEmail, setNewEmail] = useState('');
-    // NEW: Local URI for the image selected from the phone
     const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
 
-    // Security States (used for both email and password change)
+    // Security States
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
-
     const [loading, setLoading] = useState(false);
 
-    // Helper: Check if the user logged in with a traditional email/password (not social)
     const hasPasswordCredential = user?.providerData.some(
         (p) => p.providerId === 'password'
     );
@@ -87,10 +84,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
     const uploadAvatarToFirebase = async (uri: string, uid: string) => {
         const response = await fetch(uri);
         const blob = await response.blob();
-
-        // Define storage path: avatars/USER_UID/profile.jpg
         const avatarRef = storageRef(storage, `avatars/${uid}/profile.jpg`);
-
         await uploadBytes(avatarRef, blob);
         return getDownloadURL(avatarRef);
     };
@@ -103,16 +97,12 @@ export function EditProfileModal({ visible, onClose }: Props) {
 
         try {
             if (localAvatarUri) {
-                // 1. Upload the new image to storage
                 newPhotoURL = await uploadAvatarToFirebase(localAvatarUri, user.uid);
             }
-
-            // 2. Update Firebase Auth Profile
             await updateProfile(user, {
                 displayName: displayName.trim(),
                 photoURL: newPhotoURL,
             });
-
             Alert.alert("Success", "Profile updated successfully!");
             onClose();
         } catch (error) {
@@ -126,21 +116,18 @@ export function EditProfileModal({ visible, onClose }: Props) {
 
     // --- LOGIC: Change Email ---
     const handleChangeEmail = async () => {
-        // ... (Logic remains unchanged)
         if (!user || !user.email || !currentPassword || !newEmail) {
             Alert.alert("Missing Info", "Please fill in all fields.");
             return;
         }
         setLoading(true);
-
         try {
             const credential = EmailAuthProvider.credential(user.email, currentPassword);
             await reauthenticateWithCredential(user, credential);
             await updateEmail(user, newEmail);
-            Alert.alert("Success", `Email successfully updated to ${newEmail}! You may need to log back in.`);
+            Alert.alert("Success", `Email updated to ${newEmail}!`);
             onClose();
         } catch (error: any) {
-            // ... (Error handling remains unchanged)
             Alert.alert("Error", "Failed to update email address.");
         } finally {
             setLoading(false);
@@ -150,22 +137,18 @@ export function EditProfileModal({ visible, onClose }: Props) {
 
     // --- LOGIC: Change Password ---
     const handleChangePassword = async () => {
-        // ... (Logic remains unchanged)
         if (!user || !user.email || !currentPassword || !newPassword || newPassword.length < 6) {
-            Alert.alert("Missing Fields", "Please enter current and a new password (min 6 characters).");
+            Alert.alert("Missing Fields", "Please enter current and a new password (min 6 chars).");
             return;
         }
         setLoading(true);
-
         try {
             const credential = EmailAuthProvider.credential(user.email, currentPassword);
             await reauthenticateWithCredential(user, credential);
             await updatePassword(user, newPassword);
-            Alert.alert("Success", "Password changed successfully! You will be logged out now for security.");
+            Alert.alert("Success", "Password changed! You will be logged out.");
             await logout();
-
         } catch (error: any) {
-            // ... (Error handling remains unchanged)
             Alert.alert("Error", "Failed to change password.");
         } finally {
             setLoading(false);
@@ -175,179 +158,176 @@ export function EditProfileModal({ visible, onClose }: Props) {
 
     if (!user) return null;
 
-    // Determine which image to show: local preview or current photo URL
     const displayAvatar = localAvatarUri || user.photoURL || defaultAvatarUrl(user.email);
 
     return (
-        <Modal
-            animationType="slide"
-            transparent={true}
-            visible={visible}
-            onRequestClose={onClose}
+        <BottomSheetModal
+            isVisible={visible}
+            onClose={onClose}
+            title="Edit Profile"
+            height="90%" // Takes up most of the screen
+            enableSwipe={true}
         >
-            <View style={styles.modalOverlay}>
-                <TouchableWithoutFeedback onPress={onClose}>
-                    <View style={styles.modalBackdrop} />
-                </TouchableWithoutFeedback>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={100} // Adjust based on header height
+            >
+                <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ paddingBottom: 40 }}
+                >
+                    {/* --- 1. DISPLAY NAME & AVATAR SECTION --- */}
+                    <ThemedText style={styles.sectionTitle}>User Info</ThemedText>
 
-                <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
-                    <ThemedView style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <ThemedText type="subtitle">Edit Profile</ThemedText>
-                            <TouchableOpacity onPress={onClose}>
-                                <IconSymbol name="minus" size={24} color={colors.text} style={{ transform: [{ rotate: '45deg' }] }} />
-                            </TouchableOpacity>
+                    <TouchableOpacity style={styles.avatarUploader} onPress={handleImagePick} disabled={loading}>
+                        <Image
+                            source={{ uri: displayAvatar }}
+                            style={styles.avatar}
+                            contentFit="cover"
+                        />
+                        <View style={[styles.cameraIcon, { backgroundColor: colors.tint }]}>
+                            <IconSymbol name="camera" size={20} color="#fff" />
                         </View>
+                    </TouchableOpacity>
 
-                        <ScrollView showsVerticalScrollIndicator={false}>
+                    <View style={styles.inputGroup}>
+                        <ThemedText style={styles.label}>Display Name</ThemedText>
+                        <TextInput
+                            style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
+                            value={displayName}
+                            onChangeText={setDisplayName}
+                            placeholder="Traveler"
+                            placeholderTextColor="#999"
+                        />
+                    </View>
 
-                            {/* --- 1. DISPLAY NAME & AVATAR SECTION --- */}
-                            <ThemedText style={styles.sectionTitle}>User Info</ThemedText>
+                    <TouchableOpacity
+                        style={[styles.saveButton, { backgroundColor: colors.tint }]}
+                        onPress={handleUpdateProfile}
+                        disabled={loading || (displayName === user.displayName && !localAvatarUri)}
+                    >
+                        {loading && !newPassword ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <ThemedText style={styles.buttonText}>Save Profile</ThemedText>
+                        )}
+                    </TouchableOpacity>
 
-                            {/* Avatar Uploader */}
-                            <TouchableOpacity style={styles.avatarUploader} onPress={handleImagePick} disabled={loading}>
-                                <Image
-                                    source={{ uri: displayAvatar }}
-                                    style={styles.avatar}
-                                    contentFit="cover"
-                                />
-                                <View style={[styles.cameraIcon, { backgroundColor: colors.tint }]}>
-                                    <IconSymbol name="camera" size={20} color="#fff" />
-                                </View>
-                            </TouchableOpacity>
+                    <View style={styles.separator} />
+
+                    {/* --- CONDITIONAL SECTIONS (EMAIL & PASSWORD) --- */}
+                    {hasPasswordCredential ? (
+                        <>
+                            {/* 2. CHANGE EMAIL SECTION */}
+                            <ThemedText style={styles.sectionTitle}>Change Email</ThemedText>
+                            <ThemedText style={styles.warningText}>
+                                Enter your current password to change your login email.
+                            </ThemedText>
 
                             <View style={styles.inputGroup}>
-                                <ThemedText style={styles.label}>Display Name</ThemedText>
+                                <ThemedText style={styles.label}>New Email Address</ThemedText>
                                 <TextInput
                                     style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-                                    value={displayName}
-                                    onChangeText={setDisplayName}
-                                    placeholder="Traveler"
+                                    value={newEmail}
+                                    onChangeText={setNewEmail}
+                                    keyboardType="email-address"
+                                    autoCapitalize="none"
+                                    placeholder="new@example.com"
+                                    placeholderTextColor="#999"
+                                />
+                            </View>
+
+                            <View style={styles.inputGroup}>
+                                <ThemedText style={styles.label}>Confirm Current Password</ThemedText>
+                                <TextInput
+                                    style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
+                                    value={currentPassword}
+                                    onChangeText={setCurrentPassword}
+                                    secureTextEntry
+                                    placeholder="••••••••"
+                                    placeholderTextColor="#999"
                                 />
                             </View>
 
                             <TouchableOpacity
-                                style={[styles.saveButton, { backgroundColor: colors.tint }]}
-                                onPress={handleUpdateProfile}
-                                disabled={loading || (displayName === user.displayName && !localAvatarUri)}
+                                style={[styles.saveButton, { backgroundColor: '#F5A623' }]}
+                                onPress={handleChangeEmail}
+                                disabled={loading || !currentPassword || !newEmail || newEmail === user.email}
                             >
-                                {loading && !newPassword ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Save Profile</ThemedText>}
+                                {loading && newEmail ? (
+                                    <ActivityIndicator color="#fff" />
+                                ) : (
+                                    <ThemedText style={styles.buttonText}>Change Email</ThemedText>
+                                )}
                             </TouchableOpacity>
+
                             <View style={styles.separator} />
 
+                            {/* 3. CHANGE PASSWORD SECTION */}
+                            <ThemedText style={styles.sectionTitle}>Change Password</ThemedText>
+                            <ThemedText style={styles.warningText}>
+                                Re-enter your current password and set a new one.
+                            </ThemedText>
 
-                            {/* --- CONDITIONAL SECTIONS (EMAIL & PASSWORD) --- */}
-                            {hasPasswordCredential ? (
-                                <>
-                                    {/* 2. CHANGE EMAIL SECTION */}
-                                    <ThemedText style={styles.sectionTitle}>Change Email</ThemedText>
-                                    <ThemedText style={styles.warningText}>
-                                        Enter your current password to change your primary login email.
-                                    </ThemedText>
+                            <View style={styles.inputGroup}>
+                                <ThemedText style={styles.label}>Current Password</ThemedText>
+                                <TextInput
+                                    style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
+                                    value={currentPassword}
+                                    onChangeText={setCurrentPassword}
+                                    secureTextEntry
+                                    placeholder="••••••••"
+                                    placeholderTextColor="#999"
+                                />
+                            </View>
 
-                                    <View style={styles.inputGroup}>
-                                        <ThemedText style={styles.label}>New Email Address</ThemedText>
-                                        <TextInput
-                                            style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-                                            value={newEmail}
-                                            onChangeText={setNewEmail}
-                                            keyboardType="email-address"
-                                            autoCapitalize="none"
-                                            placeholder="new@example.com"
-                                        />
-                                    </View>
+                            <View style={styles.inputGroup}>
+                                <ThemedText style={styles.label}>New Password</ThemedText>
+                                <TextInput
+                                    style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
+                                    value={newPassword}
+                                    onChangeText={setNewPassword}
+                                    secureTextEntry
+                                    placeholder="•••••••• (Min 6 characters)"
+                                    placeholderTextColor="#999"
+                                />
+                            </View>
 
-                                    <View style={styles.inputGroup}>
-                                        <ThemedText style={styles.label}>Confirm Current Password</ThemedText>
-                                        <TextInput
-                                            style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-                                            value={currentPassword}
-                                            onChangeText={setCurrentPassword}
-                                            secureTextEntry
-                                            placeholder="••••••••"
-                                        />
-                                    </View>
+                            <TouchableOpacity
+                                style={[styles.saveButton, { backgroundColor: '#FF3B30' }]}
+                                onPress={handleChangePassword}
+                                disabled={loading || !currentPassword || !newPassword || newPassword.length < 6}
+                            >
+                                {loading && newPassword ? (
+                                    <ActivityIndicator color="#fff" />
+                                ) : (
+                                    <ThemedText style={styles.buttonText}>Change Password</ThemedText>
+                                )}
+                            </TouchableOpacity>
+                        </>
+                    ) : (
+                        <View style={styles.socialPasswordMessage}>
+                            <ThemedText type="defaultSemiBold" style={{ color: '#333' }}>
+                                Password management is handled by {user.providerData[0].providerId === 'google.com' ? 'Google' : 'your login provider'}.
+                            </ThemedText>
+                            <ThemedText style={{ color: '#666', marginTop: 8 }}>
+                                To change your password, please visit your account settings on your provider's website.
+                            </ThemedText>
+                        </View>
+                    )}
 
-                                    <TouchableOpacity
-                                        style={[styles.saveButton, { backgroundColor: '#F5A623' }]}
-                                        onPress={handleChangeEmail}
-                                        disabled={loading || !currentPassword || !newEmail || newEmail === user.email}
-                                    >
-                                        {loading && newEmail ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Change Email</ThemedText>}
-                                    </TouchableOpacity>
-
-                                    <View style={styles.separator} />
-
-
-                                    {/* 3. CHANGE PASSWORD SECTION */}
-                                    <ThemedText style={styles.sectionTitle}>Change Password</ThemedText>
-                                    <ThemedText style={styles.warningText}>
-                                        Re-enter your current password and set a new one.
-                                    </ThemedText>
-
-                                    <View style={styles.inputGroup}>
-                                        <ThemedText style={styles.label}>Current Password</ThemedText>
-                                        <TextInput
-                                            style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-                                            value={currentPassword}
-                                            onChangeText={setCurrentPassword}
-                                            secureTextEntry
-                                            placeholder="••••••••"
-                                        />
-                                    </View>
-
-                                    <View style={styles.inputGroup}>
-                                        <ThemedText style={styles.label}>New Password</ThemedText>
-                                        <TextInput
-                                            style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-                                            value={newPassword}
-                                            onChangeText={setNewPassword}
-                                            secureTextEntry
-                                            placeholder="•••••••• (Min 6 characters)"
-                                        />
-                                    </View>
-
-                                    <TouchableOpacity
-                                        style={[styles.saveButton, { backgroundColor: '#FF3B30' }]}
-                                        onPress={handleChangePassword}
-                                        disabled={loading || !currentPassword || !newPassword || newPassword.length < 6}
-                                    >
-                                        {loading && newPassword ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Change Password</ThemedText>}
-                                    </TouchableOpacity>
-                                </>
-                            ) : (
-                                <View style={styles.socialPasswordMessage}>
-                                    <ThemedText type="defaultSemiBold">
-                                        Password management is handled by {user.providerData[0].providerId === 'google.com' ? 'Google' : 'your login provider'}.
-                                    </ThemedText>
-                                    <ThemedText style={{ color: '#808080', marginTop: 8 }}>
-                                        To change your password, please visit your account settings on your provider's website.
-                                    </ThemedText>
-                                </View>
-                            )}
-
-                            <View style={{ height: 40 }} />
-
-                        </ScrollView>
-
-                    </ThemedView>
-                </KeyboardAvoidingView>
-            </View>
-        </Modal>
+                    <View style={{ height: 40 }} />
+                </ScrollView>
+            </KeyboardAvoidingView>
+        </BottomSheetModal>
     );
 }
 
 const styles = StyleSheet.create({
-    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
-    modalBackdrop: { ...StyleSheet.absoluteFillObject },
-    modalContent: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        padding: 24,
-        maxHeight: Platform.OS === 'ios' ? '90%' : '85%',
-        width: '100%',
-    },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    // Removed old modalOverlay, modalBackdrop, modalContent, modalHeader styles 
+    // as they are handled by BottomSheetModal now.
+
     sectionTitle: { fontSize: 18, fontFamily: Fonts.bold, marginTop: 10, marginBottom: 15 },
     warningText: { color: '#808080', marginBottom: 15, fontSize: 13, paddingHorizontal: 5 },
     inputGroup: { marginBottom: 15 },
@@ -373,12 +353,11 @@ const styles = StyleSheet.create({
         marginHorizontal: -24
     },
     socialPasswordMessage: {
-        backgroundColor: '#F2F2F7', // Light grey box for clarity
+        backgroundColor: '#F2F2F7',
         padding: 15,
         borderRadius: 12,
         marginTop: 10,
     },
-    // Avatar Styles
     avatarUploader: {
         alignSelf: 'center',
         marginBottom: 25,
