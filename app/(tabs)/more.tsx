@@ -98,7 +98,7 @@ export default function MoreScreen() {
 
       if (granted) {
         // 2. Schedule reminders if permission is granted
-        Alert.alert("Notifications On", "Daily reminders are now scheduled!");
+        Alert.alert("Notifications On", "Notifications are now enabled.");
       } else {
         // If permission is denied, revert the toggle and alert user
         setNotificationsEnabled(false);

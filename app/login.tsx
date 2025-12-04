@@ -19,7 +19,8 @@ import {
 
 export default function LoginScreen() {
     const router = useRouter();
-    const { signIn, signUp, signInWithGoogle } = useAuth();
+    // Destructure sendPasswordReset
+    const { signIn, signUp, signInWithGoogle, sendPasswordReset } = useAuth();
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
 
@@ -52,13 +53,14 @@ export default function LoginScreen() {
     };
 
     const handleGoogleAuth = async () => {
-        // SAFEGUARD: Check if we are in Expo Go
         if (signInWithGoogle) {
             setLoading(true);
             try {
                 await signInWithGoogle();
             } catch (error: any) {
-                Alert.alert("Google Sign-In Error", error.message);
+                if (error.code !== '-5') {
+                    Alert.alert("Google Sign-In Error", error.message);
+                }
             } finally {
                 setLoading(false);
             }
@@ -66,6 +68,41 @@ export default function LoginScreen() {
             Alert.alert("Not Supported", "Google Sign-In requires a Development Build. It does not work in Expo Go.");
         }
     };
+
+    // --- NEW HANDLER ---
+    const handleForgotPassword = async () => {
+        if (!email) {
+            Alert.alert("Missing Email", "Please enter your email address above to reset your password.");
+            return;
+        }
+
+        Alert.alert(
+            "Reset Password",
+            `A password reset link will be sent to ${email}. Continue?`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Send Link",
+                    onPress: async () => {
+                        setLoading(true);
+                        try {
+                            await sendPasswordReset(email);
+                            Alert.alert("Success", "Password reset email sent! Check your inbox.");
+                        } catch (error: any) {
+                            let msg = "Failed to send reset link. Please check the email address.";
+                            if (error.code === 'auth/user-not-found') {
+                                msg = "No account found with that email address.";
+                            }
+                            Alert.alert("Error", msg);
+                        } finally {
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
 
     return (
         <ThemedView style={styles.container}>
@@ -107,6 +144,16 @@ export default function LoginScreen() {
                         />
                     </View>
 
+                    {/* --- FORGOT PASSWORD LINK --- */}
+                    {!isSignUp && (
+                        <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordLink}>
+                            <ThemedText style={{ color: '#808080', fontSize: 14 }}>
+                                Forgot Password?
+                            </ThemedText>
+                        </TouchableOpacity>
+                    )}
+
+
                     <TouchableOpacity
                         style={[styles.button, { backgroundColor: colors.tint }]}
                         onPress={handleEmailAuth}
@@ -140,7 +187,7 @@ export default function LoginScreen() {
                         onPress={handleGoogleAuth}
                         disabled={loading}
                     >
-                        {/* <IconSymbol name="fa" size={20} color={colors.text} /> */}
+                        {/* <IconSymbol name="globe" size={20} color={colors.text} /> */}
                         <ThemedText style={styles.socialText}>Continue with Google</ThemedText>
                     </TouchableOpacity>
                 </View>
@@ -172,4 +219,9 @@ const styles = StyleSheet.create({
         height: 50, borderRadius: 12, borderWidth: 1, gap: 10
     },
     socialText: { fontSize: 16, fontFamily: Fonts.medium },
+    forgotPasswordLink: {
+        alignSelf: 'flex-end',
+        marginTop: -10, // Pull it up closer to the password field
+        marginBottom: 10,
+    }
 });

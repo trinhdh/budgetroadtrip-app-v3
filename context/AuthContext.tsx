@@ -1,9 +1,10 @@
 import {
     createUserWithEmailAndPassword,
     onAuthStateChanged,
+    sendPasswordResetEmail,
     signInWithEmailAndPassword,
     signOut,
-    User,
+    User
 } from 'firebase/auth';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth } from '../firebaseConfig';
@@ -18,6 +19,7 @@ interface AuthContextType {
     signUp: (e: string, p: string) => Promise<void>;
     signInWithGoogle: (() => Promise<void>) | null; // Make it nullable
     logout: () => Promise<void>;
+    sendPasswordReset: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -26,6 +28,7 @@ const AuthContext = createContext<AuthContextType>({
     signIn: async () => { },
     signUp: async () => { },
     signInWithGoogle: null,
+    sendPasswordReset: async () => { },
     logout: async () => { },
 });
 
@@ -73,14 +76,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
     };
     */
-
+    const sendPasswordReset = async (email: string) => {
+        await sendPasswordResetEmail(auth, email);
+    };
     const logout = async () => {
         // await GoogleSignin.signOut(); // Comment out
         await signOut(auth);
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, signIn, signUp, signInWithGoogle, logout }}>
+        <AuthContext.Provider value={{ user, loading, signIn, signUp, signInWithGoogle, logout, sendPasswordReset }}>
             {children}
         </AuthContext.Provider>
     );
