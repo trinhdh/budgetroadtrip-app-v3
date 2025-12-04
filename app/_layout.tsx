@@ -1,20 +1,26 @@
 import { Rubik_400Regular, Rubik_500Medium, Rubik_700Bold, useFonts } from '@expo-google-fonts/rubik';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack, useRouter } from 'expo-router'; // Added useRouter
+import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function RootLayoutNav() {
   const colorScheme = useColorScheme();
   const router = useRouter();
-  const [isReady, setIsReady] = useState(false); // Track if app is ready
+
+  // 1. Get Auth State
+  const { user, loading: authLoading } = useAuth();
+
+  // 2. Local state for Onboarding check
+  const [isOnboardingChecked, setIsOnboardingChecked] = useState(false);
   const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
 
   const [fontsLoaded] = useFonts({
@@ -23,35 +29,49 @@ export default function RootLayout() {
     Rubik_700Bold,
   });
 
+  // Check Onboarding Status
   useEffect(() => {
-    // Check onboarding status and ensure fonts are loaded
-    async function prepare() {
+    async function checkOnboarding() {
       try {
         const value = await AsyncStorage.getItem('hasOnboarded');
         setHasOnboarded(value === 'true');
       } catch (e) {
         console.warn(e);
       } finally {
-        setIsReady(true);
+        setIsOnboardingChecked(true);
       }
     }
-
-    prepare();
+    checkOnboarding();
   }, []);
 
+  // Handle Redirects & Splash Screen
   useEffect(() => {
-    // Only hide splash screen when fonts AND logic are ready
-    if (fontsLoaded && isReady) {
+    const isReady = fontsLoaded && !authLoading && isOnboardingChecked;
+
+    if (isReady) {
       SplashScreen.hideAsync();
 
-      // Redirect logic: If not onboarded, go to onboarding
+      // Priority 1: Authentication
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
+
+      // Priority 2: Onboarding (Only if user is logged in)
       if (hasOnboarded === false) {
         router.replace('/onboarding');
+        return;
       }
-    }
-  }, [fontsLoaded, isReady, hasOnboarded]);
 
-  if (!fontsLoaded || !isReady) {
+      // Priority 3: Main App (If user is logged in & onboarded)
+      // We only redirect to tabs if we are currently at the root or login/onboarding
+      // This prevents redirect loops if the user is already deep in the app
+      router.replace('/(tabs)');
+    }
+  }, [fontsLoaded, authLoading, isOnboardingChecked, user, hasOnboarded]);
+
+  // Don't render anything until we are ready
+  if (!fontsLoaded || authLoading || !isOnboardingChecked) {
     return null;
   }
 
@@ -59,12 +79,24 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        {/* Make sure the header is hidden for onboarding */}
+        <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         <Stack.Screen name="create-trip" options={{ presentation: 'modal', headerShown: false }} />
+        <Stack.Screen name="trip-details/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="trip-details/day-details" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
+  );
+}
+
+// Wrap the Nav in the Provider
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <RootLayoutNav />
+    </AuthProvider>
   );
 }

@@ -38,6 +38,7 @@ const MAPPING = createMapping({
   'clock.fill': 'access-time',       // For Time
   'star.fill': 'star',
   'line.3.horizontal': 'menu',
+  'google': 'group'
 });
 
 export type IconSymbolName = keyof typeof MAPPING;
