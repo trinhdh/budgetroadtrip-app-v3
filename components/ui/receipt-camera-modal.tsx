@@ -1,17 +1,15 @@
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { Colors } from '@/constants/theme';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
 import React, { useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Modal,
-    SafeAreaView,
     StyleSheet,
+    Text,
     TouchableOpacity,
     View
 } from 'react-native';
-import { ThemedText } from '../themed-text';
 
 type Props = {
     visible: boolean;
@@ -25,36 +23,13 @@ export function ReceiptCameraModal({ visible, onClose, onCapture }: Props) {
     const [photo, setPhoto] = useState<string | null>(null);
     const [processing, setProcessing] = useState(false);
 
-    if (!permission) {
-        // Camera permissions are still loading.
-        return <View />;
-    }
-
-    if (!permission.granted) {
-        // Camera permissions are not granted yet.
-        return (
-            <Modal visible={visible} animationType="slide">
-                <View style={styles.permissionContainer}>
-                    <ThemedText style={{ textAlign: 'center', marginBottom: 20 }}>
-                        We need your permission to show the camera
-                    </ThemedText>
-                    <TouchableOpacity style={styles.btn} onPress={requestPermission}>
-                        <ThemedText style={styles.btnText}>Grant Permission</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.btn, { marginTop: 10, backgroundColor: '#ccc' }]} onPress={onClose}>
-                        <ThemedText style={styles.btnText}>Cancel</ThemedText>
-                    </TouchableOpacity>
-                </View>
-            </Modal>
-        );
-    }
-
+    // --- LOGIC: Take Picture ---
     const takePicture = async () => {
         if (cameraRef.current) {
             try {
                 const photoData = await cameraRef.current.takePictureAsync({
-                    quality: 0.7,
-                    base64: true, // We need base64 to send to OCR APIs
+                    quality: 0.5,
+                    base64: true,
                 });
                 setPhoto(photoData?.uri || null);
             } catch (error) {
@@ -63,35 +38,55 @@ export function ReceiptCameraModal({ visible, onClose, onCapture }: Props) {
         }
     };
 
+    // --- LOGIC: Confirm & Simulate OCR ---
     const confirmPhoto = async () => {
         if (!photo) return;
         setProcessing(true);
 
-        // --- REAL OCR LOGIC WOULD GO HERE ---
-        // 1. Send `photo.base64` to OpenAI Vision / Google Cloud Vision
-        // 2. Wait for JSON response
-
-        // Simulating "Reading" the receipt
+        // Simulate API delay
         setTimeout(() => {
             const mockExtractedData = {
-                merchant: "Target",
-                amount: "84.55",
-                date: "2023-12-04",
+                merchant: "Starbucks",
+                amount: "12.50",
+                date: new Date().toISOString().split('T')[0],
                 category: "Food"
             };
 
             setProcessing(false);
             onCapture(photo, mockExtractedData);
             setPhoto(null);
-        }, 2000);
+            onClose(); // Close modal after capture
+        }, 1500);
     };
 
     const retake = () => {
         setPhoto(null);
     };
 
+    // --- RENDER: Permission State ---
+    if (!permission || !permission.granted) {
+        return (
+            <BottomSheetModal isVisible={visible} onClose={onClose} height="40%" title="Camera Permission">
+                <View style={styles.permissionContainer}>
+                    <Text style={styles.permissionText}>
+                        We need access to your camera to scan receipts.
+                    </Text>
+                    <TouchableOpacity style={styles.btn} onPress={requestPermission}>
+                        <Text style={styles.btnText}>Grant Permission</Text>
+                    </TouchableOpacity>
+                </View>
+            </BottomSheetModal>
+        );
+    }
+
+    // --- RENDER: Camera / Preview ---
     return (
-        <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <BottomSheetModal
+            isVisible={visible}
+            onClose={onClose}
+            title={photo ? "Confirm Receipt" : "Scan Receipt"}
+            height="90%" // Tall modal for camera
+        >
             <View style={styles.container}>
                 {photo ? (
                     // PREVIEW MODE
@@ -101,75 +96,88 @@ export function ReceiptCameraModal({ visible, onClose, onCapture }: Props) {
                         {processing ? (
                             <View style={styles.processingOverlay}>
                                 <ActivityIndicator size="large" color="#fff" />
-                                <ThemedText style={{ color: '#fff', marginTop: 10 }}>Reading Receipt...</ThemedText>
+                                <Text style={styles.processingText}>Analyzing...</Text>
                             </View>
                         ) : (
                             <View style={styles.previewControls}>
                                 <TouchableOpacity onPress={retake} style={styles.retakeBtn}>
-                                    <ThemedText style={styles.textBtn}>Retake</ThemedText>
+                                    <Text style={styles.retakeText}>Retake</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity onPress={confirmPhoto} style={styles.confirmBtn}>
-                                    <ThemedText style={styles.textBtn}>Use Photo</ThemedText>
+                                    <Text style={styles.btnText}>Use Photo</Text>
                                 </TouchableOpacity>
                             </View>
                         )}
                     </View>
                 ) : (
                     // CAMERA MODE
-                    <CameraView style={styles.camera} ref={cameraRef} facing="back">
-                        <SafeAreaView style={styles.cameraUi}>
-                            <View style={styles.headerRow}>
-                                <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                                    <IconSymbol name="minus" size={28} color="#fff" style={{ transform: [{ rotate: '45deg' }] }} />
-                                </TouchableOpacity>
+                    <View style={styles.cameraContainer}>
+                        <CameraView style={styles.camera} ref={cameraRef} facing="back">
+                            <View style={styles.cameraOverlay}>
+                                <View style={styles.guideFrame} />
                             </View>
+                        </CameraView>
 
-                            <View style={styles.footerRow}>
-                                <TouchableOpacity style={styles.captureBtnOuter} onPress={takePicture}>
-                                    <View style={styles.captureBtnInner} />
-                                </TouchableOpacity>
-                            </View>
-                        </SafeAreaView>
-                    </CameraView>
+                        <View style={styles.cameraControls}>
+                            <TouchableOpacity style={styles.captureBtnOuter} onPress={takePicture}>
+                                <View style={styles.captureBtnInner} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
                 )}
             </View>
-        </Modal>
+        </BottomSheetModal>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#000' },
-    permissionContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+    container: { flex: 1, overflow: 'hidden', borderRadius: 16 },
+
+    // Permission
+    permissionContainer: { alignItems: 'center', justifyContent: 'center', padding: 20, flex: 1 },
+    permissionText: { fontSize: 16, textAlign: 'center', marginBottom: 20, color: '#666' },
+
+    // Camera
+    cameraContainer: { flex: 1, backgroundColor: '#000' },
     camera: { flex: 1 },
-    cameraUi: { flex: 1, justifyContent: 'space-between' },
-    headerRow: { flexDirection: 'row', justifyContent: 'flex-start', padding: 20 },
-    closeBtn: { padding: 10, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 20 },
-    footerRow: { paddingBottom: 40, alignItems: 'center' },
+    cameraOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    guideFrame: { width: 250, height: 350, borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)', borderRadius: 20 },
+    cameraControls: {
+        height: 100,
+        backgroundColor: '#000',
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
     captureBtnOuter: {
-        width: 80, height: 80, borderRadius: 40,
+        width: 70, height: 70, borderRadius: 35,
         borderWidth: 4, borderColor: '#fff',
         justifyContent: 'center', alignItems: 'center'
     },
     captureBtnInner: {
-        width: 66, height: 66, borderRadius: 33,
+        width: 56, height: 56, borderRadius: 28,
         backgroundColor: '#fff',
     },
-    previewContainer: { flex: 1, backgroundColor: '#000' },
-    previewImage: { flex: 1 },
+
+    // Preview
+    previewContainer: { flex: 1, backgroundColor: '#f0f0f0' },
+    previewImage: { flex: 1, borderRadius: 12 },
     previewControls: {
         flexDirection: 'row', justifyContent: 'space-evenly',
-        paddingBottom: 40, paddingTop: 20, backgroundColor: '#000'
+        padding: 20, backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#eee'
     },
     retakeBtn: { padding: 15 },
-    confirmBtn: { padding: 15, backgroundColor: Colors.light.tint, borderRadius: 8 },
-    textBtn: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-    btn: { backgroundColor: Colors.light.tint, padding: 15, borderRadius: 8, width: 200, alignItems: 'center' },
-    btnText: { color: '#fff', fontWeight: 'bold' },
+    retakeText: { color: '#666', fontSize: 16, fontWeight: '600' },
+    confirmBtn: { paddingVertical: 15, paddingHorizontal: 30, backgroundColor: Colors.light.tint, borderRadius: 12 },
+    btn: { backgroundColor: Colors.light.tint, padding: 15, borderRadius: 8, minWidth: 150, alignItems: 'center' },
+    btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+
+    // Processing
     processingOverlay: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0,0,0,0.7)',
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 10
-    }
+    },
+    processingText: { color: '#fff', marginTop: 10, fontSize: 16, fontWeight: '600' }
 });

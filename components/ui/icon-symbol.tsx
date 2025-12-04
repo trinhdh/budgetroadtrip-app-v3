@@ -51,7 +51,9 @@ const MAPPING = createMapping({
   'lock.fill': 'lock',
   'ellipsis.circle.fill': 'more-horiz',
   'camera': 'camera',
-  'checkmark.circle.fill': 'check'
+  'checkmark.circle.fill': 'check',
+  'square.and.arrow.up': 'share',
+  'minus.circle.fill': 'remove'
 });
 
 export type IconSymbolName = keyof typeof MAPPING;
