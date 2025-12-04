@@ -3,35 +3,16 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Fonts } from '@/constants/theme';
 import { Image } from 'expo-image';
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 type Props = {
     visible: boolean;
     onClose: () => void;
     expense: any;
-    onDelete: (expenseId: string) => void; // New delete callback
 };
 
-export function ExpenseDetailModal({ visible, onClose, expense, onDelete }: Props) {
+export function ExpenseDetailModal({ visible, onClose, expense }: Props) {
     if (!expense) return null;
-
-    const handleDeletePress = () => {
-        Alert.alert(
-            "Delete Expense",
-            "Are you sure you want to delete this expense? This action cannot be undone.",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Delete",
-                    style: "destructive",
-                    onPress: () => {
-                        onDelete(expense.id);
-                        onClose();
-                    }
-                }
-            ]
-        );
-    };
 
     return (
         <BottomSheetModal
@@ -40,14 +21,6 @@ export function ExpenseDetailModal({ visible, onClose, expense, onDelete }: Prop
             title="Expense Details"
             height="70%"
         >
-            {/* Delete Button (Top Right) */}
-            <View style={styles.actionContainer}>
-                <TouchableOpacity onPress={handleDeletePress} style={styles.deleteButton}>
-                    <IconSymbol name="trash" size={18} color="#FF3B30" />
-                    <Text style={styles.deleteText}>Delete</Text>
-                </TouchableOpacity>
-            </View>
-
             <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
 
                 {/* Header: Amount & Title */}
@@ -129,35 +102,19 @@ const getCategoryIcon = (cat: string) => {
 
 const styles = StyleSheet.create({
     container: { paddingHorizontal: 20, paddingBottom: 40 },
-
-    // Action Container (Delete Btn)
-    actionContainer: {
-        position: 'absolute', top: 0, right: 20, zIndex: 10,
-    },
-    deleteButton: {
-        flexDirection: 'row', alignItems: 'center',
-        backgroundColor: '#FFF0F0', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 15
-    },
-    deleteText: { marginLeft: 4, color: '#FF3B30', fontWeight: '600', fontSize: 13 },
-
-    header: { alignItems: 'center', marginTop: 40, marginBottom: 20 },
+    header: { alignItems: 'center', marginTop: 20, marginBottom: 20 },
     iconCircle: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
     amount: { fontSize: 36, fontWeight: 'bold', color: '#333', marginBottom: 5 },
     title: { fontSize: 20, color: '#666', fontFamily: Fonts.medium },
-
     divider: { height: 1, backgroundColor: '#eee', marginVertical: 20 },
-
     grid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
     metaItem: { flex: 1 },
-
     label: { fontSize: 12, textTransform: 'uppercase', color: '#999', fontWeight: 'bold', marginBottom: 8 },
     value: { fontSize: 16, color: '#333', fontWeight: '600' },
-
     userSection: { marginBottom: 25 },
     userRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5 },
     avatar: { width: 32, height: 32, borderRadius: 16, marginRight: 10, borderWidth: 1, borderColor: '#eee' },
     userName: { fontSize: 16, color: '#333', fontWeight: '500' },
-
     receiptSection: { flex: 1 },
     receiptContainer: {
         height: 300, backgroundColor: '#f9f9f9', borderRadius: 12, overflow: 'hidden',
