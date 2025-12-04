@@ -4,6 +4,7 @@ import { ReceiptCameraModal } from '@/components/ui/receipt-camera-modal';
 import { Colors } from '@/constants/theme';
 import React, { useState } from 'react';
 import {
+    Alert,
     Image as RNImage,
     ScrollView,
     StyleSheet,
@@ -50,19 +51,31 @@ export function AddExpenseModal({ visible, onClose, itineraryDays }: Props) {
     };
 
     const handleSave = () => {
+        const numericAmount = parseFloat(amount);
+
+        // Validation: Check if amount is valid and greater than 0
+        if (!amount || isNaN(numericAmount) || numericAmount <= 0) {
+            Alert.alert("Invalid Amount", "Please enter an amount greater than 0.");
+            return;
+        }
+
         console.log({
-            amount,
-            title,
+            amount: numericAmount,
+            title: title || 'Expense', // Default title if empty
             category: selectedCategory,
             day: selectedDay,
             receipt: receiptUri
         });
 
+        // Reset form
         setAmount('');
         setTitle('');
         setReceiptUri(null);
         onClose();
     };
+
+    // Derived state for button styling
+    const isValid = parseFloat(amount) > 0;
 
     return (
         <>
@@ -184,7 +197,11 @@ export function AddExpenseModal({ visible, onClose, itineraryDays }: Props) {
 
                 {/* Footer Button */}
                 <View style={styles.footer}>
-                    <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                    <TouchableOpacity
+                        style={[styles.saveButton, { opacity: isValid ? 1 : 0.5 }]}
+                        onPress={handleSave}
+                        disabled={!isValid}
+                    >
                         <Text style={styles.saveText}>Save Expense</Text>
                     </TouchableOpacity>
                 </View>
