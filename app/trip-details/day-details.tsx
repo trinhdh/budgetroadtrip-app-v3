@@ -26,6 +26,16 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const { width } = Dimensions.get('window');
 
+// --- HELPERS ---
+const getCategoryLabel = (type: string) => {
+    switch (type) {
+        case 'hotel': return 'Accommodation';
+        case 'food': return 'Food';
+        case 'activity': return 'Activity';
+        default: return 'Other';
+    }
+};
+
 // --- MOCK DATA ---
 const INITIAL_DAY_DATA = {
     title: 'Departure & Drive',
@@ -39,15 +49,7 @@ const INITIAL_DAY_DATA = {
         { latitude: 36.0014, longitude: -78.9382 },
         { latitude: 37.5407, longitude: -77.4360 },
     ],
-    hotel: {
-        name: 'The Jefferson Hotel',
-        image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1000&auto=format&fit=crop',
-        rating: 4.8,
-        price: 180,
-        address: '101 W Franklin St, Richmond, VA',
-        checkIn: '04:00 PM',
-        coordinates: { latitude: 37.5407, longitude: -77.4360 },
-    },
+    // Hotel is now just part of the timeline
     timeline: [
         {
             id: '1',
@@ -94,7 +96,7 @@ const INITIAL_DAY_DATA = {
             address: '101 W Franklin St',
             icon: 'bed.double.fill',
             color: '#9013FE',
-            type: 'hotel',
+            type: 'hotel', // This triggers the "Accommodation" label
             price: 180,
             image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1000&auto=format&fit=crop',
             coordinates: { latitude: 37.5407, longitude: -77.4360 },
@@ -112,7 +114,8 @@ export default function DayDetailsScreen() {
     const [dayData, setDayData] = useState(INITIAL_DAY_DATA);
     const [timelineData, setTimelineData] = useState(INITIAL_DAY_DATA.timeline);
 
-    const [editMode, setEditMode] = useState<'none' | 'note' | 'activity' | 'hotel'>('none');
+    // Edit State
+    const [editMode, setEditMode] = useState<'none' | 'note' | 'activity'>('none');
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
     const [editForm, setEditForm] = useState({
@@ -120,22 +123,12 @@ export default function DayDetailsScreen() {
         price: '',
         desc: '',
         address: '',
-        hotelName: '',
         notes: '',
     });
 
     const openNoteModal = () => {
         setEditForm(prev => ({ ...prev, notes: dayData.notes || '' }));
         setEditMode('note');
-    };
-
-    const openHotelModal = () => {
-        setEditForm(prev => ({
-            ...prev,
-            hotelName: dayData.hotel.name,
-            price: dayData.hotel.price.toString(),
-        }));
-        setEditMode('hotel');
     };
 
     const openActivityModal = (item: any) => {
@@ -157,7 +150,6 @@ export default function DayDetailsScreen() {
             desc: '',
             address: '',
             price: '',
-            hotelName: '',
             notes: editForm.notes
         });
         setEditMode('activity');
@@ -166,15 +158,6 @@ export default function DayDetailsScreen() {
     const saveChanges = () => {
         if (editMode === 'note') {
             setDayData({ ...dayData, notes: editForm.notes });
-        } else if (editMode === 'hotel') {
-            setDayData({
-                ...dayData,
-                hotel: {
-                    ...dayData.hotel,
-                    name: editForm.hotelName,
-                    price: Number(editForm.price) || 0,
-                }
-            });
         } else if (editMode === 'activity') {
             if (selectedItemId) {
                 setTimelineData(prev => prev.map(item =>
@@ -192,7 +175,7 @@ export default function DayDetailsScreen() {
                     price: Number(editForm.price) || 0,
                     icon: 'mappin.circle.fill',
                     color: '#999',
-                    type: 'activity',
+                    type: 'activity', // Default new items to activity
                     coordinates: { latitude: 0, longitude: 0 }
                 };
                 setTimelineData(prev => [...prev, newItem]);
@@ -201,6 +184,7 @@ export default function DayDetailsScreen() {
         setEditMode('none');
     };
 
+    // --- RENDER CARD (Draggable) ---
     const renderItem = ({ item, drag, isActive }: RenderItemParams<any>) => {
         return (
             <ScaleDecorator>
@@ -216,18 +200,26 @@ export default function DayDetailsScreen() {
                         }
                     ]}
                 >
-                    {item.image && <Image source={{ uri: item.image }} style={styles.activityImage} />}
+                    {item.image && (
+                        <Image source={{ uri: item.image }} style={styles.activityImage} />
+                    )}
 
                     <View style={styles.activityContent}>
                         <View style={styles.activityHeader}>
                             <View style={styles.titleRow}>
-                                <View style={[styles.categoryDot, { backgroundColor: item.color || '#ccc' }]} />
-                                <ThemedText type="defaultSemiBold" style={{ flex: 1 }}>{item.title}</ThemedText>
+                                {/* CATEGORY BADGE */}
+                                <View style={[styles.categoryBadge, { backgroundColor: item.color + '20', borderColor: item.color + '40' }]}>
+                                    <ThemedText style={[styles.categoryText, { color: item.color }]}>
+                                        {getCategoryLabel(item.type)}
+                                    </ThemedText>
+                                </View>
                             </View>
                             <TouchableOpacity onPress={() => openActivityModal(item)} style={styles.editIconBtn}>
                                 <IconSymbol name="pencil" size={18} color={colors.icon} />
                             </TouchableOpacity>
                         </View>
+
+                        <ThemedText type="defaultSemiBold" style={styles.cardTitle}>{item.title}</ThemedText>
 
                         <View style={styles.activityMeta}>
                             <IconSymbol name="clock.fill" size={12} color="#808080" />
@@ -248,6 +240,7 @@ export default function DayDetailsScreen() {
                                     {item.price === 0 ? 'Free' : `$${item.price}`}
                                 </ThemedText>
                             </View>
+                            {/* Reorder Handle Visual */}
                             <IconSymbol name="line.3.horizontal" size={16} color={colors.icon + '60'} />
                         </View>
                     </View>
@@ -256,9 +249,10 @@ export default function DayDetailsScreen() {
         );
     };
 
+    // --- HEADER ---
     const renderHeader = () => (
         <View>
-            {/* Map Header */}
+            {/* Map */}
             <View style={styles.mapHeader}>
                 <MapView
                     ref={mapRef}
@@ -283,15 +277,13 @@ export default function DayDetailsScreen() {
                         </Marker>
                     ))}
                 </MapView>
-
                 <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={styles.topGradient} />
-
                 <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { top: insets.top + 10 }]}>
                     <IconSymbol name="chevron.left" size={24} color="#fff" />
                 </TouchableOpacity>
             </View>
 
-            {/* Stats & Title */}
+            {/* Stats */}
             <View style={styles.headerBlock}>
                 <View>
                     <ThemedText style={styles.dateLabel}>Day 1 • {dayData.date}</ThemedText>
@@ -312,12 +304,11 @@ export default function DayDetailsScreen() {
             </View>
 
             <View style={styles.divider} />
-
-
             <ThemedText type="subtitle" style={styles.sectionTitle}>Activities</ThemedText>
         </View>
     );
 
+    // --- FOOTER ---
     const renderFooter = () => (
         <View style={styles.footerContainer}>
             <TouchableOpacity style={[styles.addItemButton, { borderColor: colors.icon + '40' }]} onPress={openAddActivityModal}>
@@ -362,7 +353,7 @@ export default function DayDetailsScreen() {
                     showsVerticalScrollIndicator={false}
                 />
 
-                {/* --- 4. UPDATED MODAL (Fade style) --- */}
+                {/* --- EDIT MODAL --- */}
                 <Modal
                     animationType="fade"
                     transparent={true}
@@ -373,31 +364,18 @@ export default function DayDetailsScreen() {
                         <TouchableWithoutFeedback onPress={() => setEditMode('none')}>
                             <View style={styles.modalBackdrop} />
                         </TouchableWithoutFeedback>
-
-                        <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-                            <View style={styles.modalHeader}>
-                                <ThemedText type="subtitle">
-                                    {editMode === 'hotel' ? 'Edit Accommodation' :
-                                        editMode === 'activity' ? (selectedItemId ? 'Edit Activity' : 'New Activity') : 'General Note'}
-                                </ThemedText>
-                                <TouchableOpacity onPress={() => setEditMode('none')}>
-                                    <IconSymbol name="minus" size={24} color={colors.text} style={{ transform: [{ rotate: '45deg' }] }} />
-                                </TouchableOpacity>
-                            </View>
-
-                            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
-                                {editMode === 'hotel' && (
-                                    <>
-                                        <View style={styles.inputContainer}>
-                                            <ThemedText style={styles.label}>Hotel Name</ThemedText>
-                                            <TextInput style={[styles.input, { color: colors.text, borderColor: colors.icon }]} value={editForm.hotelName} onChangeText={(text) => setEditForm({ ...editForm, hotelName: text })} />
-                                        </View>
-                                        <View style={styles.inputContainer}>
-                                            <ThemedText style={styles.label}>Cost ($)</ThemedText>
-                                            <TextInput style={[styles.input, { color: colors.text, borderColor: colors.icon }]} value={editForm.price} onChangeText={(text) => setEditForm({ ...editForm, price: text })} keyboardType="numeric" />
-                                        </View>
-                                    </>
-                                )}
+                        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+                            <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
+                                <View style={styles.modalHeader}>
+                                    <ThemedText type="subtitle">
+                                        {editMode === 'activity'
+                                            ? (selectedItemId ? 'Edit Activity' : 'New Activity')
+                                            : 'General Note'}
+                                    </ThemedText>
+                                    <TouchableOpacity onPress={() => setEditMode('none')}>
+                                        <IconSymbol name="minus" size={24} color={colors.text} style={{ transform: [{ rotate: '45deg' }] }} />
+                                    </TouchableOpacity>
+                                </View>
 
                                 {editMode === 'activity' && (
                                     <>
@@ -429,8 +407,8 @@ export default function DayDetailsScreen() {
                                 <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.tint }]} onPress={saveChanges}>
                                     <ThemedText style={styles.saveButtonText}>Save</ThemedText>
                                 </TouchableOpacity>
-                            </KeyboardAvoidingView>
-                        </View>
+                            </View>
+                        </KeyboardAvoidingView>
                     </View>
                 </Modal>
 
@@ -535,82 +513,14 @@ const styles = StyleSheet.create({
         marginLeft: 24,
         marginBottom: 10,
     },
-    hotelCard: {
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#F5F5F5',
-        marginHorizontal: 24,
-        marginBottom: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.03,
-        shadowRadius: 4,
-        elevation: 1,
-    },
-    hotelImage: {
-        width: '100%',
-        height: 160,
-    },
-    hotelContent: {
-        padding: 16,
-    },
-    hotelHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 4,
-    },
-    hotelName: {
-        flex: 1,
-        fontSize: 18,
-        marginRight: 8,
-    },
-    ratingBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#333',
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 6,
-        gap: 4,
-    },
-    ratingText: {
-        color: '#fff',
-        fontSize: 12,
-        fontWeight: 'bold',
-    },
-    hotelAddress: {
-        color: '#808080',
-        fontSize: 14,
-        marginBottom: 12,
-    },
-    hotelFooter: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        borderTopWidth: 1,
-        borderTopColor: '#F5F5F5',
-        paddingTop: 12,
-    },
-    hotelCheckIn: {
-        color: '#666',
-        fontSize: 13,
-        fontFamily: Fonts.medium,
-    },
-    hotelPrice: {
-        fontSize: 18,
-        fontFamily: Fonts.bold,
-        color: '#333',
-    },
+    // Card Styles
     activityCard: {
         backgroundColor: '#fff',
         borderRadius: 16,
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: '#F5F5F5',
-        padding: 12,
+        padding: 16,
         marginHorizontal: 24,
         marginBottom: 16,
         shadowColor: '#000',
@@ -621,7 +531,7 @@ const styles = StyleSheet.create({
     },
     activityImage: {
         width: '100%',
-        height: 120,
+        height: 140,
         borderRadius: 12,
         marginBottom: 12,
     },
@@ -631,7 +541,7 @@ const styles = StyleSheet.create({
     activityHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
+        alignItems: 'flex-start',
     },
     titleRow: {
         flexDirection: 'row',
@@ -639,10 +549,20 @@ const styles = StyleSheet.create({
         flex: 1,
         gap: 8,
     },
-    categoryDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
+    categoryBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 6,
+        borderWidth: 1,
+    },
+    categoryText: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        textTransform: 'uppercase',
+    },
+    cardTitle: {
+        fontSize: 16,
+        marginTop: 4,
     },
     editIconBtn: {
         padding: 4,
@@ -667,9 +587,10 @@ const styles = StyleSheet.create({
         marginHorizontal: 4,
     },
     activityDesc: {
-        color: '#808080',
-        fontSize: 13,
+        color: '#666',
+        fontSize: 14,
         marginBottom: 8,
+        lineHeight: 20,
     },
     activityFooter: {
         flexDirection: 'row',
@@ -730,25 +651,20 @@ const styles = StyleSheet.create({
         color: '#333',
         lineHeight: 22,
     },
-    // Modal Styles (Updated to match your preferred design)
+    // Modal
     modalOverlay: {
         flex: 1,
-        justifyContent: 'center', // Center vertically
-        alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
     },
     modalBackdrop: {
         ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
     },
     modalContent: {
-        width: '90%', // Give it some margin from sides
-        borderRadius: 20,
-        padding: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 10,
-        elevation: 10,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 24,
+        paddingBottom: 40,
     },
     modalHeader: {
         flexDirection: 'row',
