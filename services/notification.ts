@@ -13,7 +13,9 @@ Notifications.setNotificationHandler({
     }),
 });
 
-
+/**
+ * Registers the device for push notifications and returns the Expo Push Token.
+ */
 export async function registerForPushNotificationsAsync() {
     if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
@@ -45,13 +47,11 @@ export async function registerForPushNotificationsAsync() {
     }
 
     // 4. Get the Expo Push Token
-    // We use the Project ID from your app config to ensure it maps correctly
     try {
         const projectId =
             Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
 
         if (!projectId) {
-            // Only strictly required for EAS builds, but good practice
             console.log("Project ID not found (Expected in EAS build)");
         }
 
@@ -64,5 +64,18 @@ export async function registerForPushNotificationsAsync() {
     } catch (error) {
         console.error("Error getting push token:", error);
         return null;
+    }
+}
+
+/**
+ * Cancels all currently scheduled local notifications (reminders).
+ * This is used when the user toggles off notifications.
+ */
+export async function cancelAllScheduledNotifications() {
+    try {
+        await Notifications.cancelAllScheduledNotificationsAsync();
+        console.log("All local notifications cancelled.");
+    } catch (error) {
+        console.error("Failed to cancel notifications:", error);
     }
 }

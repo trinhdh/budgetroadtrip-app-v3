@@ -13,13 +13,16 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { EditProfileModal } from '@/components/profile/edit-profile-modal'; // <--- IMPORT THE MODAL
+import { EditProfileModal } from '@/components/profile/edit-profile-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+// Assuming these are now exported from your service file (see Note above)
+import { cancelAllScheduledNotifications, registerForPushNotificationsAsync } from '@/services/notification';
+
 
 // --- TYPE DEFINITIONS ---
 type SettingItemProps = {
@@ -82,13 +85,38 @@ export default function MoreScreen() {
   const theme = useColorScheme() ?? 'light';
   const colors = Colors[theme];
 
-  // Local States
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [isEditModalVisible, setIsEditModalVisible] = useState(false); // <--- MODAL VISIBILITY
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+
+  // --- NEW HANDLER ---
+  const handleNotificationToggle = async (newValue: boolean) => {
+    setNotificationsEnabled(newValue);
+
+    if (newValue) {
+      // 1. Request permissions (if needed)
+      const granted = await registerForPushNotificationsAsync();
+
+      if (granted) {
+        // 2. Schedule reminders if permission is granted
+        Alert.alert("Notifications On", "Daily reminders are now scheduled!");
+      } else {
+        // If permission is denied, revert the toggle and alert user
+        setNotificationsEnabled(false);
+        Alert.alert(
+          "Permission Denied",
+          "Please enable notifications in your phone's settings to receive alerts."
+        );
+        Linking.openSettings(); // Direct user to OS settings
+      }
+    } else {
+      // If OFF, cancel all scheduled notifications
+      await cancelAllScheduledNotifications();
+      Alert.alert("Notifications Off", "All scheduled reminders have been cancelled.");
+    }
+  };
 
   // --- ACTIONS ---
   const handleOpenLink = async (url: string) => {
-    // Safely opening external links
     try {
       await WebBrowser.openBrowserAsync(url);
     } catch (e) {
@@ -165,7 +193,7 @@ export default function MoreScreen() {
               icon="bell.fill"
               label="Notifications"
               toggleValue={notificationsEnabled}
-              onToggle={setNotificationsEnabled}
+              onToggle={handleNotificationToggle} // <--- UPDATED HANDLER
             />
             <View style={styles.separator} />
             <SettingRow
