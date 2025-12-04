@@ -32,9 +32,9 @@ const TRIP = {
     dates: 'Dec 01 - Dec 05',
     totalBudget: 1500,
     spent: 1240,
-    travelers: 2, // Added travelers
-    vehicle: 'Sedan (30 mpg)', // Added vehicle info
-    budgetType: 'Manual', // Added budget type
+    travelers: 2,
+    vehicle: 'Sedan (30 mpg)',
+    budgetType: 'Manual',
     image: 'https://images.unsplash.com/photo-1605833556294-ea5c7a74f57d?q=80&w=1000&auto=format&fit=crop',
 
     originCoords: { latitude: 33.7490, longitude: -84.3880 },
@@ -45,6 +45,13 @@ const TRIP = {
         { id: 2, category: 'Hotel', amount: 600, icon: 'house.fill', color: '#2EC4B6' },
         { id: 3, category: 'Food', amount: 350, icon: 'leaf', color: '#E71D36' },
         { id: 4, category: 'Activities', amount: 140, icon: 'wand.and.stars', color: '#7209B7' },
+    ],
+
+    // --- NEW: Recent Expenses Data ---
+    recentExpenses: [
+        { id: '101', title: 'Shell Gas Station', amount: 45.50, date: 'Dec 01', category: 'Fuel', hasReceipt: true },
+        { id: '102', title: 'Starbucks Coffee', amount: 12.25, date: 'Dec 02', category: 'Food', hasReceipt: false },
+        { id: '103', title: 'Museum Ticket', amount: 25.00, date: 'Dec 02', category: 'Activities', hasReceipt: true },
     ],
 
     itinerary: [
@@ -95,7 +102,6 @@ export default function TripDetailsScreen() {
     const colors = Colors[theme];
     const insets = useSafeAreaInsets();
 
-    // State for the Details Modal
     const [modalVisible, setModalVisible] = useState(false);
 
     return (
@@ -115,7 +121,6 @@ export default function TripDetailsScreen() {
                         <IconSymbol name="chevron.left" size={24} color="#fff" />
                     </TouchableOpacity>
 
-                    {/* CLICKABLE INFO PILL */}
                     <TouchableOpacity
                         style={styles.glassPill}
                         onPress={() => setModalVisible(true)}
@@ -192,6 +197,50 @@ export default function TripDetailsScreen() {
                                     <ThemedText style={styles.budgetAmount}>${item.amount}</ThemedText>
                                     <ThemedText style={styles.budgetLabel}>{item.category}</ThemedText>
                                 </View>
+                            </View>
+                        ))}
+                    </View>
+                </View>
+
+                {/* --- RECENT EXPENSES SECTION --- */}
+                <View style={styles.section}>
+                    <View style={styles.sectionHeaderRow}>
+                        <ThemedText type="subtitle" style={styles.sectionTitle}>Recent Expenses</ThemedText>
+                        <TouchableOpacity>
+                            <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>View All</ThemedText>
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={[styles.expensesContainer, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
+                        {TRIP.recentExpenses.map((item, index) => (
+                            <View key={item.id} style={[
+                                styles.expenseRow,
+                                index !== TRIP.recentExpenses.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.icon + '10' }
+                            ]}>
+                                {/* Icon Box */}
+                                <View style={[styles.receiptBadge, { backgroundColor: item.hasReceipt ? '#E8F5E9' : '#FFEBEE' }]}>
+                                    <IconSymbol
+                                        name="dollarsign"
+                                        size={18}
+                                        color={item.hasReceipt ? '#2E7D32' : '#C62828'}
+                                    />
+                                </View>
+
+                                {/* Details */}
+                                <View style={styles.expenseInfo}>
+                                    <ThemedText style={styles.expenseTitle}>{item.title}</ThemedText>
+                                    <View style={styles.expenseMetaRow}>
+                                        <ThemedText style={styles.expenseDate}>{item.date}</ThemedText>
+                                        {!item.hasReceipt && (
+                                            <View style={styles.missingReceiptTag}>
+                                                <ThemedText style={styles.missingReceiptText}>No Receipt</ThemedText>
+                                            </View>
+                                        )}
+                                    </View>
+                                </View>
+
+                                {/* Amount */}
+                                <ThemedText style={styles.expenseAmount}>-${item.amount.toFixed(2)}</ThemedText>
                             </View>
                         ))}
                     </View>
@@ -461,6 +510,65 @@ const styles = StyleSheet.create({
     budgetLabel: {
         fontSize: 12,
         color: '#808080',
+    },
+
+    // Expenses Styles (New)
+    sectionHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    expensesContainer: {
+        borderRadius: 16,
+        borderWidth: 1,
+        overflow: 'hidden',
+    },
+    expenseRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        gap: 12,
+    },
+    receiptBadge: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    expenseInfo: {
+        flex: 1,
+    },
+    expenseTitle: {
+        fontSize: 16,
+        fontFamily: Fonts.medium,
+        marginBottom: 2,
+    },
+    expenseMetaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    expenseDate: {
+        fontSize: 13,
+        color: '#808080',
+    },
+    missingReceiptTag: {
+        backgroundColor: '#FFEBEE',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    missingReceiptText: {
+        fontSize: 10,
+        color: '#C62828',
+        fontWeight: 'bold',
+    },
+    expenseAmount: {
+        fontSize: 16,
+        fontFamily: Fonts.bold,
+        color: '#E71D36', // Red color for expense
     },
 
     // Itinerary

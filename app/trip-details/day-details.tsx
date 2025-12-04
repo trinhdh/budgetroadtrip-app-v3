@@ -22,6 +22,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+// Make sure you have created this component from the previous step
+import { ReceiptCameraModal } from '@/components/ui/receipt-camera-modal';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -104,6 +106,12 @@ const INITIAL_DAY_DATA = {
     ]
 };
 
+// --- MOCK EXPENSES ---
+const INITIAL_EXPENSES = [
+    { id: 'e1', merchant: 'Shell Gas Station', amount: 45.50, category: 'Gas', receipt: 'https://upload.wikimedia.org/wikipedia/commons/0/0b/ReceiptSwiss.jpg' },
+    { id: 'e2', merchant: '7-Eleven', amount: 12.25, category: 'Snacks', receipt: null },
+];
+
 const OTHER_HOTELS = [
     { id: 'h2', title: 'Hilton Downtown', desc: 'City Center • 4 Star', price: 165, rating: 4.5, image: 'https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?q=80&w=500&auto=format&fit=crop' },
     { id: 'h3', title: 'Graduate Richmond', desc: 'Boutique Hotel', price: 140, rating: 4.3, image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=500&auto=format&fit=crop' },
@@ -130,10 +138,27 @@ export default function DayDetailsScreen() {
     const [dayData, setDayData] = useState(INITIAL_DAY_DATA);
     const [timelineData, setTimelineData] = useState(INITIAL_DAY_DATA.timeline);
 
+    // --- EXPENSES STATE ---
+    const [expenses, setExpenses] = useState(INITIAL_EXPENSES);
+    const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+    const [isCameraVisible, setIsCameraVisible] = useState(false);
+
     // Edit State
-    const [editMode, setEditMode] = useState<'none' | 'note' | 'activity'>('none');
+    const [editMode, setEditMode] = useState<'none' | 'note' | 'activity' | 'expense'>('none');
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-    const [editForm, setEditForm] = useState({ title: '', price: '', desc: '', address: '', notes: '' });
+
+    const [editForm, setEditForm] = useState({
+        title: '',
+        price: '',
+        desc: '',
+        address: '',
+        notes: '',
+        // Expense specific fields
+        merchant: '',
+        amount: '',
+        category: 'Food',
+        receipt: null as string | null
+    });
 
     // Replacement State
     const [replaceModalVisible, setReplaceModalVisible] = useState(false);
@@ -193,8 +218,32 @@ export default function DayDetailsScreen() {
 
     const openAddActivityModal = () => {
         setSelectedItemId(null);
-        setEditForm({ title: '', desc: '', address: '', price: '', notes: editForm.notes });
+        setEditForm({ title: '', desc: '', address: '', price: '', notes: editForm.notes, merchant: '', amount: '', category: 'Activity', receipt: null });
         setEditMode('activity');
+    };
+
+    const openAddExpenseModal = () => {
+        setSelectedItemId(null);
+        setEditForm({
+            ...editForm,
+            merchant: '',
+            amount: '',
+            category: 'Food',
+            receipt: null
+        });
+        setEditMode('expense');
+    };
+
+    const handleReceiptCaptured = (uri: string, data: any) => {
+        setIsCameraVisible(false);
+        // Auto-fill extracted data if available
+        setEditForm(prev => ({
+            ...prev,
+            receipt: uri,
+            merchant: data?.merchant || prev.merchant,
+            amount: data?.amount || prev.amount,
+            // category: data?.category || prev.category
+        }));
     };
 
     const saveChanges = () => {
@@ -222,6 +271,15 @@ export default function DayDetailsScreen() {
                 };
                 setTimelineData(prev => [...prev, newItem]);
             }
+        } else if (editMode === 'expense') {
+            const newExpense = {
+                id: Date.now().toString(),
+                merchant: editForm.merchant || 'Unknown',
+                amount: parseFloat(editForm.amount) || 0,
+                category: editForm.category,
+                receipt: editForm.receipt,
+            };
+            setExpenses([...expenses, newExpense]);
         }
         setEditMode('none');
     };
@@ -395,7 +453,40 @@ export default function DayDetailsScreen() {
                 <IconSymbol name="plus" size={20} color={colors.text} />
                 <ThemedText style={styles.addItemText}>Add Activity</ThemedText>
             </TouchableOpacity>
+
             <View style={styles.divider} />
+
+            {/* --- EXPENSES SECTION --- */}
+            <View style={styles.sectionHeaderRow}>
+                <ThemedText type="subtitle" style={styles.sectionTitle}>Expenses</ThemedText>
+                <TouchableOpacity onPress={openAddExpenseModal}>
+                    <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium }}>+ Add</ThemedText>
+                </TouchableOpacity>
+            </View>
+
+            {expenses.map((exp) => (
+                <View key={exp.id} style={styles.expenseRow}>
+                    <View style={styles.expenseIcon}>
+                        <IconSymbol name="dollarsign" size={16} color="#fff" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                        <ThemedText style={styles.expenseMerchant}>{exp.merchant}</ThemedText>
+                        <ThemedText style={styles.expenseCategory}>{exp.category}</ThemedText>
+                    </View>
+
+                    {/* Receipt Thumbnail */}
+                    {exp.receipt && (
+                        <TouchableOpacity onPress={() => setReceiptPreview(exp.receipt)}>
+                            <Image source={{ uri: exp.receipt }} style={styles.receiptThumbnail} />
+                        </TouchableOpacity>
+                    )}
+
+                    <ThemedText style={styles.expenseAmount}>-${exp.amount.toFixed(2)}</ThemedText>
+                </View>
+            ))}
+
+            <View style={styles.divider} />
+
             <View style={styles.sectionHeaderRow}>
                 <ThemedText type="subtitle" style={styles.sectionTitle}>Notes</ThemedText>
             </View>
@@ -446,9 +537,10 @@ export default function DayDetailsScreen() {
                             <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
                                 <View style={styles.modalHeader}>
                                     <ThemedText type="subtitle">
-                                        {editMode === 'activity'
-                                            ? (selectedItemId ? 'Edit Activity' : 'New Activity')
-                                            : 'General Note'}
+                                        {editMode === 'expense' ? 'Add Expense' :
+                                            editMode === 'activity'
+                                                ? (selectedItemId ? 'Edit Activity' : 'New Activity')
+                                                : 'General Note'}
                                     </ThemedText>
                                     <TouchableOpacity onPress={() => setEditMode('none')}>
                                         <IconSymbol name="minus" size={24} color={colors.text} style={{ transform: [{ rotate: '45deg' }] }} />
@@ -472,6 +564,41 @@ export default function DayDetailsScreen() {
                                         <View style={styles.inputContainer}>
                                             <ThemedText style={styles.label}>Cost ($)</ThemedText>
                                             <TextInput style={[styles.input, { color: colors.text, borderColor: colors.icon }]} value={editForm.price} onChangeText={(text) => setEditForm({ ...editForm, price: text })} keyboardType="numeric" placeholder="0 for Free" />
+                                        </View>
+                                    </>
+                                )}
+
+                                {/* --- EXPENSE FORM --- */}
+                                {editMode === 'expense' && (
+                                    <>
+                                        {/* Scan Button */}
+                                        <TouchableOpacity
+                                            style={styles.scanButton}
+                                            onPress={() => setIsCameraVisible(true)}
+                                        >
+                                            <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>
+                                                {editForm.receipt ? 'Receipt Scanned! (Retake)' : 'Scan Receipt'}
+                                            </ThemedText>
+                                        </TouchableOpacity>
+
+                                        <View style={styles.inputContainer}>
+                                            <ThemedText style={styles.label}>Merchant</ThemedText>
+                                            <TextInput
+                                                style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
+                                                value={editForm.merchant}
+                                                onChangeText={(text) => setEditForm({ ...editForm, merchant: text })}
+                                                placeholder="e.g. Starbucks"
+                                            />
+                                        </View>
+                                        <View style={styles.inputContainer}>
+                                            <ThemedText style={styles.label}>Amount ($)</ThemedText>
+                                            <TextInput
+                                                style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
+                                                value={editForm.amount}
+                                                onChangeText={(text) => setEditForm({ ...editForm, amount: text })}
+                                                keyboardType="numeric"
+                                                placeholder="0.00"
+                                            />
                                         </View>
                                     </>
                                 )}
@@ -537,6 +664,25 @@ export default function DayDetailsScreen() {
                     </View>
                 </Modal>
 
+                {/* --- REAL CAMERA MODAL --- */}
+                <ReceiptCameraModal
+                    visible={isCameraVisible}
+                    onClose={() => setIsCameraVisible(false)}
+                    onCapture={handleReceiptCaptured}
+                />
+
+                {/* --- FULL SCREEN RECEIPT PREVIEW --- */}
+                <Modal visible={!!receiptPreview} transparent={true} animationType="fade">
+                    <View style={styles.receiptModalOverlay}>
+                        <TouchableOpacity style={styles.receiptCloseBtn} onPress={() => setReceiptPreview(null)}>
+                            <IconSymbol name="minus" size={30} color="#fff" style={{ transform: [{ rotate: '45deg' }] }} />
+                        </TouchableOpacity>
+                        {receiptPreview && (
+                            <Image source={{ uri: receiptPreview }} style={styles.fullReceiptImage} contentFit="contain" />
+                        )}
+                    </View>
+                </Modal>
+
             </ThemedView>
         </GestureHandlerRootView>
     );
@@ -597,7 +743,7 @@ const styles = StyleSheet.create({
     footerContainer: { paddingHorizontal: 24, paddingBottom: 20 },
     addItemButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', marginBottom: 20 },
     addItemText: { fontSize: 15, fontFamily: Fonts.medium },
-    sectionHeaderRow: { marginBottom: 10 },
+    sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
     notesContainer: { backgroundColor: '#FFFDE7', padding: 16, borderRadius: 12, borderLeftWidth: 4, borderLeftColor: '#FBC02D' },
     noteEditIcon: { position: 'absolute', right: 12, top: 12, opacity: 0.5 },
     notesText: { fontSize: 15, color: '#333', lineHeight: 22 },
@@ -618,4 +764,71 @@ const styles = StyleSheet.create({
     replaceModalImage: { width: '100%', height: 200, borderRadius: 16 },
     ratingBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, gap: 4 },
     ratingText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+
+    // Expense Specific
+    expenseRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F5F5F5',
+    },
+    expenseIcon: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#ccc', // Placeholder color
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    expenseMerchant: {
+        fontSize: 16,
+        fontFamily: Fonts.medium,
+    },
+    expenseCategory: {
+        fontSize: 12,
+        color: '#808080',
+    },
+    expenseAmount: {
+        fontSize: 16,
+        fontFamily: Fonts.bold,
+        color: '#E71D36', // Red for expense
+        marginLeft: 10,
+    },
+    receiptThumbnail: {
+        width: 32,
+        height: 40,
+        borderRadius: 4,
+        marginLeft: 8,
+        borderWidth: 1,
+        borderColor: '#ddd',
+    },
+    scanButton: {
+        backgroundColor: '#333',
+        borderRadius: 12,
+        paddingVertical: 14,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 20,
+    },
+    receiptModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.9)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fullReceiptImage: {
+        width: '90%',
+        height: '80%',
+    },
+    receiptCloseBtn: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
+        padding: 10,
+        zIndex: 10,
+    },
 });
