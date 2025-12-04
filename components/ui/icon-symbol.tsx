@@ -32,6 +32,7 @@ const MAPPING = createMapping({
   'wand.and.stars': 'auto-awesome',
   'person.2.fill': 'people',
   'pencil': 'edit',
+  'edit': 'edit',
   'bed.double.fill': 'hotel',        // For Hotel
   'fork.knife': 'restaurant',        // For Food
   'mappin.circle.fill': 'pin-drop',  // For Locations

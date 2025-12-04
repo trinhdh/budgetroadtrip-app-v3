@@ -1,14 +1,18 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useRouter } from 'expo-router';
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
     Dimensions,
+    KeyboardAvoidingView,
+    Modal,
     Platform,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
+    TouchableWithoutFeedback,
     View
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -22,22 +26,22 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const { width } = Dimensions.get('window');
 
-// --- UPDATED MOCK DATA WITH COORDINATES ---
-const DAY_DATA = {
+// --- MOCK DATA ---
+const INITIAL_DAY_DATA = {
     title: 'Departure & Drive',
     date: 'Dec 01',
+    notes: '', // Start empty
     stats: {
-        miles: 450,
+        miles: '450',
         hours: '6h 30m',
-        cost: 220,
+        cost: '220',
     },
     region: {
-        latitude: 36.0, // Center of the route
+        latitude: 36.0,
         longitude: -80.0,
         latitudeDelta: 6.0,
         longitudeDelta: 6.0,
     },
-    // The blue drive line
     route: [
         { latitude: 33.7490, longitude: -84.3880 }, // ATL
         { latitude: 35.2271, longitude: -80.8431 }, // Charlotte
@@ -70,7 +74,7 @@ const DAY_DATA = {
             title: 'Midwood Smokehouse',
             desc: 'Lunch Break • Charlotte, NC',
             icon: 'fork.knife',
-            color: '#F5A623', // Orange for food
+            color: '#F5A623',
             type: 'food',
             price: 45,
             image: 'https://images.unsplash.com/photo-1529193591176-1dae038cf12d?q=80&w=1000&auto=format&fit=crop',
@@ -82,7 +86,7 @@ const DAY_DATA = {
             title: 'Duke University',
             desc: 'Sightseeing • Durham, NC',
             icon: 'mappin.circle.fill',
-            color: '#7ED321', // Green for activity
+            color: '#7ED321',
             type: 'activity',
             price: 0,
             coordinates: { latitude: 36.0014, longitude: -78.9382 },
@@ -93,7 +97,7 @@ const DAY_DATA = {
             title: 'The Jefferson Hotel',
             desc: 'Check-in • Richmond, VA',
             icon: 'bed.double.fill',
-            color: '#9013FE', // Purple for hotel
+            color: '#9013FE',
             type: 'hotel',
             coordinates: { latitude: 37.5407, longitude: -77.4360 },
         }
@@ -107,40 +111,77 @@ export default function DayDetailsScreen() {
     const insets = useSafeAreaInsets();
     const mapRef = useRef<MapView>(null);
 
+    const [dayData, setDayData] = useState(INITIAL_DAY_DATA);
+
+    // Edit Mode State ('none' | 'hotel' | 'note')
+    const [editMode, setEditMode] = useState<'none' | 'hotel' | 'note'>('none');
+
+    // Form State
+    const [editForm, setEditForm] = useState({
+        hotelName: '',
+        hotelPrice: '',
+        notes: '',
+    });
+
+    const openNoteModal = () => {
+        setEditForm(prev => ({ ...prev, notes: dayData.notes || '' }));
+        setEditMode('note');
+    };
+
+    const openHotelModal = () => {
+        setEditForm(prev => ({
+            ...prev,
+            hotelName: dayData.hotel.name,
+            hotelPrice: dayData.hotel.price.toString(),
+        }));
+        setEditMode('hotel');
+    };
+
+    const saveChanges = () => {
+        if (editMode === 'note') {
+            setDayData({ ...dayData, notes: editForm.notes });
+        } else if (editMode === 'hotel') {
+            setDayData({
+                ...dayData,
+                hotel: {
+                    ...dayData.hotel,
+                    name: editForm.hotelName,
+                    price: Number(editForm.hotelPrice) || 0,
+                }
+            });
+        }
+        setEditMode('none');
+    };
+
     return (
         <ThemedView style={styles.container}>
             <Stack.Screen options={{ headerShown: false }} />
 
-            {/* --- 1. ENHANCED MAP HEADER --- */}
+            {/* --- MAP HEADER --- */}
             <View style={styles.mapHeader}>
                 <MapView
                     ref={mapRef}
                     style={styles.map}
                     provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-                    initialRegion={DAY_DATA.region}
+                    initialRegion={dayData.region}
                 >
-                    {/* The Route Line */}
                     <Polyline
-                        coordinates={DAY_DATA.route}
+                        coordinates={dayData.route}
                         strokeColor={colors.tint}
                         strokeWidth={5}
                     />
-
-                    {/* Render Markers for each Timeline Item */}
-                    {DAY_DATA.timeline.map((item, index) => (
+                    {dayData.timeline.map((item, index) => (
                         <Marker
                             key={item.id}
                             coordinate={item.coordinates}
-                            anchor={{ x: 0.5, y: 1 }} // Bottom center anchor
+                            anchor={{ x: 0.5, y: 1 }}
                             zIndex={index + 10}
                         >
                             <View style={styles.markerContainer}>
-                                {/* Label Bubble */}
                                 <View style={[styles.markerBubble, { borderColor: item.color }]}>
                                     <IconSymbol name={item.icon as any} size={14} color={item.color} />
                                     <Text style={[styles.markerText, { color: item.color }]}>{item.title}</Text>
                                 </View>
-                                {/* Pin Point */}
                                 <View style={[styles.markerArrow, { borderTopColor: item.color }]} />
                                 <View style={[styles.markerDot, { backgroundColor: item.color }]} />
                             </View>
@@ -148,13 +189,11 @@ export default function DayDetailsScreen() {
                     ))}
                 </MapView>
 
-                {/* Top Gradient for Back Button visibility */}
                 <LinearGradient
                     colors={['rgba(0,0,0,0.6)', 'transparent']}
                     style={styles.topGradient}
                 />
 
-                {/* Back Button */}
                 <TouchableOpacity
                     onPress={() => router.back()}
                     style={[styles.backButton, { top: insets.top + 10 }]}
@@ -163,7 +202,7 @@ export default function DayDetailsScreen() {
                 </TouchableOpacity>
             </View>
 
-            {/* --- 2. SCROLLABLE CONTENT --- */}
+            {/* --- CONTENT --- */}
             <ScrollView
                 style={styles.contentContainer}
                 contentContainerStyle={{ paddingBottom: 100 }}
@@ -172,46 +211,75 @@ export default function DayDetailsScreen() {
                 {/* Daily Summary */}
                 <View style={styles.headerBlock}>
                     <View>
-                        <ThemedText style={styles.dateLabel}>Day 1 • {DAY_DATA.date}</ThemedText>
-                        <ThemedText type="title">{DAY_DATA.title}</ThemedText>
+                        <ThemedText style={styles.dateLabel}>Day 1 • {dayData.date}</ThemedText>
+                        <ThemedText type="title">{dayData.title}</ThemedText>
                     </View>
+
                     <View style={styles.statRow}>
                         <View style={styles.statItem}>
                             <IconSymbol name="speedometer" size={16} color="#808080" />
-                            <ThemedText style={styles.statText}>{DAY_DATA.stats.miles} mi</ThemedText>
+                            <ThemedText style={styles.statText}>{dayData.stats.miles} mi</ThemedText>
                         </View>
                         <View style={styles.statItem}>
                             <IconSymbol name="clock.fill" size={16} color="#808080" />
-                            <ThemedText style={styles.statText}>{DAY_DATA.stats.hours}</ThemedText>
+                            <ThemedText style={styles.statText}>{dayData.stats.hours}</ThemedText>
                         </View>
                         <View style={styles.statItem}>
                             <IconSymbol name="dollarsign" size={16} color={colors.tint} />
                             <ThemedText style={[styles.statText, { color: colors.tint, fontWeight: 'bold' }]}>
-                                ${DAY_DATA.stats.cost}
+                                ${dayData.stats.cost}
                             </ThemedText>
                         </View>
                     </View>
+
+                    {/* --- NOTE SECTION (Click to Edit) --- */}
+                    {dayData.notes ? (
+                        <TouchableOpacity
+                            onPress={openNoteModal}
+                            activeOpacity={0.8}
+                            style={styles.notesContainer}
+                        >
+                            <View style={styles.noteHeader}>
+                                <IconSymbol name="edit" size={14} color="#666" />
+                                <ThemedText style={styles.noteLabel}>General Note</ThemedText>
+                            </View>
+                            <ThemedText style={styles.notesText}>{dayData.notes}</ThemedText>
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity
+                            onPress={openNoteModal}
+                            style={[styles.addNoteButton, { borderColor: colors.tint }]}
+                        >
+                            <IconSymbol name="plus" size={18} color={colors.tint} />
+                            <ThemedText style={[styles.addNoteText, { color: colors.tint }]}>Add General Note</ThemedText>
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 <View style={styles.divider} />
 
                 {/* Hotel Details Card */}
                 <View style={styles.section}>
-                    <ThemedText type="subtitle" style={styles.sectionTitle}>Where you're staying</ThemedText>
+                    <View style={styles.sectionHeaderRow}>
+                        <ThemedText type="subtitle" style={styles.sectionTitle}>Where you're staying</ThemedText>
+                        <TouchableOpacity onPress={openHotelModal}>
+                            <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Edit</ThemedText>
+                        </TouchableOpacity>
+                    </View>
                     <View style={styles.hotelCard}>
-                        <Image source={{ uri: DAY_DATA.hotel.image }} style={styles.hotelImage} />
+                        <Image source={{ uri: dayData.hotel.image }} style={styles.hotelImage} />
                         <View style={styles.hotelContent}>
                             <View style={styles.hotelHeader}>
-                                <ThemedText type="defaultSemiBold" style={styles.hotelName}>{DAY_DATA.hotel.name}</ThemedText>
+                                <ThemedText type="defaultSemiBold" style={styles.hotelName}>{dayData.hotel.name}</ThemedText>
                                 <View style={styles.ratingBadge}>
                                     <IconSymbol name="star.fill" size={12} color="#fff" />
-                                    <ThemedText style={styles.ratingText}>{DAY_DATA.hotel.rating}</ThemedText>
+                                    <ThemedText style={styles.ratingText}>{dayData.hotel.rating}</ThemedText>
                                 </View>
                             </View>
-                            <ThemedText style={styles.hotelAddress}>{DAY_DATA.hotel.address}</ThemedText>
+                            <ThemedText style={styles.hotelAddress}>{dayData.hotel.address}</ThemedText>
                             <View style={styles.hotelFooter}>
-                                <ThemedText style={styles.hotelCheckIn}>Check-in: {DAY_DATA.hotel.checkIn}</ThemedText>
-                                <ThemedText style={styles.hotelPrice}>${DAY_DATA.hotel.price}</ThemedText>
+                                <ThemedText style={styles.hotelCheckIn}>Check-in: {dayData.hotel.checkIn}</ThemedText>
+                                <ThemedText style={styles.hotelPrice}>${dayData.hotel.price}</ThemedText>
                             </View>
                         </View>
                     </View>
@@ -220,21 +288,16 @@ export default function DayDetailsScreen() {
                 {/* Activity Timeline */}
                 <View style={styles.section}>
                     <ThemedText type="subtitle" style={styles.sectionTitle}>Activities</ThemedText>
-
                     <View style={styles.timelineContainer}>
                         <View style={[styles.timelineLine, { backgroundColor: colors.icon + '40' }]} />
-
-                        {DAY_DATA.timeline.map((item, index) => (
+                        {dayData.timeline.map((item, index) => (
                             <View key={item.id} style={styles.timelineItem}>
-                                {/* Time & Icon */}
                                 <View style={styles.timeColumn}>
                                     <ThemedText style={styles.timeText}>{item.time}</ThemedText>
                                     <View style={[styles.timelineDot, { backgroundColor: item.color }]}>
                                         <IconSymbol name={item.icon as any} size={14} color="#fff" />
                                     </View>
                                 </View>
-
-                                {/* Card */}
                                 <View style={[styles.eventCard, { backgroundColor: colors.background }]}>
                                     {item.image && (
                                         <Image source={{ uri: item.image }} style={styles.eventImage} />
@@ -257,6 +320,79 @@ export default function DayDetailsScreen() {
                 </View>
 
             </ScrollView>
+
+            {/* --- SHARED EDIT MODAL --- */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={editMode !== 'none'}
+                onRequestClose={() => setEditMode('none')}
+            >
+                <View style={styles.modalOverlay}>
+                    <TouchableWithoutFeedback onPress={() => setEditMode('none')}>
+                        <View style={styles.modalBackdrop} />
+                    </TouchableWithoutFeedback>
+
+                    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
+
+                            <View style={styles.modalHeader}>
+                                <ThemedText type="subtitle">
+                                    {editMode === 'hotel' ? 'Edit Accommodation' : 'General Note'}
+                                </ThemedText>
+                                <TouchableOpacity onPress={() => setEditMode('none')}>
+                                    <IconSymbol name="minus" size={24} color={colors.text} style={{ transform: [{ rotate: '45deg' }] }} />
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* CONDITIONAL CONTENT */}
+                            {editMode === 'hotel' ? (
+                                <>
+                                    <View style={styles.inputContainer}>
+                                        <ThemedText style={styles.label}>Hotel Name</ThemedText>
+                                        <TextInput
+                                            style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
+                                            value={editForm.hotelName}
+                                            onChangeText={(text) => setEditForm({ ...editForm, hotelName: text })}
+                                        />
+                                    </View>
+                                    <View style={styles.inputContainer}>
+                                        <ThemedText style={styles.label}>Cost ($)</ThemedText>
+                                        <TextInput
+                                            style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
+                                            value={editForm.hotelPrice}
+                                            onChangeText={(text) => setEditForm({ ...editForm, hotelPrice: text })}
+                                            keyboardType="numeric"
+                                        />
+                                    </View>
+                                </>
+                            ) : (
+                                /* Note Mode */
+                                <View style={styles.inputContainer}>
+                                    <TextInput
+                                        style={[styles.textArea, { color: colors.text, borderColor: colors.icon }]}
+                                        value={editForm.notes}
+                                        onChangeText={(text) => setEditForm({ ...editForm, notes: text })}
+                                        placeholder="Add reminders, packing lists, or ideas..."
+                                        multiline
+                                        numberOfLines={4}
+                                        textAlignVertical="top"
+                                        autoFocus={true}
+                                    />
+                                </View>
+                            )}
+
+                            <TouchableOpacity
+                                style={[styles.saveButton, { backgroundColor: colors.tint }]}
+                                onPress={saveChanges}
+                            >
+                                <ThemedText style={styles.saveButtonText}>Save</ThemedText>
+                            </TouchableOpacity>
+                        </View>
+                    </KeyboardAvoidingView>
+                </View>
+            </Modal>
+
         </ThemedView>
     );
 }
@@ -266,9 +402,8 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fff',
     },
-    // Map
     mapHeader: {
-        height: 350, // Taller map for better visibility
+        height: 350,
         width: '100%',
         position: 'relative',
     },
@@ -290,8 +425,6 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.4)',
         borderRadius: 20,
     },
-
-    // Custom Map Markers
     markerContainer: {
         alignItems: 'center',
         justifyContent: 'center',
@@ -323,7 +456,7 @@ const styles = StyleSheet.create({
         borderTopWidth: 8,
         borderLeftColor: 'transparent',
         borderRightColor: 'transparent',
-        borderTopColor: '#fff', // Will be overridden inline
+        borderTopColor: '#fff',
         marginTop: -2,
     },
     markerDot: {
@@ -332,11 +465,9 @@ const styles = StyleSheet.create({
         borderRadius: 3,
         marginTop: 2,
     },
-
-    // Content
     contentContainer: {
         flex: 1,
-        marginTop: -25, // Overlap the map
+        marginTop: -25,
         backgroundColor: '#fff',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
@@ -348,8 +479,6 @@ const styles = StyleSheet.create({
         shadowRadius: 10,
         elevation: 5,
     },
-
-    // Header Info
     headerBlock: {
         marginBottom: 20,
     },
@@ -379,22 +508,66 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontFamily: Fonts.medium,
     },
+
+    // Notes
+    addNoteButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        marginTop: 16,
+        paddingVertical: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderStyle: 'dashed',
+    },
+    addNoteText: {
+        fontSize: 14,
+        fontFamily: Fonts.medium,
+    },
+    notesContainer: {
+        marginTop: 16,
+        backgroundColor: '#FFFDE7',
+        padding: 14,
+        borderRadius: 12,
+        borderLeftWidth: 4,
+        borderLeftColor: '#FBC02D',
+    },
+    noteHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 6,
+    },
+    noteLabel: {
+        fontSize: 12,
+        color: '#666',
+        fontWeight: 'bold',
+        textTransform: 'uppercase',
+    },
+    notesText: {
+        fontSize: 15,
+        color: '#333',
+        lineHeight: 22,
+    },
+
     divider: {
         height: 1,
         backgroundColor: '#F0F0F0',
         marginBottom: 24,
     },
-
-    // Common Section
     section: {
         marginBottom: 30,
     },
+    sectionHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
     sectionTitle: {
-        marginBottom: 16,
         fontSize: 18,
     },
-
-    // Hotel Card
     hotelCard: {
         backgroundColor: '#fff',
         borderRadius: 16,
@@ -462,8 +635,6 @@ const styles = StyleSheet.create({
         fontFamily: Fonts.bold,
         color: '#333',
     },
-
-    // Timeline
     timelineContainer: {
         paddingLeft: 10,
     },
@@ -544,5 +715,60 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: '#555',
         fontFamily: Fonts.medium,
+    },
+    // Modal
+    modalOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+    },
+    modalBackdrop: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    modalContent: {
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 24,
+        paddingBottom: 40,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    inputContainer: {
+        marginBottom: 16,
+    },
+    label: {
+        fontSize: 14,
+        marginBottom: 6,
+        fontFamily: Fonts.medium,
+        color: '#666',
+    },
+    input: {
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 12,
+        fontSize: 16,
+    },
+    textArea: {
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 12,
+        fontSize: 16,
+        minHeight: 120,
+    },
+    saveButton: {
+        height: 50,
+        borderRadius: 25,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 10,
+    },
+    saveButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontFamily: Fonts.bold,
     },
 });
