@@ -201,7 +201,7 @@ export default function TripDetailsScreen() {
                 <View style={styles.section}>
                     <ThemedText type="subtitle" style={styles.sectionTitle}>Itinerary</ThemedText>
                     {TRIP.itinerary.map((day) => (
-                        <TouchableOpacity key={day.day} style={[styles.dayCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
+                        <TouchableOpacity key={day.day} onPress={() => router.push('/trip-details/day-details')} style={[styles.dayCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
                             <View style={[styles.dayBadge, { backgroundColor: day.color + '20' }]}>
                                 <ThemedText style={[styles.dayNumber, { color: day.color }]}>Day {day.day}</ThemedText>
                             </View>

@@ -32,6 +32,11 @@ const MAPPING = createMapping({
   'wand.and.stars': 'auto-awesome',
   'person.2.fill': 'people',
   'pencil': 'edit',
+  'bed.double.fill': 'hotel',        // For Hotel
+  'fork.knife': 'restaurant',        // For Food
+  'mappin.circle.fill': 'pin-drop',  // For Locations
+  'clock.fill': 'access-time',       // For Time
+  'star.fill': 'star',
 });
 
 export type IconSymbolName = keyof typeof MAPPING;
