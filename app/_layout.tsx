@@ -1,14 +1,16 @@
+import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { db } from '@/firebaseConfig'; // Import db
+import { useColorScheme } from '@/hooks/use-color-scheme'; // Fixed import order
+import { registerForPushNotificationsAsync } from '@/services/notification'; // Import notification service
 import { Rubik_400Regular, Rubik_500Medium, Rubik_700Bold, useFonts } from '@expo-google-fonts/rubik';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import { doc, setDoc } from 'firebase/firestore'; // Import Firestore functions
 import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
-
-import { AuthProvider, useAuth } from '@/context/AuthContext';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -44,6 +46,32 @@ function RootLayoutNav() {
     checkOnboarding();
   }, []);
 
+  // --- NEW: Handle Push Notification Registration ---
+  useEffect(() => {
+    const setupNotifications = async () => {
+      if (user) {
+        // Only attempt to register if we have a logged-in user
+        const token = await registerForPushNotificationsAsync();
+
+        if (token) {
+          // Save the token to the user's document in Firestore
+          // merge: true ensures we don't overwrite existing user data (like name/email)
+          try {
+            const userRef = doc(db, 'users', user.uid);
+            await setDoc(userRef, { expoPushToken: token }, { merge: true });
+            console.log("Push token saved to Firebase for user:", user.uid);
+          } catch (error) {
+            console.error("Error saving push token:", error);
+          }
+        }
+      }
+    };
+
+    // Run this whenever the user state changes (e.g., logs in)
+    setupNotifications();
+  }, [user]);
+
+
   // Handle Redirects & Splash Screen
   useEffect(() => {
     const isReady = fontsLoaded && !authLoading && isOnboardingChecked;
@@ -64,8 +92,6 @@ function RootLayoutNav() {
       }
 
       // Priority 3: Main App (If user is logged in & onboarded)
-      // We only redirect to tabs if we are currently at the root or login/onboarding
-      // This prevents redirect loops if the user is already deep in the app
       router.replace('/(tabs)');
     }
   }, [fontsLoaded, authLoading, isOnboardingChecked, user, hasOnboarded]);
