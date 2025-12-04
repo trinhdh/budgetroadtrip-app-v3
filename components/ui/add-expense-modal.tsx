@@ -18,6 +18,7 @@ type Props = {
     visible: boolean;
     onClose: () => void;
     itineraryDays: any[];
+    onSave: (expenseData: any) => void;
 };
 
 const CATEGORIES = [
@@ -28,7 +29,7 @@ const CATEGORIES = [
     { id: 'Other', icon: 'circle.grid.2x2.fill', color: '#808080' },
 ];
 
-export function AddExpenseModal({ visible, onClose, itineraryDays }: Props) {
+export function AddExpenseModal({ visible, onClose, itineraryDays, onSave }: Props) {
     // Form State
     const [amount, setAmount] = useState('');
     const [title, setTitle] = useState('');
@@ -42,7 +43,6 @@ export function AddExpenseModal({ visible, onClose, itineraryDays }: Props) {
     const handleReceiptCaptured = (uri: string, data?: any) => {
         setReceiptUri(uri);
         if (data) {
-            // Auto-fill form from "OCR"
             if (data.amount) setAmount(data.amount);
             if (data.merchant) setTitle(data.merchant);
             if (data.category) setSelectedCategory(data.category);
@@ -53,28 +53,32 @@ export function AddExpenseModal({ visible, onClose, itineraryDays }: Props) {
     const handleSave = () => {
         const numericAmount = parseFloat(amount);
 
-        // Validation: Check if amount is valid and greater than 0
         if (!amount || isNaN(numericAmount) || numericAmount <= 0) {
             Alert.alert("Invalid Amount", "Please enter an amount greater than 0.");
             return;
         }
 
-        console.log({
+        const expenseData = {
             amount: numericAmount,
-            title: title || 'Expense', // Default title if empty
+            title: title || 'Expense',
             category: selectedCategory,
             day: selectedDay,
-            receipt: receiptUri
-        });
+            receiptImage: receiptUri,
+            // Mock date generation based on day (In real app, calculate from trip start date)
+            date: `Dec 0${selectedDay}`,
+        };
+
+        onSave(expenseData);
 
         // Reset form
         setAmount('');
         setTitle('');
         setReceiptUri(null);
+        setSelectedDay(1);
+        setSelectedCategory('Food');
         onClose();
     };
 
-    // Derived state for button styling
     const isValid = parseFloat(amount) > 0;
 
     return (
@@ -101,7 +105,7 @@ export function AddExpenseModal({ visible, onClose, itineraryDays }: Props) {
                         />
                     </View>
 
-                    {/* --- 2. TITLE INPUT (Manual Entry Priority) --- */}
+                    {/* --- 2. TITLE INPUT --- */}
                     <View style={styles.inputGroup}>
                         <Text style={styles.label}>Description</Text>
                         <TextInput
@@ -113,7 +117,7 @@ export function AddExpenseModal({ visible, onClose, itineraryDays }: Props) {
                         />
                     </View>
 
-                    {/* --- 3. RECEIPT ACTION (Secondary) --- */}
+                    {/* --- 3. RECEIPT ACTION --- */}
                     <View style={styles.inputGroup}>
                         <Text style={styles.label}>Receipt (Optional)</Text>
                         <TouchableOpacity
@@ -218,13 +222,9 @@ export function AddExpenseModal({ visible, onClose, itineraryDays }: Props) {
 
 const styles = StyleSheet.create({
     container: { paddingHorizontal: 20 },
-
-    // Amount
     amountContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 20 },
     currencySymbol: { fontSize: 32, fontWeight: '600', color: '#333', marginRight: 5 },
     amountInput: { fontSize: 48, fontWeight: 'bold', color: '#333', minWidth: 100, textAlign: 'center' },
-
-    // Scan Button
     scanButton: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
         backgroundColor: '#F0F2F5', padding: 12, borderRadius: 12,
@@ -232,21 +232,15 @@ const styles = StyleSheet.create({
     scanText: { marginLeft: 8, fontSize: 16, color: Colors.light.tint, fontWeight: '600' },
     receiptPreview: { flexDirection: 'row', alignItems: 'center' },
     thumb: { width: 30, height: 30, borderRadius: 4, marginRight: 8 },
-
-    // Inputs
     inputGroup: { marginBottom: 24 },
     label: { fontSize: 14, fontWeight: '600', color: '#666', marginBottom: 10, textTransform: 'uppercase' },
     input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 12, padding: 16, fontSize: 16, backgroundColor: '#fff' },
-
-    // Categories
     categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     catPill: {
         flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12,
         borderRadius: 20, borderWidth: 1, borderColor: '#eee', gap: 6
     },
     catText: { fontSize: 14, color: '#666' },
-
-    // Day Selector
     dayScroll: { gap: 10, paddingRight: 20 },
     dayCard: {
         width: 100, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#eee',
@@ -254,8 +248,6 @@ const styles = StyleSheet.create({
     },
     dayNum: { fontSize: 14, fontWeight: 'bold', color: '#333', marginBottom: 4 },
     dayTitle: { fontSize: 11, color: '#888' },
-
-    // Footer
     footer: {
         position: 'absolute', bottom: 20, left: 20, right: 20,
     },

@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
     Alert,
@@ -27,7 +27,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // --- Modals ---
 import { AddExpenseModal } from '@/components/ui/add-expense-modal';
+import { AllExpensesModal } from '@/components/ui/all-expense-modal';
 import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
+import { ExpenseDetailModal } from '@/components/ui/expense-detail-modal';
 
 const { width, height } = Dimensions.get('window');
 const PARALLAX_HEADER_HEIGHT = 400;
@@ -55,32 +57,13 @@ const TRIP = {
         { id: 4, category: 'Activities', amount: 140, icon: 'wand.and.stars', color: '#7209B7' },
     ],
 
-    recentExpenses: [
-        {
-            id: '101', title: 'Shell Gas Station', amount: 45.50, date: 'Dec 01', category: 'Fuel', hasReceipt: true,
-            addedBy: { name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff' }
-        },
-        {
-            id: '102', title: 'Starbucks Coffee', amount: 12.25, date: 'Dec 02', category: 'Food', hasReceipt: false,
-            addedBy: { name: 'Sam', avatar: 'https://ui-avatars.com/api/?name=Sam&background=2EC4B6&color=fff' }
-        },
-        {
-            id: '103', title: 'Museum Ticket', amount: 25.00, date: 'Dec 02', category: 'Activities', hasReceipt: true,
-            addedBy: { name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff' }
-        },
-    ],
-
     itinerary: [
         {
             day: 1,
             title: 'Departure -> Richmond',
             distance: '450 mi',
             color: '#FF9F1C',
-            path: [
-                { latitude: 33.7490, longitude: -84.3880 },
-                { latitude: 35.2271, longitude: -80.8431 },
-                { latitude: 37.5407, longitude: -77.4360 },
-            ],
+            path: [{ latitude: 33.7490, longitude: -84.3880 }, { latitude: 35.2271, longitude: -80.8431 }, { latitude: 37.5407, longitude: -77.4360 }],
             stopLocation: { latitude: 37.5407, longitude: -77.4360 }
         },
         {
@@ -88,12 +71,7 @@ const TRIP = {
             title: 'Richmond -> NYC',
             distance: '420 mi',
             color: '#2EC4B6',
-            path: [
-                { latitude: 37.5407, longitude: -77.4360 },
-                { latitude: 38.9072, longitude: -77.0369 },
-                { latitude: 39.9526, longitude: -75.1652 },
-                { latitude: 40.7128, longitude: -74.0060 },
-            ],
+            path: [{ latitude: 37.5407, longitude: -77.4360 }, { latitude: 38.9072, longitude: -77.0369 }, { latitude: 39.9526, longitude: -75.1652 }, { latitude: 40.7128, longitude: -74.0060 }],
             stopLocation: { latitude: 39.9526, longitude: -75.1652 }
         },
         {
@@ -101,32 +79,66 @@ const TRIP = {
             title: 'Manhattan Exploration',
             distance: '10 mi',
             color: '#7209B7',
-            path: [
-                { latitude: 40.7128, longitude: -74.0060 },
-                { latitude: 40.7580, longitude: -73.9855 },
-                { latitude: 40.7829, longitude: -73.9654 },
-            ],
+            path: [{ latitude: 40.7128, longitude: -74.0060 }, { latitude: 40.7580, longitude: -73.9855 }, { latitude: 40.7829, longitude: -73.9654 }],
             stopLocation: { latitude: 40.7580, longitude: -73.9855 }
         },
     ]
 };
 
+const INITIAL_EXPENSES = [
+    {
+        id: '101', title: 'Shell Gas Station', amount: 45.50, date: 'Dec 01', category: 'Fuel', hasReceipt: true, day: 1,
+        addedBy: { name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff' },
+        receiptImage: 'https://templates.invoicehome.com/receipt-template-us-neat-750px.png'
+    },
+    {
+        id: '102', title: 'Starbucks Coffee', amount: 12.25, date: 'Dec 02', category: 'Food', hasReceipt: false, day: 2,
+        addedBy: { name: 'Sam', avatar: 'https://ui-avatars.com/api/?name=Sam&background=2EC4B6&color=fff' }
+    },
+    {
+        id: '103', title: 'Museum Ticket', amount: 25.00, date: 'Dec 02', category: 'Activities', hasReceipt: true, day: 2,
+        addedBy: { name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff' }
+    },
+];
+
 export default function TripDetailsScreen() {
-    const { id } = useLocalSearchParams();
     const router = useRouter();
-    const theme = useColorScheme() ?? 'light';
-    const colors = Colors[theme];
+    const colors = Colors[useColorScheme() ?? 'light'];
     const insets = useSafeAreaInsets();
 
+    // --- STATE ---
+    const [expenses, setExpenses] = useState(INITIAL_EXPENSES);
+
+    // Modals
     const [paramsModalVisible, setParamsModalVisible] = useState(false);
     const [addExpenseVisible, setAddExpenseVisible] = useState(false);
+    const [viewAllExpensesVisible, setViewAllExpensesVisible] = useState(false);
+    const [selectedExpense, setSelectedExpense] = useState<any>(null);
 
-    // --- MAP VIEW STATE ---
+    // --- ACTIONS ---
+
+    const handleSaveExpense = (data: any) => {
+        // CREATE NEW ONLY
+        const newExpense = {
+            ...data,
+            id: Math.random().toString(),
+            addedBy: { name: 'You', avatar: 'https://ui-avatars.com/api/?name=You&background=333&color=fff' },
+            hasReceipt: !!data.receiptImage
+        };
+        setExpenses(prev => [newExpense, ...prev]);
+        Alert.alert("Success", "Expense added!");
+    };
+
+    const handleDeleteExpense = (expenseId: string) => {
+        setExpenses(prev => prev.filter(ex => ex.id !== expenseId));
+        Alert.alert("Deleted", "The expense has been removed.");
+    };
+
+    // --- MAP & SCROLL LOGIC ---
     const [isMapMaximized, setIsMapMaximized] = useState(false);
     const mapRef = useRef<MapView>(null);
     const scrollY = useRef(new Animated.Value(0)).current;
 
-    // --- PARALLAX INTERPOLATION ---
     const mapTranslateY = scrollY.interpolate({
         inputRange: [-PARALLAX_HEADER_HEIGHT, 0, PARALLAX_HEADER_HEIGHT],
         outputRange: [PARALLAX_HEADER_HEIGHT * 0.5, 0, -PARALLAX_HEADER_HEIGHT * 0.5],
@@ -140,19 +152,12 @@ export default function TripDetailsScreen() {
         extrapolateRight: 'clamp',
     });
 
+    const toggleMapMaximize = () => setIsMapMaximized(!isMapMaximized);
+
     const handleShare = async () => {
         try {
-            await Share.share({
-                message: `Check out my trip to ${TRIP.destination} on Budget Roadtrip!`,
-                title: `Trip to ${TRIP.destination}`
-            });
-        } catch (error: any) {
-            Alert.alert(error.message);
-        }
-    };
-
-    const toggleMapMaximize = () => {
-        setIsMapMaximized(!isMapMaximized);
+            await Share.share({ message: `Check out my trip to ${TRIP.destination}!`, title: `Trip to ${TRIP.destination}` });
+        } catch (error: any) { Alert.alert(error.message); }
     };
 
     const focusOnDay = useCallback((day: typeof TRIP.itinerary[0]) => {
@@ -172,9 +177,7 @@ export default function TripDetailsScreen() {
         }
     }).current;
 
-    const viewabilityConfig = useRef({
-        itemVisiblePercentThreshold: 50,
-    }).current;
+    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
     return (
         <ThemedView style={styles.container}>
@@ -297,12 +300,9 @@ export default function TripDetailsScreen() {
                         <TouchableOpacity onPress={handleShare} style={styles.glassButton}>
                             <IconSymbol name="square.and.arrow.up" size={20} color="#fff" />
                         </TouchableOpacity>
-
                         <TouchableOpacity style={styles.glassButton} onPress={toggleMapMaximize} activeOpacity={0.7}>
                             <IconSymbol name="map.fill" size={20} color="#fff" />
                         </TouchableOpacity>
-
-                        {/* Restored Info Pill with Budget */}
                         <TouchableOpacity
                             style={styles.glassPill}
                             onPress={() => setParamsModalVisible(true)}
@@ -365,17 +365,21 @@ export default function TripDetailsScreen() {
                     <View style={styles.section}>
                         <View style={styles.sectionHeaderRow}>
                             <ThemedText type="subtitle" style={styles.sectionTitle}>Recent Expenses</ThemedText>
-                            <TouchableOpacity>
+                            <TouchableOpacity onPress={() => setViewAllExpensesVisible(true)}>
                                 <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>View All</ThemedText>
                             </TouchableOpacity>
                         </View>
 
                         <View style={[styles.expensesContainer, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
-                            {TRIP.recentExpenses.map((item, index) => (
-                                <View key={item.id} style={[
-                                    styles.expenseRow,
-                                    index !== TRIP.recentExpenses.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.icon + '10' }
-                                ]}>
+                            {expenses.slice(0, 3).map((item, index) => (
+                                <TouchableOpacity
+                                    key={item.id}
+                                    style={[
+                                        styles.expenseRow,
+                                        index !== 2 && { borderBottomWidth: 1, borderBottomColor: colors.icon + '10' }
+                                    ]}
+                                    onPress={() => setSelectedExpense(item)}
+                                >
                                     <View style={[styles.receiptBadge, { backgroundColor: item.hasReceipt ? '#E8F5E9' : '#FFEBEE' }]}>
                                         <IconSymbol name="dollarsign" size={18} color={item.hasReceipt ? '#2E7D32' : '#C62828'} />
                                     </View>
@@ -392,13 +396,12 @@ export default function TripDetailsScreen() {
                                     </View>
                                     <View style={styles.avatarGroup}>
                                         <Image source={{ uri: item.addedBy.avatar }} style={styles.smallAvatar} />
-                                        <ThemedText style={styles.expenseAmount}>-${item.amount.toFixed(2)}</ThemedText>
+                                        <ThemedText style={styles.expenseAmount}>-${parseFloat(item.amount.toString()).toFixed(2)}</ThemedText>
                                     </View>
-                                </View>
+                                </TouchableOpacity>
                             ))}
                         </View>
 
-                        {/* --- NEW: Add Expense Button (Dashed) --- */}
                         <TouchableOpacity
                             onPress={() => setAddExpenseVisible(true)}
                             style={[
@@ -437,6 +440,21 @@ export default function TripDetailsScreen() {
                 visible={addExpenseVisible}
                 onClose={() => setAddExpenseVisible(false)}
                 itineraryDays={TRIP.itinerary}
+                onSave={handleSaveExpense}
+            />
+
+            <AllExpensesModal
+                visible={viewAllExpensesVisible}
+                onClose={() => setViewAllExpensesVisible(false)}
+                expenses={expenses}
+                onSelectExpense={setSelectedExpense}
+            />
+
+            <ExpenseDetailModal
+                visible={!!selectedExpense}
+                onClose={() => setSelectedExpense(null)}
+                expense={selectedExpense}
+                onDelete={handleDeleteExpense}
             />
 
             <BottomSheetModal
@@ -490,33 +508,15 @@ const styles = StyleSheet.create({
         width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.3)',
         justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
     },
-
-    // Restored/Added Styles for Budget Pill
     glassPill: {
-        backgroundColor: 'rgba(0,0,0,0.3)',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.2)',
-        flexDirection: 'row',
-        alignItems: 'center',
-        height: 40,
+        backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', flexDirection: 'row', alignItems: 'center', height: 40,
     },
-    budgetText: {
-        color: '#fff',
-        fontFamily: Fonts.bold,
-        fontSize: 14,
-    },
-
-    // Add Item Button (New Style)
+    budgetText: { color: '#fff', fontFamily: Fonts.bold, fontSize: 14 },
     addItemButton: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
         paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed'
     },
     addItemText: { fontSize: 16, fontFamily: Fonts.medium, color: '#666' },
-
-    // Maximized Map
     closeMapButton: {
         position: 'absolute', left: 20, width: 40, height: 40, borderRadius: 20,
         backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center',
@@ -535,18 +535,15 @@ const styles = StyleSheet.create({
     mapCardTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
     mapCardSubtitle: { fontSize: 14, color: '#888', marginTop: 2 },
     cardArrow: { padding: 8 },
-    // Title
     titleSection: { paddingHorizontal: 20, marginBottom: 20 },
     tripLabel: { color: '#666', fontSize: 14, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1, fontFamily: Fonts.medium },
     destinationTitle: { fontSize: 32, lineHeight: 32, fontFamily: Fonts.bold, marginBottom: 10, color: '#1a1a1a' },
     subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     subtitleText: { color: '#666', fontSize: 15, fontFamily: Fonts.medium },
     dotSeparator: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#ccc', marginHorizontal: 4 },
-    // Map Markers
     dayMarkerPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3, elevation: 3 },
     markerArrow: { width: 0, height: 0, backgroundColor: 'transparent', borderStyle: 'solid', borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', alignSelf: 'center', marginTop: -2 },
     dayMarkerText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
-    // Sections
     section: { paddingHorizontal: 20, marginBottom: 24 },
     sectionTitle: { fontSize: 18, marginBottom: 12, color: '#111' },
     budgetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
@@ -554,7 +551,6 @@ const styles = StyleSheet.create({
     iconCircle: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
     budgetAmount: { fontSize: 16, fontFamily: Fonts.bold },
     budgetLabel: { fontSize: 12, color: '#808080' },
-    // Expenses
     sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
     expensesContainer: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
     expenseRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
@@ -568,13 +564,11 @@ const styles = StyleSheet.create({
     avatarGroup: { alignItems: 'flex-end', justifyContent: 'center', gap: 4 },
     smallAvatar: { width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: '#fff' },
     expenseAmount: { fontSize: 16, fontFamily: Fonts.bold, color: '#E71D36' },
-    // Itinerary
     dayCard: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
     dayBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginRight: 12 },
     dayNumber: { fontFamily: Fonts.bold, fontSize: 14 },
     dayContent: { flex: 1 },
     grayText: { color: '#808080', fontSize: 13, marginTop: 2 },
-    // Modal
     modalSubtitle: { fontSize: 14, color: '#808080', marginBottom: 24 },
     paramRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
     paramLabel: { fontSize: 16, color: '#666', fontFamily: Fonts.medium },
