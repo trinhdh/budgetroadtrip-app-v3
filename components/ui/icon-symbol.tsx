@@ -50,7 +50,8 @@ const MAPPING = createMapping({
   'person.crop.circle': 'account-circle',
   'lock.fill': 'lock',
   'ellipsis.circle.fill': 'more-horiz',
-  'camera': 'camera'
+  'camera': 'camera',
+  'checkmark.circle.fill': 'check'
 });
 
 export type IconSymbolName = keyof typeof MAPPING;

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CurrencySelectionModal } from '@/components/profile/currency-selection-modal'; // <--- NEW IMPORT
 import { EditProfileModal } from '@/components/profile/edit-profile-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -20,7 +21,6 @@ import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-// Assuming these are now exported from your service file (see Note above)
 import { cancelAllScheduledNotifications, registerForPushNotificationsAsync } from '@/services/notification';
 
 
@@ -88,34 +88,51 @@ export default function MoreScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
 
-  // --- NEW HANDLER ---
+  const [currentCurrency, setCurrentCurrency] = useState('USD ($)');
+  const [currentUnits, setCurrentUnits] = useState('Imperial (mi/mpg)');
+
+  // --- NEW STATE FOR CURRENCY MODAL ---
+  const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
+
+  // --- HANDLERS FOR NEW SETTINGS ---
+  const handleCurrencySelect = (newCurrency: string) => {
+    setCurrentCurrency(newCurrency);
+    console.log("Currency set to:", newCurrency);
+  };
+
+  const handleUnitsChange = () => {
+    const newUnits = currentUnits.includes('Imperial')
+      ? 'Metric (km/L/100km)'
+      : 'Imperial (mi/mpg)';
+    setCurrentUnits(newUnits);
+    console.log("Units set to:", newUnits);
+  };
+
+
+  // --- HANDLER FOR NOTIFICATIONS ---
   const handleNotificationToggle = async (newValue: boolean) => {
     setNotificationsEnabled(newValue);
 
     if (newValue) {
-      // 1. Request permissions (if needed)
       const granted = await registerForPushNotificationsAsync();
 
       if (granted) {
-        // 2. Schedule reminders if permission is granted
         Alert.alert("Notifications On", "Notifications are now enabled.");
       } else {
-        // If permission is denied, revert the toggle and alert user
         setNotificationsEnabled(false);
         Alert.alert(
           "Permission Denied",
           "Please enable notifications in your phone's settings to receive alerts."
         );
-        Linking.openSettings(); // Direct user to OS settings
+        Linking.openSettings();
       }
     } else {
-      // If OFF, cancel all scheduled notifications
       await cancelAllScheduledNotifications();
       Alert.alert("Notifications Off", "All scheduled reminders have been cancelled.");
     }
   };
 
-  // --- ACTIONS ---
+  // --- OTHER ACTIONS ---
   const handleOpenLink = async (url: string) => {
     try {
       await WebBrowser.openBrowserAsync(url);
@@ -193,14 +210,24 @@ export default function MoreScreen() {
               icon="bell.fill"
               label="Notifications"
               toggleValue={notificationsEnabled}
-              onToggle={handleNotificationToggle} // <--- UPDATED HANDLER
+              onToggle={handleNotificationToggle}
             />
+
+            {/* --- CURRENCY SETTING (MODIFIED) --- */}
             <View style={styles.separator} />
             <SettingRow
-              icon="paintbrush.fill"
-              label="Appearance"
-              value="System"
-              onPress={() => Linking.openSettings()}
+              icon="dollarsign"
+              label="Currency"
+              value={currentCurrency}
+              onPress={() => setIsCurrencyModalVisible(true)} // <--- OPENS NEW MODAL
+            />
+            {/* --- UNITS SETTING --- */}
+            <View style={styles.separator} />
+            <SettingRow
+              icon="speedometer"
+              label="Units"
+              value={currentUnits}
+              onPress={handleUnitsChange}
             />
           </View>
         </View>
@@ -271,6 +298,14 @@ export default function MoreScreen() {
       <EditProfileModal
         visible={isEditModalVisible}
         onClose={() => setIsEditModalVisible(false)}
+      />
+
+      {/* --- RENDER CURRENCY SELECTION MODAL --- */}
+      <CurrencySelectionModal
+        visible={isCurrencyModalVisible}
+        currentCurrency={currentCurrency}
+        onClose={() => setIsCurrencyModalVisible(false)}
+        onSelect={handleCurrencySelect}
       />
 
     </ThemedView>
