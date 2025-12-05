@@ -145,6 +145,10 @@ export default function EmailLoginScreen() {
                                     value={email}
                                     onChangeText={setEmail}
                                     autoCapitalize="none"
+                                    autoCorrect={false}
+                                    textContentType="oneTimeCode"
+                                    autoComplete="off"
+                                    importantForAutofill="no"
                                     keyboardType="email-address"
                                 />
                             </View>
@@ -161,6 +165,9 @@ export default function EmailLoginScreen() {
                                     value={password}
                                     onChangeText={setPassword}
                                     secureTextEntry
+                                    textContentType="oneTimeCode"
+                                    autoComplete="off"
+                                    importantForAutofill="no"
                                 />
                             </View>
 
