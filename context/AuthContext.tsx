@@ -4,6 +4,7 @@ import {
     sendPasswordResetEmail,
     signInWithEmailAndPassword,
     signOut,
+    updateProfile,
     User
 } from 'firebase/auth';
 import React, { createContext, useContext, useEffect, useState } from 'react';
@@ -16,7 +17,7 @@ interface AuthContextType {
     user: User | null;
     loading: boolean;
     signIn: (e: string, p: string) => Promise<void>;
-    signUp: (e: string, p: string) => Promise<void>;
+    signUp: (e: string, p: string, name?: string) => Promise<void>;
     signInWithGoogle: (() => Promise<void>) | null; // Make it nullable
     logout: () => Promise<void>;
     sendPasswordReset: (email: string) => Promise<void>;
@@ -55,8 +56,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         await signInWithEmailAndPassword(auth, email, pass);
     };
 
-    const signUp = async (email: string, pass: string) => {
-        await createUserWithEmailAndPassword(auth, email, pass);
+    const signUp = async (email: string, pass: string, displayName?: string) => {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+
+        if (displayName) {
+            // Immediately update the profile with the display name
+            await updateProfile(userCredential.user, { displayName });
+
+            // Optional: Force update local user state if needed immediately, 
+            // though onAuthStateChanged handles the session.
+            setUser({ ...userCredential.user, displayName });
+        }
     };
 
     // 4. Disable Google Sign In for now (Expo Go safe)
