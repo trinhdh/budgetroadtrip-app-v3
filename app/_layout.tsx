@@ -26,6 +26,7 @@ function RootLayoutNav() {
 
   const [isOnboardingChecked, setIsOnboardingChecked] = useState(false);
   const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
+  const [isAppReady, setIsAppReady] = useState(false); // Track if we've handled the initial load
 
   const [fontsLoaded] = useFonts({
     Rubik_400Regular,
@@ -59,21 +60,28 @@ function RootLayoutNav() {
 
   const ready = fontsLoaded && !authLoading && isOnboardingChecked;
 
+  // 1. HIDE SPLASH SCREEN (Run only when ready changes)
   useEffect(() => {
-    if (!ready) return;
+    if (ready && !isAppReady) {
+      SplashScreen.hideAsync().catch(() => {
+        // Ignore error if it's already hidden
+      });
+      setIsAppReady(true);
+    }
+  }, [ready, isAppReady]);
 
-    const initApp = async () => {
-      try {
-        await SplashScreen.hideAsync();
-      } catch { }
+  // 2. NAVIGATION (Run whenever auth state or readiness changes)
+  useEffect(() => {
+    if (!isAppReady) return;
 
-      if (!user) return router.replace('/login');
-      if (hasOnboarded === false) return router.replace('/onboarding');
-      return router.replace('/(tabs)');
-    };
-
-    initApp();
-  }, [ready, user, hasOnboarded]);
+    if (!user) {
+      router.replace('/login');
+    } else if (hasOnboarded === false) {
+      router.replace('/onboarding');
+    } else {
+      router.replace('/(tabs)');
+    }
+  }, [isAppReady, user, hasOnboarded]);
 
   if (!ready) return null;
 
