@@ -1,3 +1,4 @@
+import * as Application from 'expo-application';
 import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
@@ -93,7 +94,8 @@ export default function MoreScreen() {
 
   // --- NEW STATE FOR CURRENCY MODAL ---
   const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
-
+  const appVersion = Application.nativeApplicationVersion ?? '1.0.0';
+  const buildNumber = Application.nativeBuildVersion ?? '1';
   // --- HANDLERS FOR NEW SETTINGS ---
   const handleCurrencySelect = (newCurrency: string) => {
     setCurrentCurrency(newCurrency);
@@ -289,7 +291,12 @@ export default function MoreScreen() {
           </View>
         </View>
 
-        <ThemedText style={styles.versionText}>Version 1.0.0 (Build 45)</ThemedText>
+        <ThemedText style={styles.versionText}>
+          Version {appVersion} (Build {buildNumber})
+        </ThemedText>
+        <ThemedText style={[styles.versionText, { marginTop: 4, fontSize: 12 }]}>
+          Made with love by D ❤️ R ❤️ I
+        </ThemedText>
         <View style={{ height: 40 }} />
 
       </ScrollView>
