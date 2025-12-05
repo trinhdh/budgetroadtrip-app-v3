@@ -12,10 +12,9 @@ function createMapping<T extends Record<string, ComponentProps<typeof MaterialIc
 
 /**
  * Add your SF Symbols to Material Icons mappings here.
- * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
- * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
  */
 const MAPPING = createMapping({
+  // --- Navigation & Actions ---
   'house.fill': 'home',
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
@@ -23,46 +22,48 @@ const MAPPING = createMapping({
   'chevron.left': 'chevron-left',
   'plus': 'add',
   'minus': 'remove',
+  'xmark': 'close',               // ADDED: Close button
+  'list.bullet': 'list',
+  'line.3.horizontal': 'menu',
+  'ellipsis.circle.fill': 'more-horiz',
+  'square.and.arrow.up': 'share', // ADDED: Share icon
+  'minus.circle.fill': 'remove-circle',
+  'checkmark.circle.fill': 'check-circle',
+
+  // --- Objects & Concepts ---
   'calendar': 'calendar-today',
   'car': 'directions-car',
   'speedometer': 'speed',
   'dollarsign': 'attach-money',
   'leaf': 'eco',
-  'list.bullet': 'list',
   'wand.and.stars': 'auto-awesome',
   'person.2.fill': 'people',
+  'person.crop.circle': 'account-circle',
   'pencil': 'edit',
-  'bed.double.fill': 'hotel',        // For Hotel
-  'fork.knife': 'restaurant',        // For Food
-  'mappin.circle.fill': 'pin-drop',  // For Locations
-  'clock.fill': 'access-time',       // For Time
+  'bed.double.fill': 'hotel',
+  'fork.knife': 'restaurant',
+  'mappin.circle.fill': 'pin-drop',
+  'map.fill': 'map',             // ADDED: Map toggle
+  'clock.fill': 'access-time',
   'star.fill': 'star',
-  'line.3.horizontal': 'menu',
   'google': 'group',
-
+  'camera': 'camera-alt',
+  'camera.viewfinder': 'center-focus-weak', // ADDED: Scan icon
   'gear': 'settings',
   'bell.fill': 'notifications',
   'paintbrush.fill': 'palette',
   'envelope.fill': 'mail',
   'doc.text.fill': 'description',
+  'doc.text': 'description',      // ADDED: Single doc
   'trash.fill': 'delete',
-  'arrow.right.rectangle': 'logout', // SF Symbol for logout
-  'person.crop.circle': 'account-circle',
+  'arrow.right.rectangle': 'logout',
   'lock.fill': 'lock',
-  'ellipsis.circle.fill': 'more-horiz',
-  'camera': 'camera',
-  'checkmark.circle.fill': 'check',
-  'square.and.arrow.up': 'share',
-  'minus.circle.fill': 'remove'
+  'exclamationmark.triangle.fill': 'warning', // ADDED: Warning/Budget alert
+  'circle.grid.2x2.fill': 'grid-view',        // ADDED: Category/Other icon
 });
 
 export type IconSymbolName = keyof typeof MAPPING;
 
-/**
- * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.
- * This ensures a consistent look across platforms, and optimal resource usage.
- * Icon `name`s are based on SF Symbols and require manual mapping to Material Icons.
- */
 export function IconSymbol({
   name,
   size = 24,

@@ -458,7 +458,7 @@ export default function TripDetailsScreen() {
                 <AddExpenseModal visible={addExpenseVisible} onClose={() => setAddExpenseVisible(false)} itineraryDays={TRIP.itinerary} onSave={handleSaveExpense} />
                 <AllExpensesModal visible={viewAllExpensesVisible} onClose={() => setViewAllExpensesVisible(false)} expenses={expenses} onSelectExpense={setSelectedExpense} onDeleteExpense={handleDeleteExpense} />
                 <ExpenseDetailModal visible={!!selectedExpense} onClose={() => setSelectedExpense(null)} expense={selectedExpense} />
-                <BottomSheetModal visible={paramsModalVisible} onClose={() => setParamsModalVisible(false)} title="Trip Parameters" height="50%">
+                <BottomSheetModal isVisible={paramsModalVisible} onClose={() => setParamsModalVisible(false)} title="Trip Parameters" height="50%">
                     <ThemedText style={styles.modalSubtitle}>This is the data you submitted to generate this plan.</ThemedText>
                     <View style={styles.paramRow}>
                         <ThemedText style={styles.paramLabel}>Budget</ThemedText>
