@@ -30,7 +30,6 @@ const MOCK_TRIPS = [
     destination: 'New York City',
     startDate: 'Dec 01',
     endDate: 'Dec 05',
-    status: 'Upcoming',
     budget: 1500,
     image: 'https://images.unsplash.com/photo-1496442226666-8d4a0e62e6e9?q=80&w=1000&auto=format&fit=crop',
   },
@@ -40,7 +39,6 @@ const MOCK_TRIPS = [
     destination: 'Tokyo, Japan',
     startDate: 'Jan 10',
     endDate: 'Jan 24',
-    status: 'Planning',
     budget: 3500,
     image: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?q=80&w=1000&auto=format&fit=crop',
   },
@@ -50,7 +48,6 @@ const MOCK_TRIPS = [
     destination: 'Las Vegas, NV',
     startDate: 'Feb 14',
     endDate: 'Feb 16',
-    status: 'Confirmed',
     budget: 800,
     image: 'https://images.unsplash.com/photo-1605833556294-ea5c7a74f57d?q=80&w=1000&auto=format&fit=crop',
   },
@@ -164,8 +161,7 @@ export default function HomeScreen() {
 
                   {/* Top Row: Status & Budget */}
                   <View style={styles.cardTopRow}>
-                    <View style={[styles.statusBadge, { backgroundColor: colors.tint }]}>
-                      <ThemedText style={styles.statusText}>{trip.status}</ThemedText>
+                    <View>
                     </View>
                     <View style={styles.budgetBadge}>
                       <ThemedText style={styles.budgetText}>${trip.budget}</ThemedText>
