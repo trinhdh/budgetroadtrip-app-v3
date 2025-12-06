@@ -24,23 +24,28 @@ import StepFour from '@/components/create-trip/step-four';
 import StepOne from '@/components/create-trip/step-one';
 import StepThree from '@/components/create-trip/step-three';
 import StepTwo from '@/components/create-trip/step-two';
-// 1. Import the new modal
 import { ProcessingModal } from '@/components/ui/processing-modal';
+
+// --- NEW IMPORTS ---
+import { useAuth } from '@/context/AuthContext';
+import { AiPlannerService } from '@/services/ai-planner';
+import { TripService } from '@/services/trip-service';
 
 export default function CreateTripScreen() {
     const router = useRouter();
+    const { user } = useAuth(); // Get current user
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
     const headerHeight = useHeaderHeight();
+
     const [step, setStep] = useState(1);
     const totalSteps = 5;
-    // 2. Add loading state
     const [isLoading, setIsLoading] = useState(false);
 
     const [form, setForm] = useState({
         origin: '',
         destination: '',
-        startDate: null,
+        startDate: null as Date | null,
         duration: 5,
         isRoundTrip: false,
         adults: 1,
@@ -52,7 +57,7 @@ export default function CreateTripScreen() {
     });
 
     const handleNext = () => {
-        // --- Validation Logic (Same as before) ---
+        // --- Validation Logic ---
         if (step === 1) {
             if (!form.origin || !form.destination) {
                 Alert.alert('Incomplete', 'Please select both origin and destination.');
@@ -74,23 +79,68 @@ export default function CreateTripScreen() {
         if (step < totalSteps) {
             setStep(step + 1);
         } else {
-            // 3. Trigger Loading instead of immediate submit
-            startTripGeneration();
+            // Trigger AI Generation
+            handleGenerateTrip();
         }
     };
 
-    const startTripGeneration = () => {
+    const handleGenerateTrip = async () => {
+        if (!user) {
+            Alert.alert("Error", "You must be logged in to create a trip.");
+            return;
+        }
+
         setIsLoading(true);
 
-        // 4. Simulate API Call (5 Seconds)
-        setTimeout(() => {
-            console.log('Final Trip Data:', form);
-            // Here you would normally receive the AI response
+        try {
+            // 1. Generate Plan via AI
+            const aiPlan = await AiPlannerService.generateTripPlan({
+                origin: form.origin,
+                destination: form.destination,
+                duration: form.duration,
+                budget: form.budget,
+                travelers: { adults: form.adults, children: form.children },
+                carName: form.carName
+            });
 
+            // 2. Combine Form Data + AI Data
+            const finalTripData = {
+                // User Inputs
+                origin: form.origin,
+                destination: form.destination,
+                startDate: form.startDate ? form.startDate.toISOString() : null,
+                duration: form.duration,
+                travelers: { adults: form.adults, children: form.children },
+                vehicle: { name: form.carName, mpg: form.mpg, gasPrice: form.gasPrice },
+                totalBudget: form.budget,
+
+                // AI Outputs (Spread them to merge)
+                title: aiPlan.tripName,
+                estimatedCost: aiPlan.estimatedCost,
+                budgetBreakdown: aiPlan.budgetBreakdown,
+                itinerary: aiPlan.itinerary,
+
+                // Defaults
+                spent: 0,
+            };
+
+            // 3. Save to Firestore
+            const tripId = await TripService.saveTrip(user.uid, finalTripData);
+
+            // 4. Success & Navigate
             setIsLoading(false);
-            // Navigate to your result page or back home
-            router.replace('/(tabs)');
-        }, 5000);
+
+            // Navigate to the newly created trip details page
+            router.replace({
+                pathname: '/trip-details/[id]',
+                params: { id: tripId }
+            });
+
+        } catch (error: any) {
+            setIsLoading(false);
+            Alert.alert("Generation Failed", "Could not create trip plan. Please try again.");
+            console.error(error);
+        }
     };
 
     const handleBack = () => {
@@ -103,7 +153,6 @@ export default function CreateTripScreen() {
 
     return (
         <ThemedView style={styles.container}>
-            {/* 5. Add the Modal Component */}
             <ProcessingModal visible={isLoading} />
 
             {/* Header */}
@@ -149,7 +198,7 @@ export default function CreateTripScreen() {
                 <TouchableOpacity
                     style={[styles.button, { backgroundColor: colors.tint }]}
                     onPress={handleNext}
-                    disabled={isLoading} // Disable button while loading
+                    disabled={isLoading}
                 >
                     <ThemedText style={styles.buttonText}>
                         {step === totalSteps ? 'Create Trip' : 'Next'}
