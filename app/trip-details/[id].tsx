@@ -29,6 +29,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 // --- Modals (New Paths) ---
 import { AddExpenseModal } from '@/components/ui/add-expense-modal';
 import { AllExpensesModal } from '@/components/ui/all-expense-modal';
+import { BalancesModal } from '@/components/ui/balances-modal';
 import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { ExpenseDetailModal } from '@/components/ui/expense-detail-modal';
 import { SwipeableExpenseRow } from '@/components/ui/swipeable-expense-row'; // Import Row
@@ -37,6 +38,11 @@ const { width, height } = Dimensions.get('window');
 const PARALLAX_HEADER_HEIGHT = 400;
 
 // --- MOCK DATA ---
+const TRIP_MEMBERS = [
+    { id: 'u1', name: 'You', avatar: 'https://ui-avatars.com/api/?name=You&background=333&color=fff', email: 'you@example.com' },
+    { id: 'u2', name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff', email: 'alex@example.com' },
+    { id: 'u3', name: 'Sam', avatar: 'https://ui-avatars.com/api/?name=Sam&background=2EC4B6&color=fff', email: 'sam@example.com' },
+];
 const TRIP = {
     id: '1',
     destination: 'New York City',
@@ -91,11 +97,15 @@ const INITIAL_EXPENSES = [
     {
         id: '101', title: 'Shell Gas Station', amount: 45.50, date: 'Dec 01', category: 'Fuel', hasReceipt: true, day: 1,
         addedBy: { name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff' },
-        receiptImage: 'https://templates.invoicehome.com/receipt-template-us-neat-750px.png'
+        receiptImage: 'https://templates.invoicehome.com/receipt-template-us-neat-750px.png',
+        paidBy: 'u1', // You paid
+        splitBy: ['u1', 'u2', 'u3'], // Split equally among all
     },
     {
         id: '102', title: 'Starbucks Coffee', amount: 12.25, date: 'Dec 02', category: 'Food', hasReceipt: false, day: 2,
-        addedBy: { name: 'Sam', avatar: 'https://ui-avatars.com/api/?name=Sam&background=2EC4B6&color=fff' }
+        addedBy: { name: 'Sam', avatar: 'https://ui-avatars.com/api/?name=Sam&background=2EC4B6&color=fff' },
+        paidBy: 'u2', // Alex paid
+        splitBy: ['u1', 'u2'], // Only You and Alex ate
     },
     {
         id: '103', title: 'Museum Ticket', amount: 25.00, date: 'Dec 02', category: 'Activities', hasReceipt: true, day: 2,
@@ -111,7 +121,15 @@ export default function TripDetailsScreen() {
 
     // --- STATE ---
     const [expenses, setExpenses] = useState(INITIAL_EXPENSES);
+    const [balancesVisible, setBalancesVisible] = useState(false);
 
+    const debts = [
+        {
+            from: { id: 'u2', name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff' },
+            to: { id: 'u1', name: 'You', avatar: 'https://ui-avatars.com/api/?name=You&background=333&color=fff' },
+            amount: 35.50
+        }
+    ];
     // Calculate Total Spent
     const totalSpent = useMemo(() => {
         return expenses.reduce((sum, item) => sum + (typeof item.amount === 'string' ? parseFloat(item.amount) : item.amount), 0);
@@ -153,6 +171,31 @@ export default function TripDetailsScreen() {
     const handleDeleteExpense = (expenseId: string) => {
         setExpenses(prev => prev.filter(ex => ex.id !== expenseId));
         // Optional: Alert.alert("Deleted", "The expense has been removed.");
+    };
+
+    const handleSettleDebt = (debt: any) => {
+        const newExpense = {
+            id: Math.random().toString(),
+            title: 'Settlement',
+            category: 'Other',
+            date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
+            amount: debt.amount,
+            paidBy: debt.from.id,
+            splitBy: [debt.to.id],
+            addedBy: { name: 'System', avatar: '' },
+            isSettlement: true,
+
+            // --- ADD THESE LINES TO FIX THE TYPE ERROR ---
+            hasReceipt: false,
+            day: 0, // Or whatever default number you prefer
+            receiptImage: undefined
+        };
+        // Add to expenses list (this will trigger recalculation of debts)
+        setExpenses(prev => [newExpense, ...prev]);
+
+        // Optional: Close modal or show success message
+        // setBalancesVisible(false); 
+        Alert.alert("Success", `Payment recorded!`);
     };
 
     // --- MAP & SCROLL LOGIC ---
@@ -391,9 +434,14 @@ export default function TripDetailsScreen() {
                         <View style={styles.section}>
                             <View style={styles.sectionHeaderRow}>
                                 <ThemedText type="subtitle" style={styles.sectionTitle}>Recent Expenses</ThemedText>
-                                <TouchableOpacity onPress={() => setViewAllExpensesVisible(true)}>
-                                    <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>View All</ThemedText>
-                                </TouchableOpacity>
+                                <View style={{ flexDirection: 'row', gap: 15 }}>
+                                    <TouchableOpacity onPress={() => setBalancesVisible(true)}>
+                                        <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>Settle Up</ThemedText>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => setViewAllExpensesVisible(true)}>
+                                        <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>View All</ThemedText>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
 
                             {(isOverBudget || isNearBudget) && (
@@ -455,6 +503,13 @@ export default function TripDetailsScreen() {
                 </Animated.ScrollView>
 
                 {/* --- MODALS --- */}
+                <BalancesModal
+                    visible={balancesVisible}
+                    onClose={() => setBalancesVisible(false)}
+                    debts={debts}
+                    currentUser="u1" // The ID representing 'You'
+                    onSettle={handleSettleDebt} // <--- Pass function here
+                />
                 <AddExpenseModal visible={addExpenseVisible} onClose={() => setAddExpenseVisible(false)} itineraryDays={TRIP.itinerary} onSave={handleSaveExpense} />
                 <AllExpensesModal visible={viewAllExpensesVisible} onClose={() => setViewAllExpensesVisible(false)} expenses={expenses} onSelectExpense={setSelectedExpense} onDeleteExpense={handleDeleteExpense} />
                 <ExpenseDetailModal visible={!!selectedExpense} onClose={() => setSelectedExpense(null)} expense={selectedExpense} />
