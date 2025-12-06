@@ -10,8 +10,8 @@ import { VehicleSelector } from './vehicle-selector';
 type Props = {
     form: {
         carName: string;
-        mpg: string;
-        gasPrice: string;
+        mpg: string;      // Changed from number to string
+        gasPrice: string; // Changed from number to string
     };
     setForm: (data: any) => void;
 };
@@ -20,13 +20,11 @@ export default function StepFour({ form, setForm }: Props) {
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
 
-
-
     const handleVehicleSelect = (mpg: string, label: string) => {
         setForm({
             ...form,
             mpg: mpg,
-            carName: label // Auto-name it "Sedan" or "SUV"
+            carName: label
         });
     };
 

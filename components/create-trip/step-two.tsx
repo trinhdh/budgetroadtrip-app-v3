@@ -29,8 +29,7 @@ export default function StepTwo({ form, setForm }: Props) {
     const [showDatePicker, setShowDatePicker] = useState(false);
 
     // Helper to parse duration safely
-    const currentDuration = form.duration || 1;
-
+    const currentDuration = Number(form.duration) || 1;
     const handleDateChange = (event: any, selectedDate?: Date) => {
         if (Platform.OS === 'android') {
             setShowDatePicker(false);
@@ -42,8 +41,9 @@ export default function StepTwo({ form, setForm }: Props) {
 
     const updateDuration = (increment: boolean) => {
         const newValue = increment ? currentDuration + 1 : currentDuration - 1;
-        if (newValue < 1) return; // Prevent 0 or negative days
-        setForm({ ...form, duration: newValue.toString() });
+        if (newValue < 1) return;
+
+        setForm({ ...form, duration: newValue });
     };
 
     const toggleRoundTrip = (value: boolean) => {

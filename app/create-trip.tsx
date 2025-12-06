@@ -26,14 +26,13 @@ import StepThree from '@/components/create-trip/step-three';
 import StepTwo from '@/components/create-trip/step-two';
 import { ProcessingModal } from '@/components/ui/processing-modal';
 
-// --- NEW IMPORTS ---
 import { useAuth } from '@/context/AuthContext';
 import { AiPlannerService } from '@/services/ai-planner';
 import { TripService } from '@/services/trip-service';
 
 export default function CreateTripScreen() {
     const router = useRouter();
-    const { user } = useAuth(); // Get current user
+    const { user } = useAuth();
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
     const headerHeight = useHeaderHeight();
@@ -42,6 +41,7 @@ export default function CreateTripScreen() {
     const totalSteps = 5;
     const [isLoading, setIsLoading] = useState(false);
 
+    // 1. FIX: Initialize 'mpg' and 'gasPrice' as strings to match TextInput requirements in StepFour
     const [form, setForm] = useState({
         origin: '',
         destination: '',
@@ -51,8 +51,8 @@ export default function CreateTripScreen() {
         adults: 1,
         children: 0,
         carName: '',
-        mpg: '',
-        gasPrice: '3.20',
+        mpg: '',        // Changed from 0 to ''
+        gasPrice: '',   // Changed from 2.90 to '' (User can rely on placeholder)
         budget: 1000,
     });
 
@@ -69,8 +69,9 @@ export default function CreateTripScreen() {
                 return;
             }
         } else if (step === 4) {
+            // 2. FIX: Check for empty strings now
             if (!form.mpg || !form.gasPrice) {
-                Alert.alert('Incomplete', 'Please select a vehicle or enter MPG.');
+                Alert.alert('Incomplete', 'Please select a vehicle or enter MPG/Gas Price.');
                 return;
             }
         }
@@ -79,7 +80,6 @@ export default function CreateTripScreen() {
         if (step < totalSteps) {
             setStep(step + 1);
         } else {
-            // Trigger AI Generation
             handleGenerateTrip();
         }
     };
@@ -100,7 +100,9 @@ export default function CreateTripScreen() {
                 duration: form.duration,
                 budget: form.budget,
                 travelers: { adults: form.adults, children: form.children },
-                carName: form.carName
+                carName: form.carName,
+                mpg: form.mpg,
+                gasPrice: form.gasPrice
             });
 
             // 2. Combine Form Data + AI Data
@@ -111,10 +113,13 @@ export default function CreateTripScreen() {
                 startDate: form.startDate ? form.startDate.toISOString() : null,
                 duration: form.duration,
                 travelers: { adults: form.adults, children: form.children },
+                // TripService handles converting strings to numbers for us
                 vehicle: { name: form.carName, mpg: form.mpg, gasPrice: form.gasPrice },
-                totalBudget: form.budget,
 
-                // AI Outputs (Spread them to merge)
+                // 3. FIX: Ensure this key matches 'TripData' type (budget, not totalBudget)
+                budget: form.budget,
+
+                // AI Outputs
                 title: aiPlan.tripName,
                 estimatedCost: aiPlan.estimatedCost,
                 budgetBreakdown: aiPlan.budgetBreakdown,
@@ -130,7 +135,6 @@ export default function CreateTripScreen() {
             // 4. Success & Navigate
             setIsLoading(false);
 
-            // Navigate to the newly created trip details page
             router.replace({
                 pathname: '/trip-details/[id]',
                 params: { id: tripId }

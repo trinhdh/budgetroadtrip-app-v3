@@ -1,23 +1,23 @@
-// --- Type Definitions ---
+// --- Shared Geography & Timeline Types ---
 
 export type GeoPoint = {
     latitude: number;
     longitude: number;
 };
 
+export type CategoryType = 'fuel' | 'hotel' | 'food' | 'activities' | 'other';
+
 export type BudgetCategory = {
-    category: string;
+    category: CategoryType;
     amount: number;
-    icon: string;
-    color: string;
 };
 
 export type TimelineItem = {
-    time: string;
+    order: number;
     title: string;
     desc: string;
     address: string;
-    type: 'activity' | 'food' | 'hotel' | 'other';
+    type: CategoryType;
     price: number;
     coordinates: GeoPoint;
 };
@@ -40,4 +40,55 @@ export type ItineraryDay = {
     hotelRecommendations?: Recommendation[];
     foodRecommendations?: Recommendation[];
     activityRecommendations?: Recommendation[];
+};
+
+// --- AI Service Types ---
+
+export type AiTripInput = {
+    origin: string;
+    destination: string;
+    duration: number;
+    budget: number;
+    travelers: {
+        adults: number;
+        children: number;
+    };
+    carName: string;
+    mpg: string | number;
+    gasPrice: string | number;
+};
+
+export type AiTripResponse = {
+    tripName: string;
+    estimatedCost: number;
+    budgetBreakdown: BudgetCategory[];
+    itinerary: ItineraryDay[];
+};
+
+// --- Firestore Data Types ---
+
+export type TripPayload = {
+    userId: string;
+    origin: string;
+    destination: string;
+    startDate: Date | string | null;
+    endDate?: Date | string | null;
+    duration: number;
+
+    travelers: { adults: number; children: number };
+    budget: number;
+
+    vehicle: { name: string; mpg: number; gasPrice: number };
+
+    title: string;
+    estimatedCost: number;
+    budgetBreakdown: BudgetCategory[];
+    itinerary: ItineraryDay[];
+
+    spent: number;
+    createdAt: any;
+};
+
+export type Trip = TripPayload & {
+    id: string;
 };
