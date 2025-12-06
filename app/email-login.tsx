@@ -57,8 +57,8 @@ export default function EmailLoginScreen() {
         // Validate Password
         if (!password) {
             newErrors.password = "Password is required.";
-        } else if (isSignUp && password.length < 6) {
-            newErrors.password = "Password must be at least 6 characters.";
+        } else if (isSignUp && password.length <= 6) { // <--- CHANGED: strictly > 6 characters
+            newErrors.password = "Password must be more than 6 characters.";
         }
 
         // Validate Display Name (Sign Up only)
@@ -86,6 +86,10 @@ export default function EmailLoginScreen() {
             if (error.code === 'auth/email-already-in-use') msg = 'Email already in use.';
             if (error.code === 'auth/user-not-found') msg = 'No account found with this email.';
             if (error.code === 'auth/invalid-email') msg = 'The email address is badly formatted.';
+            // Firebase might throw if password is < 6, but we catch it client-side above.
+            // If they use a weak password (like "password"), Firebase might still object.
+            if (error.code === 'auth/weak-password') msg = 'Password is too weak.';
+
             Alert.alert("Authentication Failed", msg);
             setLoading(false);
         }
