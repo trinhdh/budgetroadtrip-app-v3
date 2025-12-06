@@ -8,17 +8,17 @@ import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react'; // Added useEffect
+import React, { useEffect, useState } from 'react';
 
 import {
     ActivityIndicator,
     Alert,
     Dimensions,
+    Platform, // Ensure Platform is imported
     StyleSheet,
     TouchableOpacity,
     View
 } from 'react-native';
-// 1. Import Animation Tools
 import Animated, {
     Easing,
     useAnimatedStyle,
@@ -30,7 +30,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height } = Dimensions.get('window');
 
-// 2. Create an Animated version of the Expo Image
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 export default function LoginScreen() {
@@ -42,19 +41,16 @@ export default function LoginScreen() {
 
     const [loading, setLoading] = useState(false);
 
-    // 3. Setup Animation Value
+    // Animation Logic
     const scale = useSharedValue(1);
-
-    // 4. Start the "Breathing" Zoom Loop
     useEffect(() => {
         scale.value = withRepeat(
-            withTiming(1.15, { duration: 10000, easing: Easing.inOut(Easing.ease) }), // Zoom to 1.15x over 10s
-            -1,   // Infinite repeat
-            true  // Reverse (Zoom back out)
+            withTiming(1.15, { duration: 10000, easing: Easing.inOut(Easing.ease) }),
+            -1,
+            true
         );
     }, []);
 
-    // 5. Create the Style
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [{ scale: scale.value }],
     }));
@@ -76,12 +72,16 @@ export default function LoginScreen() {
         }
     };
 
+    const handleAppleAuth = () => {
+        // Placeholder for Apple Auth Logic
+        Alert.alert("Apple Sign-In", "Apple Authentication logic goes here.");
+    };
+
     return (
         <View style={styles.container}>
 
-            {/* --- 1. HERO SECTION (2/3 Height) --- */}
+            {/* --- HERO SECTION --- */}
             <View style={styles.heroSection}>
-                {/* 6. Use AnimatedImage with the new style */}
                 <AnimatedImage
                     source={require('@/assets/images/empty3.jpg')}
                     style={[styles.heroImage, animatedStyle]}
@@ -100,11 +100,23 @@ export default function LoginScreen() {
                 </View>
             </View>
 
-            {/* --- 2. BOTTOM ACTION SECTION (1/3 Height) --- */}
+            {/* --- BOTTOM ACTION SECTION --- */}
             <ThemedView style={[styles.bottomSection, { paddingBottom: insets.bottom + 20 }]}>
 
                 <View style={styles.buttonGroup}>
-                    {/* Google Button */}
+                    {/* 1. Apple Button (iOS Only) */}
+                    {Platform.OS === 'ios' && (
+                        <TouchableOpacity
+                            style={[styles.socialButton, { borderColor: colors.icon + '40' }]}
+                            onPress={handleAppleAuth}
+                            disabled={loading}
+                        >
+                            <FontAwesome5 name="apple" size={22} color={colors.text} style={{ marginBottom: 2 }} />
+                            <ThemedText style={styles.socialText}>Continue with Apple</ThemedText>
+                        </TouchableOpacity>
+                    )}
+
+                    {/* 2. Google Button */}
                     <TouchableOpacity
                         style={[styles.socialButton, { borderColor: colors.icon + '40' }]}
                         onPress={handleGoogleAuth}
@@ -118,7 +130,7 @@ export default function LoginScreen() {
                         <ThemedText style={styles.socialText}>Continue with Google</ThemedText>
                     </TouchableOpacity>
 
-                    {/* Email Button */}
+                    {/* 3. Email Button */}
                     <TouchableOpacity
                         style={[
                             styles.socialButton,
@@ -160,11 +172,11 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#000' },
 
     heroSection: {
-        height: height * 0.65,
+        height: height * 0.60, // Slightly reduced to fit 3 buttons comfortably
         width: '100%',
         position: 'relative',
         justifyContent: 'flex-end',
-        overflow: 'hidden', // <--- 7. IMPORTANT: Keeps the zoomed image inside bounds
+        overflow: 'hidden',
     },
     heroImage: { ...StyleSheet.absoluteFillObject },
     heroGradient: { ...StyleSheet.absoluteFillObject, top: '30%' },
@@ -197,7 +209,7 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 32,
         marginTop: -30,
         paddingHorizontal: 24,
-        paddingTop: 40,
+        paddingTop: 32, // Adjusted padding
         justifyContent: 'space-between',
         shadowColor: "#000",
         shadowOffset: { width: 0, height: -3 },
@@ -206,7 +218,7 @@ const styles = StyleSheet.create({
         elevation: 10,
     },
     buttonGroup: {
-        gap: 16,
+        gap: 12, // Reduced gap slightly to fit more buttons
     },
     socialButton: {
         flexDirection: 'row',

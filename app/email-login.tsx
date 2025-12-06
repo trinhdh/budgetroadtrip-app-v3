@@ -35,14 +35,39 @@ export default function EmailLoginScreen() {
     const [displayName, setDisplayName] = useState('');
     const [loading, setLoading] = useState(false);
 
+    // State for validation errors
+    const [errors, setErrors] = useState<{ email?: string; password?: string; displayName?: string }>({});
+
+    // --- HELPER: Email Validation Regex ---
+    const isValidEmail = (email: string) => {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    };
+
     const handleEmailAuth = async () => {
-        if (!email || !password) {
-            Alert.alert("Missing Info", "Please enter both email and password.");
-            return;
+        // Reset errors
+        const newErrors: typeof errors = {};
+
+        // Validate Email
+        if (!email.trim()) {
+            newErrors.email = "Email is required.";
+        } else if (!isValidEmail(email)) {
+            newErrors.email = "Please enter a valid email address.";
         }
 
+        // Validate Password
+        if (!password) {
+            newErrors.password = "Password is required.";
+        } else if (isSignUp && password.length < 6) {
+            newErrors.password = "Password must be at least 6 characters.";
+        }
+
+        // Validate Display Name (Sign Up only)
         if (isSignUp && !displayName.trim()) {
-            Alert.alert("Missing Info", "Please enter a display name.");
+            newErrors.displayName = "Display Name is required.";
+        }
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
             return;
         }
 
@@ -60,16 +85,27 @@ export default function EmailLoginScreen() {
             if (error.code === 'auth/invalid-credential') msg = 'Invalid email or password.';
             if (error.code === 'auth/email-already-in-use') msg = 'Email already in use.';
             if (error.code === 'auth/user-not-found') msg = 'No account found with this email.';
+            if (error.code === 'auth/invalid-email') msg = 'The email address is badly formatted.';
             Alert.alert("Authentication Failed", msg);
             setLoading(false);
         }
     };
 
     const handleForgotPassword = async () => {
+        // 1. Clear password field and errors to show it's not needed
+        setPassword('');
+        setErrors(prev => ({ ...prev, password: undefined }));
+
         if (!email) {
-            Alert.alert("Missing Email", "Please enter your email address in the field above.");
+            setErrors(prev => ({ ...prev, email: "Please enter your email above to reset password." }));
             return;
         }
+
+        if (!isValidEmail(email)) {
+            setErrors(prev => ({ ...prev, email: "Please enter a valid email address." }));
+            return;
+        }
+
         Alert.alert(
             "Reset Password",
             `Send reset link to ${email}?`,
@@ -80,7 +116,8 @@ export default function EmailLoginScreen() {
                     onPress: async () => {
                         try {
                             await sendPasswordReset(email);
-                            Alert.alert("Sent", "Check your email for the reset link.");
+                            // 2. Updated message to include Spam folder check
+                            Alert.alert("Sent", "Check your email (and Spam folder) for the reset link.");
                         } catch (e: any) {
                             Alert.alert("Error", e.message);
                         }
@@ -121,15 +158,21 @@ export default function EmailLoginScreen() {
                                     <ThemedText style={styles.label}>Display Name</ThemedText>
                                     <TextInput
                                         style={[styles.input, {
-                                            borderColor: colors.icon + '40',
+                                            borderColor: errors.displayName ? '#ff4444' : colors.icon + '40',
                                             color: colors.text
                                         }]}
                                         placeholder="John Doe"
                                         placeholderTextColor="#999"
                                         value={displayName}
-                                        onChangeText={setDisplayName}
+                                        onChangeText={(text) => {
+                                            setDisplayName(text);
+                                            if (errors.displayName) setErrors(prev => ({ ...prev, displayName: undefined }));
+                                        }}
                                         autoCapitalize="words"
                                     />
+                                    {errors.displayName && (
+                                        <ThemedText style={styles.errorText}>{errors.displayName}</ThemedText>
+                                    )}
                                 </View>
                             )}
 
@@ -137,13 +180,17 @@ export default function EmailLoginScreen() {
                                 <ThemedText style={styles.label}>Email</ThemedText>
                                 <TextInput
                                     style={[styles.input, {
-                                        borderColor: colors.icon + '40',
+                                        borderColor: errors.email ? '#ff4444' : colors.icon + '40',
                                         color: colors.text
                                     }]}
                                     placeholder="hello@example.com"
                                     placeholderTextColor="#999"
                                     value={email}
-                                    onChangeText={setEmail}
+                                    onChangeText={(text) => {
+                                        setEmail(text);
+                                        // Clear error as user types
+                                        if (errors.email) setErrors(prev => ({ ...prev, email: undefined }));
+                                    }}
                                     autoCapitalize="none"
                                     autoCorrect={false}
                                     textContentType="oneTimeCode"
@@ -151,24 +198,33 @@ export default function EmailLoginScreen() {
                                     importantForAutofill="no"
                                     keyboardType="email-address"
                                 />
+                                {errors.email && (
+                                    <ThemedText style={styles.errorText}>{errors.email}</ThemedText>
+                                )}
                             </View>
 
                             <View style={styles.inputGroup}>
                                 <ThemedText style={styles.label}>Password</ThemedText>
                                 <TextInput
                                     style={[styles.input, {
-                                        borderColor: colors.icon + '40',
+                                        borderColor: errors.password ? '#ff4444' : colors.icon + '40',
                                         color: colors.text
                                     }]}
                                     placeholder="••••••••"
                                     placeholderTextColor="#999"
                                     value={password}
-                                    onChangeText={setPassword}
+                                    onChangeText={(text) => {
+                                        setPassword(text);
+                                        if (errors.password) setErrors(prev => ({ ...prev, password: undefined }));
+                                    }}
                                     secureTextEntry
                                     textContentType="oneTimeCode"
                                     autoComplete="off"
                                     importantForAutofill="no"
                                 />
+                                {errors.password && (
+                                    <ThemedText style={styles.errorText}>{errors.password}</ThemedText>
+                                )}
                             </View>
 
                             {!isSignUp && (
@@ -194,7 +250,10 @@ export default function EmailLoginScreen() {
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                                onPress={() => setIsSignUp(!isSignUp)}
+                                onPress={() => {
+                                    setIsSignUp(!isSignUp);
+                                    setErrors({}); // Clear errors on mode switch
+                                }}
                                 style={styles.switchRow}
                             >
                                 <ThemedText style={{ color: '#808080' }}>
@@ -211,7 +270,6 @@ export default function EmailLoginScreen() {
             </View>
         </TouchableWithoutFeedback>
     );
-
 }
 
 const styles = StyleSheet.create({
@@ -231,8 +289,8 @@ const styles = StyleSheet.create({
     scrollContent: {
         paddingHorizontal: 24,
         paddingTop: 20,
-        paddingBottom: 100,   // extra room for keyboard & scrolling
-        flexGrow: 1,         // ensures scroll works on small screens
+        paddingBottom: 100,
+        flexGrow: 1,
     },
     formContainer: {
         gap: 20,
@@ -251,6 +309,13 @@ const styles = StyleSheet.create({
         padding: 16,
         fontSize: 16,
         backgroundColor: 'transparent',
+    },
+    errorText: {
+        color: '#ff4444',
+        fontSize: 12,
+        marginLeft: 4,
+        marginTop: 4,
+        fontFamily: Fonts.regular,
     },
     forgotLink: {
         alignSelf: 'flex-end',
