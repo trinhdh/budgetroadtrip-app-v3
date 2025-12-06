@@ -46,7 +46,6 @@ const MAPPING = createMapping({
   'map.fill': 'map',             // ADDED: Map toggle
   'clock.fill': 'access-time',
   'star.fill': 'star',
-  'google': 'group',
   'camera': 'camera-alt',
   'camera.viewfinder': 'center-focus-weak', // ADDED: Scan icon
   'gear': 'settings',
