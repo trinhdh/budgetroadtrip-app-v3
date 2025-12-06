@@ -74,7 +74,7 @@ export type TripPayload = {
     startDate: Date | string | null;
     endDate?: Date | string | null;
     duration: number;
-
+    image?: string;
     travelers: { adults: number; children: number };
     budget: number;
 

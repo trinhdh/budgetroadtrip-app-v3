@@ -8,7 +8,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 type Props = {
     form: {
-        budget: number;
+        budget: number; // Strictly a number
     };
     setForm: (data: any) => void;
 };
@@ -46,6 +46,7 @@ export default function StepFive({ form, setForm }: Props) {
                     maximumValue={5000}
                     step={100}
                     value={form.budget}
+                    // Slider returns a number, so this is type-safe
                     onValueChange={(value) => setForm({ ...form, budget: value })}
                     minimumTrackTintColor={colors.tint}
                     maximumTrackTintColor={colors.icon}
@@ -60,52 +61,14 @@ export default function StepFive({ form, setForm }: Props) {
 }
 
 const styles = StyleSheet.create({
-    stepContainer: {
-        gap: 40, // Increased gap for cleaner look
-    },
-    headline: {
-        textAlign: 'center',
-        marginBottom: 5,
-    },
-    subheadline: {
-        textAlign: 'center',
-        color: '#808080',
-        marginBottom: 10,
-    },
-    budgetDisplay: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        height: 80,
-    },
-    currencySymbol: {
-        fontSize: 24,
-        fontFamily: Fonts.bold,
-        marginTop: 8,
-        color: '#808080',
-    },
-    amount: {
-        fontSize: 64,
-        fontFamily: Fonts.bold,
-        lineHeight: 70,
-    },
-    sliderContainer: {
-        justifyContent: 'center',
-    },
-    sliderLabels: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 10,
-        paddingHorizontal: 10,
-    },
-    label: {
-        color: '#808080',
-        fontSize: 14,
-    },
-    helperText: {
-        textAlign: 'center',
-        color: '#808080',
-        marginTop: 20,
-        fontSize: 14,
-    },
+    stepContainer: { gap: 40 },
+    headline: { textAlign: 'center', marginBottom: 5 },
+    subheadline: { textAlign: 'center', color: '#808080', marginBottom: 10 },
+    budgetDisplay: { flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', height: 80 },
+    currencySymbol: { fontSize: 24, fontFamily: Fonts.bold, marginTop: 8, color: '#808080' },
+    amount: { fontSize: 64, fontFamily: Fonts.bold, lineHeight: 70 },
+    sliderContainer: { justifyContent: 'center' },
+    sliderLabels: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, paddingHorizontal: 10 },
+    label: { color: '#808080', fontSize: 14 },
+    helperText: { textAlign: 'center', color: '#808080', marginTop: 20, fontSize: 14 },
 });

@@ -1,4 +1,3 @@
-import { BudgetCategory, ItineraryDay } from '@/constants/type';
 import { db } from '@/firebaseConfig';
 import {
     addDoc,
@@ -6,58 +5,38 @@ import {
     onSnapshot,
     query,
     Timestamp,
+    Unsubscribe,
     where
 } from 'firebase/firestore';
 
-// 1. Updated Type to match your actual App Logic
-export type TripData = {
-    userId: string;
-    origin: string;
-    destination: string;
-    startDate: Date | string | null;
-    endDate?: Date | string | null;
-    duration: number;
-
-    travelers: { adults: number; children: number };
-    budget: number;
-
-    vehicle: { name: string; mpg: number; gasPrice: number };
-
-    // --- UPDATED TYPES ---
-    title: string;
-    estimatedCost: number;
-    budgetBreakdown: BudgetCategory[]; // <--- Strong typing
-    itinerary: ItineraryDay[];         // <--- Strong typing
-
-    spent: number;
-    createdAt: any;
-};
+// 1. Import shared types (Ensure file name matches, e.g. 'types.ts')
+import { Trip, TripPayload } from '@/constants/types';
 
 export const TripService = {
     /**
      * Saves a newly generated trip to Firestore
-     * Uses 'Omit' to exclude fields we generate automatically (userId, createdAt)
+     * We use 'TripPayload' because the ID hasn't been generated yet.
      */
-    async saveTrip(userId: string, tripData: Omit<TripData, 'userId' | 'createdAt'>) {
+    async saveTrip(userId: string, tripData: Omit<TripPayload, 'userId' | 'createdAt'>) {
         try {
-            // 2. Data Sanitization (Clean up before saving)
+            // 2. Data Sanitization
             const cleanData = {
                 ...tripData,
-                // Ensure numbers are actually numbers (inputs are often strings)
                 vehicle: {
                     ...tripData.vehicle,
                     mpg: Number(tripData.vehicle.mpg) || 0,
                     gasPrice: Number(tripData.vehicle.gasPrice) || 0,
                 },
-                // Ensure dates are Date objects (better for Firestore querying)
+                // Ensure dates are Date objects
                 startDate: tripData.startDate ? new Date(tripData.startDate) : null,
+                endDate: tripData.endDate ? new Date(tripData.endDate) : null,
             };
 
             // 3. Create the document
             const docRef = await addDoc(collection(db, 'trips'), {
                 ...cleanData,
                 userId: userId,
-                createdAt: new Date(),
+                createdAt: new Date(), // Server timestamp
             });
 
             console.log("Trip saved with ID: ", docRef.id);
@@ -70,33 +49,30 @@ export const TripService = {
 
     /**
      * Real-time listener for a user's trips
-     * Returns an unsubscribe function
      */
-    subscribeToUserTrips(userId: string, onUpdate: (trips: any[]) => void) {
-        // Query trips for this user, ordered by creation time (optional)
+    subscribeToUserTrips(userId: string, onUpdate: (trips: Trip[]) => void): Unsubscribe {
         const q = query(
             collection(db, 'trips'),
             where('userId', '==', userId)
-            // orderBy('startDate', 'asc') // Requires a Firestore Index (check console for link)
         );
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        return onSnapshot(q, (snapshot) => {
             const trips = snapshot.docs.map(doc => {
                 const data = doc.data();
+
+                // 4. Map Firestore data to your strict 'Trip' type
                 return {
-                    id: doc.id,
                     ...data,
-                    // Convert Timestamps to Dates immediately for easier handling
-                    startDate: data.startDate instanceof Timestamp ? data.startDate.toDate() : new Date(data.startDate),
+                    id: doc.id,
+                    // safe timestamp conversion
+                    startDate: data.startDate instanceof Timestamp ? data.startDate.toDate() : (data.startDate ? new Date(data.startDate) : null),
                     endDate: data.endDate instanceof Timestamp ? data.endDate.toDate() : (data.endDate ? new Date(data.endDate) : null),
-                };
+                } as Trip;
             });
+
             onUpdate(trips);
         }, (error) => {
             console.error("Error fetching trips:", error);
         });
-
-        return unsubscribe;
     }
-
 };

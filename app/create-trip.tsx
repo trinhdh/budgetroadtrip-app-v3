@@ -28,6 +28,7 @@ import { ProcessingModal } from '@/components/ui/processing-modal';
 
 import { useAuth } from '@/context/AuthContext';
 import { AiPlannerService } from '@/services/ai-planner';
+import { ImageService } from '@/services/image-service'; // Integrated Image Service
 import { TripService } from '@/services/trip-service';
 
 export default function CreateTripScreen() {
@@ -41,7 +42,6 @@ export default function CreateTripScreen() {
     const totalSteps = 5;
     const [isLoading, setIsLoading] = useState(false);
 
-    // 1. FIX: Initialize 'mpg' and 'gasPrice' as strings to match TextInput requirements in StepFour
     const [form, setForm] = useState({
         origin: '',
         destination: '',
@@ -51,13 +51,12 @@ export default function CreateTripScreen() {
         adults: 1,
         children: 0,
         carName: '',
-        mpg: '',        // Changed from 0 to ''
-        gasPrice: '',   // Changed from 2.90 to '' (User can rely on placeholder)
+        mpg: '',        // Initialized as string
+        gasPrice: '',   // Initialized as string
         budget: 1000,
     });
 
     const handleNext = () => {
-        // --- Validation Logic ---
         if (step === 1) {
             if (!form.origin || !form.destination) {
                 Alert.alert('Incomplete', 'Please select both origin and destination.');
@@ -69,14 +68,12 @@ export default function CreateTripScreen() {
                 return;
             }
         } else if (step === 4) {
-            // 2. FIX: Check for empty strings now
             if (!form.mpg || !form.gasPrice) {
                 Alert.alert('Incomplete', 'Please select a vehicle or enter MPG/Gas Price.');
                 return;
             }
         }
 
-        // --- Navigation Logic ---
         if (step < totalSteps) {
             setStep(step + 1);
         } else {
@@ -93,30 +90,36 @@ export default function CreateTripScreen() {
         setIsLoading(true);
 
         try {
-            // 1. Generate Plan via AI
-            const aiPlan = await AiPlannerService.generateTripPlan({
-                origin: form.origin,
-                destination: form.destination,
-                duration: form.duration,
-                budget: form.budget,
-                travelers: { adults: form.adults, children: form.children },
-                carName: form.carName,
-                mpg: form.mpg,
-                gasPrice: form.gasPrice
-            });
+            // 1. Run AI and Image Search in Parallel
+            const [aiPlan, coverImage] = await Promise.all([
+                AiPlannerService.generateTripPlan({
+                    origin: form.origin,
+                    destination: form.destination,
+                    duration: form.duration,
+                    budget: form.budget,
+                    travelers: { adults: form.adults, children: form.children },
+                    carName: form.carName,
+                    mpg: form.mpg,
+                    gasPrice: form.gasPrice
+                }),
+                ImageService.getPlaceImage(form.destination)
+            ]);
 
             // 2. Combine Form Data + AI Data
             const finalTripData = {
-                // User Inputs
                 origin: form.origin,
                 destination: form.destination,
                 startDate: form.startDate ? form.startDate.toISOString() : null,
                 duration: form.duration,
                 travelers: { adults: form.adults, children: form.children },
-                // TripService handles converting strings to numbers for us
-                vehicle: { name: form.carName, mpg: form.mpg, gasPrice: form.gasPrice },
 
-                // 3. FIX: Ensure this key matches 'TripData' type (budget, not totalBudget)
+                // Convert strings to Numbers for Firestore
+                vehicle: {
+                    name: form.carName,
+                    mpg: Number(form.mpg) || 0,
+                    gasPrice: Number(form.gasPrice) || 0
+                },
+
                 budget: form.budget,
 
                 // AI Outputs
@@ -125,8 +128,11 @@ export default function CreateTripScreen() {
                 budgetBreakdown: aiPlan.budgetBreakdown,
                 itinerary: aiPlan.itinerary,
 
-                // Defaults
+                // Add the Pexels Image (or undefined if null)
+                image: coverImage || undefined,
+
                 spent: 0,
+                // createdAt is handled by TripService
             };
 
             // 3. Save to Firestore
@@ -159,7 +165,6 @@ export default function CreateTripScreen() {
         <ThemedView style={styles.container}>
             <ProcessingModal visible={isLoading} />
 
-            {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={handleBack} style={styles.backButton} disabled={isLoading}>
                     <IconSymbol name="chevron.left" size={24} color={colors.text} />
@@ -175,7 +180,6 @@ export default function CreateTripScreen() {
                 <View style={{ width: 80 }} />
             </View>
 
-            {/* Content Area */}
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
@@ -197,7 +201,6 @@ export default function CreateTripScreen() {
                 </ScrollView>
             </KeyboardAvoidingView>
 
-            {/* Footer */}
             <View style={[styles.footer, { borderTopColor: colors.icon }]}>
                 <TouchableOpacity
                     style={[styles.button, { backgroundColor: colors.tint }]}
@@ -214,9 +217,7 @@ export default function CreateTripScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
+    container: { flex: 1 },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -225,20 +226,9 @@ const styles = StyleSheet.create({
         paddingTop: Platform.OS === 'ios' ? 20 : 40,
         paddingBottom: 10,
     },
-    headerTitle: {
-        fontSize: 16,
-        fontFamily: Fonts.medium,
-    },
-    backButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        width: 80,
-    },
-    content: {
-        paddingHorizontal: 24,
-        paddingTop: 30,
-        paddingBottom: 100,
-    },
+    headerTitle: { fontSize: 16, fontFamily: Fonts.medium },
+    backButton: { flexDirection: 'row', alignItems: 'center', width: 80 },
+    content: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 100 },
     footer: {
         padding: 24,
         paddingBottom: Platform.OS === 'ios' ? 40 : 24,
@@ -256,9 +246,5 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
         elevation: 2,
     },
-    buttonText: {
-        color: '#fff',
-        fontFamily: Fonts.bold,
-        fontSize: 18,
-    },
+    buttonText: { color: '#fff', fontFamily: Fonts.bold, fontSize: 18 },
 });

@@ -1,9 +1,10 @@
+import { AiTripInput, AiTripResponse } from '@/constants/types';
 import { GoogleGenAI } from '@google/genai';
 
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const genAI = new GoogleGenAI({ apiKey: API_KEY });
 
-// 1. Define the Schema using plain objects (No SchemaType)
+// 1. Updated Schema (Matches your 'types.ts' exactly)
 const TRIP_RESPONSE_SCHEMA = {
     type: "object",
     properties: {
@@ -14,12 +15,10 @@ const TRIP_RESPONSE_SCHEMA = {
             items: {
                 type: "object",
                 properties: {
-                    category: { type: "string" },
-                    amount: { type: "number" },
-                    icon: { type: "string" },
-                    color: { type: "string" }
+                    category: { type: "string", enum: ['fuel', 'hotel', 'food', 'activities', 'shopping', 'transport', 'other'] },
+                    amount: { type: "number" }
                 },
-                required: ["category", "amount", "icon", "color"]
+                required: ["category", "amount"]
             }
         },
         itinerary: {
@@ -43,11 +42,11 @@ const TRIP_RESPONSE_SCHEMA = {
                         items: {
                             type: "object",
                             properties: {
-                                time: { type: "string" },
+                                order: { type: "number" }, // Added Order
                                 title: { type: "string" },
                                 desc: { type: "string" },
                                 address: { type: "string" },
-                                type: { type: "string", enum: ["activity", "food", "hotel", "other"] },
+                                type: { type: "string", enum: ['fuel', 'hotel', 'food', 'activities', 'shopping', 'transport', 'other'] },
                                 price: { type: "number" },
                                 coordinates: {
                                     type: "object",
@@ -58,9 +57,10 @@ const TRIP_RESPONSE_SCHEMA = {
                                     required: ["latitude", "longitude"]
                                 }
                             },
-                            required: ["time", "title", "desc", "type", "coordinates"]
+                            required: ["order", "title", "desc", "type", "coordinates"] // Removed 'time'
                         }
                     },
+                    // Recommendations (Standardized)
                     hotelRecommendations: {
                         type: "array",
                         items: {
@@ -105,7 +105,7 @@ const TRIP_RESPONSE_SCHEMA = {
                         }
                     }
                 },
-                required: ["day", "title", "distance", "stopLocation", "timeline", "hotelRecommendations", "foodRecommendations", "activityRecommendations"]
+                required: ["day", "title", "distance", "stopLocation", "timeline", "hotelRecommendations"]
             }
         }
     },
@@ -114,39 +114,40 @@ const TRIP_RESPONSE_SCHEMA = {
 
 export const AiPlannerService = {
 
-    async generateTripPlan(formData: any) {
+    async generateTripPlan(input: AiTripInput): Promise<AiTripResponse> {
         if (!API_KEY) {
             throw new Error("Missing Gemini API Key");
         }
 
-        const { origin, destination, duration, budget, travelers, carName, mpg, gasPrice } = formData;
+        const { origin, destination, duration, budget, travelers, carName, mpg, gasPrice } = input;
+
         const nightlyBudget = (budget * 0.4 / duration).toFixed(0);
         const foodBudget = (budget * 0.2 / duration / 2).toFixed(0);
 
         const prompt = `
             Plan a ${duration}-day road trip from ${origin} to ${destination}.
             Travelers: ${travelers.adults} adults, ${travelers.children} children.
-            
-            **VEHICLE DETAILS:**
-            - Vehicle: ${carName}
-            - MPG: ${mpg || 'Estimate based on vehicle type'} 
-            - Gas Price: $${gasPrice || 'Use national average'}/gallon
-            
+            Vehicle: ${carName} (MPG: ${mpg}, Gas: $${gasPrice}). 
             Total Budget: $${budget}.
 
             **ITINERARY REQUIREMENTS:**
             - Create a day-by-day itinerary.
-            - For **EACH DAY**, provide a 'timeline' with at least 3 items (Morning Activity, Lunch, Evening Hotel).
+            - For **EACH DAY**, provide a 'timeline' array with at least 3 items.
+            - **CRITICAL:** Assign a sequential 'order' number (1, 2, 3...) to each timeline item to indicate the sequence of events.
             
-            **RECOMMENDATIONS (For each day's stop location):**
-            1. **Hotels:** Find 3 hotels (~$${nightlyBudget}/night).
-            2. **Food:** Find 3 restaurants/cafes (~$${foodBudget}/person). Look for local favorites.
-            3. **Activities:** Find 3 activities or sightseeing spots.
+            **TIMELINE ITEMS (use types: 'activity', 'food', 'hotel'):**
+            1. Morning Activity (order: 1)
+            2. Lunch Stop (order: 2)
+            3. Afternoon Activity (order: 3)
+            4. Evening Hotel Check-in (order: 4)
 
-            **SEARCH TASK:** - Use Google Search to find real, currently operating places with ratings.
-            - Get real coordinates (lat/lng) for everything.
-            - **CRITICAL:** Calculate the "Fuel" budget breakdown using the provided MPG (${mpg}) and Gas Price ($${gasPrice}) over the estimated total distance.
+            **RECOMMENDATIONS:**
+            - Find 3 hotels (~$${nightlyBudget}/night) near each day's stop.
+            - Find 3 food spots (~$${foodBudget}/person) and 3 activities.
             
+            **SEARCH TASK:** - Use Google Search to find real places, prices, and coordinates.
+            - Calculate fuel cost based on the vehicle details provided.
+
             Output strictly valid JSON matching the schema.
         `;
 
@@ -162,16 +163,13 @@ export const AiPlannerService = {
             });
 
             const responseText = response.text;
+            if (!responseText) throw new Error("No response received from AI");
 
-            if (!responseText) {
-                throw new Error("No response received from AI");
-            }
-
-            return JSON.parse(responseText);
+            return JSON.parse(responseText) as AiTripResponse;
 
         } catch (error) {
             console.error("AI Generation Error:", error);
-            throw new Error("Failed to generate trip plan. Please try again.");
+            throw error;
         }
     }
 };

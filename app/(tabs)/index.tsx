@@ -35,9 +35,7 @@ const HERO_IMAGES = [
 
 const ROTATIONS = [-6, 8, -4];
 
-// --- 1. NEW COMPONENT TO FIX HOOK ERROR ---
-// By moving this logic into a separate component, the hook is always called 
-// at the top level of THIS component, satisfying React's rules.
+// --- 1. HERO IMAGE CARD COMPONENT ---
 const HeroImageCard = ({
   image,
   index,
@@ -81,12 +79,21 @@ export default function HomeScreen() {
     if (!user) return;
 
     const unsubscribe = TripService.subscribeToUserTrips(user.uid, (trips) => {
+
+      // Helper to safely format dates (Handles string | Date)
+      const formatDate = (date: Date | string | null) => {
+        if (!date) return 'TBD';
+        const d = new Date(date); // <--- Converts string to Date if needed
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      };
+
       const formattedTrips = trips.map((trip, index) => ({
         ...trip,
-        formattedStartDate: trip.startDate ? trip.startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBD',
-        formattedEndDate: trip.endDate ? trip.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '...',
-        // Use a consistent random image from Unsplash if no image exists
-        image: trip.image || `https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1000&auto=format&fit=crop&sig=${index}`,
+        formattedStartDate: formatDate(trip.startDate),
+        formattedEndDate: trip.endDate ? formatDate(trip.endDate) : '...',
+
+        // Image Fallback (Uses ID for consistency)
+        image: trip.image || `https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1000&auto=format&fit=crop&sig=${trip.id}`,
       }));
 
       setUserTrips(formattedTrips);
@@ -107,7 +114,8 @@ export default function HomeScreen() {
   // --- FILTER TRIPS ---
   const filteredTrips = userTrips.filter(trip => {
     const now = new Date();
-    const tripDate = trip.startDate || new Date();
+    // Ensure we are comparing Dates, not strings
+    const tripDate = trip.startDate ? new Date(trip.startDate) : new Date();
 
     if (activeTab === 'Active') {
       // Future or current trips
@@ -152,7 +160,6 @@ export default function HomeScreen() {
             /* --- EMPTY STATE --- */
             <View style={styles.emptyStateContainer}>
               <View style={styles.heroContainer}>
-                {/* 2. USE NEW COMPONENT HERE */}
                 {HERO_IMAGES.map((image, index) => (
                   <HeroImageCard
                     key={index}
