@@ -16,12 +16,12 @@ import {
     ViewToken
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- SERVICE & CONTEXT ---
 import { Trip } from '@/constants/types';
-import { useAuth } from '@/context/AuthContext'; // Import Auth
+import { useAuth } from '@/context/AuthContext';
 import { TripService } from '@/services/trip-service';
 
 // --- COMPONENTS ---
@@ -47,7 +47,7 @@ export default function TripDetailsScreen() {
     const { id } = useLocalSearchParams();
     const tripId = Array.isArray(id) ? id[0] : id;
 
-    const { user } = useAuth(); // Get current user
+    const { user } = useAuth();
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
     const insets = useSafeAreaInsets();
@@ -117,7 +117,6 @@ export default function TripDetailsScreen() {
                 ...data,
                 amount: parseFloat(data.amount),
                 createdAt: new Date(),
-                // 1. RECORD WHO ADDED IT
                 addedBy: {
                     uid: user.uid,
                     name: user.displayName || user.email?.split('@')[0] || 'Traveler',
@@ -154,7 +153,6 @@ export default function TripDetailsScreen() {
             amount: debt.amount,
             paidBy: debt.from.id,
             splitBy: [debt.to.id],
-            // 2. RECORD WHO SETTLED IT
             addedBy: {
                 uid: user.uid,
                 name: user.displayName || 'Traveler',
@@ -260,14 +258,24 @@ export default function TripDetailsScreen() {
                         scrollEnabled={isMapMaximized}
                         zoomEnabled={isMapMaximized}
                     >
-                        {trip.itinerary?.map((day) => (
+                        {trip.itinerary && trip.itinerary.length > 1 && (
+                            <Polyline
+                                coordinates={trip.itinerary.map(day => day.stopLocation)}
+                                strokeColor={colors.tint}
+                                strokeWidth={3}
+                                lineDashPattern={[1]}
+                            />
+                        )}
+
+                        {trip.itinerary?.map((day, index) => (
                             <Marker
                                 key={day.day}
                                 coordinate={day.stopLocation}
                                 title={day.title}
                             >
                                 <View style={[styles.dayMarkerPill, { backgroundColor: colors.tint }]}>
-                                    <Text style={styles.dayMarkerText}>Day {day.day}</Text>
+                                    {/* FIX: Use index + 1 for display */}
+                                    <Text style={styles.dayMarkerText}>Day {index + 1}</Text>
                                 </View>
                                 <View style={[styles.markerArrow, { borderTopColor: colors.tint }]} />
                             </Marker>
@@ -303,14 +311,15 @@ export default function TripDetailsScreen() {
                                     keyExtractor={(item) => item.day.toString()}
                                     onViewableItemsChanged={onViewableItemsChanged}
                                     viewabilityConfig={viewabilityConfig}
-                                    renderItem={({ item }) => (
+                                    renderItem={({ item, index }) => (
                                         <TouchableOpacity
                                             style={styles.mapCard}
                                             onPress={() => setIsMapMaximized(false)}
                                             activeOpacity={0.9}
                                         >
                                             <View style={{ flex: 1 }}>
-                                                <Text style={styles.mapCardTitle}>Day {item.day}: {item.title}</Text>
+                                                {/* FIX: Use index + 1 for display */}
+                                                <Text style={styles.mapCardTitle}>Day {index + 1}: {item.title}</Text>
                                                 <Text style={styles.mapCardSubtitle}>{item.distance} driving</Text>
                                             </View>
                                         </TouchableOpacity>
@@ -399,7 +408,10 @@ export default function TripDetailsScreen() {
                         {/* Recent Expenses Section */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeaderRow}>
-                                <ThemedText type="subtitle" style={[styles.sectionTitle, { marginBottom: 0 }]}>Recent Expenses</ThemedText>
+                                <ThemedText type="subtitle" style={[styles.sectionTitle, { marginBottom: 0 }]}>
+                                    Recent Expenses
+                                </ThemedText>
+
                                 <View style={{ flexDirection: 'row', gap: 15 }}>
                                     <TouchableOpacity onPress={() => setBalancesVisible(true)}>
                                         <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>Settle Up</ThemedText>
@@ -422,7 +434,6 @@ export default function TripDetailsScreen() {
                                 </View>
                             )}
 
-                            {/* Only render container if expenses exist to avoid empty border line */}
                             {expenses.length > 0 && (
                                 <View style={[styles.expensesContainer, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
                                     {expenses.slice(0, 3).map((item, index) => (
@@ -432,7 +443,6 @@ export default function TripDetailsScreen() {
                                                 onPress={setSelectedExpense}
                                                 onDelete={handleDeleteExpense}
                                             />
-                                            {/* Add separator only between items */}
                                             {index < Math.min(expenses.length, 3) - 1 && (
                                                 <View style={{ height: 1, backgroundColor: colors.icon + '10' }} />
                                             )}
@@ -467,7 +477,8 @@ export default function TripDetailsScreen() {
                                     style={[styles.dayCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}
                                 >
                                     <View style={[styles.dayBadge, { backgroundColor: colors.tint + '20' }]}>
-                                        <ThemedText style={[styles.dayNumber, { color: colors.tint }]}>Day {day.day}</ThemedText>
+                                        {/* FIX: Use index + 1 for display */}
+                                        <ThemedText style={[styles.dayNumber, { color: colors.tint }]}>Day {index + 1}</ThemedText>
                                     </View>
                                     <View style={styles.dayContent}>
                                         <ThemedText type="defaultSemiBold">{day.title}</ThemedText>
@@ -480,11 +491,10 @@ export default function TripDetailsScreen() {
                     </View>
                 </Animated.ScrollView>
 
-                {/* --- MODALS --- */}
                 <BalancesModal
                     visible={balancesVisible}
                     onClose={() => setBalancesVisible(false)}
-                    debts={[]} // Logic for debts calculation needs to be re-added based on expenses
+                    debts={[]}
                     currentUser="u1"
                     onSettle={handleSettleDebt}
                 />

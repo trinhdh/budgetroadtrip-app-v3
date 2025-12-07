@@ -1,18 +1,28 @@
 import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+import { Colors, Fonts } from '@/constants/theme';
 import { Image } from 'expo-image';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 type Props = {
     visible: boolean;
     onClose: () => void;
     expense: any;
+    onAddReceipt?: (expenseId: string) => void; // Optional prop for future logic
 };
 
-export function ExpenseDetailModal({ visible, onClose, expense }: Props) {
+export function ExpenseDetailModal({ visible, onClose, expense, onAddReceipt }: Props) {
     if (!expense) return null;
+
+    const handleAddReceipt = () => {
+        if (onAddReceipt) {
+            onAddReceipt(expense.id);
+        } else {
+            // Placeholder action
+            Alert.alert("Add Receipt", "This feature is not connected yet.");
+        }
+    };
 
     return (
         <BottomSheetModal
@@ -67,10 +77,15 @@ export function ExpenseDetailModal({ visible, onClose, expense }: Props) {
                             />
                         </View>
                     ) : (
-                        <View style={styles.noReceipt}>
-                            <IconSymbol name="doc.text" size={24} color="#ccc" />
-                            <Text style={styles.noReceiptText}>No receipt attached</Text>
-                        </View>
+                        // CHANGED: Replaced static view with a button
+                        <TouchableOpacity
+                            style={styles.addReceiptButton}
+                            onPress={handleAddReceipt}
+                            activeOpacity={0.7}
+                        >
+                            <IconSymbol name="plus" size={24} color={Colors.light.tint} />
+                            <Text style={styles.addReceiptText}>Add Receipt</Text>
+                        </TouchableOpacity>
                     )}
                 </View>
 
@@ -94,7 +109,7 @@ const getCategoryIcon = (cat: string) => {
     switch (cat) {
         case 'Fuel': return 'speedometer';
         case 'Food': return 'leaf';
-        case 'Hotel': return 'house.fill';
+        case 'Hotel': return 'bed.double.fill'; // Changed to match mapping if needed, or keep 'house.fill'
         case 'Activities': return 'wand.and.stars';
         default: return 'circle.grid.2x2.fill';
     }
@@ -121,9 +136,23 @@ const styles = StyleSheet.create({
         borderWidth: 1, borderColor: '#eee', marginTop: 5
     },
     receiptImage: { flex: 1, width: '100%', backgroundColor: '#fff' },
-    noReceipt: {
-        height: 100, backgroundColor: '#f5f5f5', borderRadius: 12,
-        justifyContent: 'center', alignItems: 'center', marginTop: 5, borderStyle: 'dashed', borderWidth: 1, borderColor: '#ccc'
+
+    // NEW STYLES for the button
+    addReceiptButton: {
+        height: 100,
+        backgroundColor: Colors.light.tint + '10', // 10% opacity tint background
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 5,
+        borderStyle: 'dashed',
+        borderWidth: 1.5,
+        borderColor: Colors.light.tint
     },
-    noReceiptText: { color: '#999', marginTop: 5 }
+    addReceiptText: {
+        color: Colors.light.tint,
+        marginTop: 8,
+        fontFamily: Fonts.medium,
+        fontSize: 16
+    }
 });

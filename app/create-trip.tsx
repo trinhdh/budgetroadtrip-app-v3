@@ -1,3 +1,5 @@
+// trinhdh/budgetroadtrip-app-v3/budgetroadtrip-app-v3-develop/app/create-trip.tsx
+
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -26,9 +28,10 @@ import StepThree from '@/components/create-trip/step-three';
 import StepTwo from '@/components/create-trip/step-two';
 import { ProcessingModal } from '@/components/ui/processing-modal';
 
+import { TripVibe } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { AiPlannerService } from '@/services/ai-planner';
-import { ImageService } from '@/services/image-service'; // Integrated Image Service
+import { ImageService } from '@/services/image-service';
 import { TripService } from '@/services/trip-service';
 
 export default function CreateTripScreen() {
@@ -47,13 +50,14 @@ export default function CreateTripScreen() {
         destination: '',
         startDate: null as Date | null,
         duration: 5,
-        isRoundTrip: false,
+        isRoundTrip: false, // This state is already here
         adults: 1,
         children: 0,
         carName: '',
-        mpg: '',        // Initialized as string
-        gasPrice: '',   // Initialized as string
+        mpg: '',
+        gasPrice: '',
         budget: 500,
+        vibe: 'balanced' as TripVibe,
     });
 
     const handleNext = () => {
@@ -63,19 +67,21 @@ export default function CreateTripScreen() {
                 Alert.alert('Incomplete', 'Please select both origin and destination.');
                 return;
             }
+            if (form.origin.trim().toLowerCase() === form.destination.trim().toLowerCase()) {
+                Alert.alert('Invalid Route', 'Origin and Destination cannot be the same city.');
+                return;
+            }
         } else if (step === 2) {
             if (!form.startDate || !form.duration) {
                 Alert.alert('Incomplete', 'Please fill in all date details.');
                 return;
             }
         } else if (step === 4) {
-            // 1. Check if empty
             if (!form.mpg || !form.gasPrice) {
                 Alert.alert('Incomplete', 'Please select a vehicle or enter MPG/Gas Price.');
                 return;
             }
 
-            // 2. Check if they are valid numbers
             if (isNaN(Number(form.mpg)) || isNaN(Number(form.gasPrice))) {
                 Alert.alert('Invalid Input', 'Please enter valid numeric values for MPG and Gas Price (e.g. 25, 3.50).');
                 return;
@@ -109,7 +115,9 @@ export default function CreateTripScreen() {
                     travelers: { adults: form.adults, children: form.children },
                     carName: form.carName,
                     mpg: form.mpg,
-                    gasPrice: form.gasPrice
+                    gasPrice: form.gasPrice,
+                    vibe: form.vibe,
+                    isRoundTrip: form.isRoundTrip // <--- PASSED HERE
                 }),
                 ImageService.getPlaceImage(form.destination)
             ]);
@@ -133,7 +141,6 @@ export default function CreateTripScreen() {
                 duration: form.duration,
                 travelers: { adults: form.adults, children: form.children },
 
-                // Convert strings to Numbers for Firestore
                 vehicle: {
                     name: form.carName,
                     mpg: Number(form.mpg) || 0,
@@ -148,11 +155,8 @@ export default function CreateTripScreen() {
                 budgetBreakdown: aiPlan.budgetBreakdown,
                 itinerary: aiPlan.itinerary,
 
-                // Add the Pexels Image (or undefined if null)
                 image: coverImage || undefined,
-
                 spent: 0,
-                // createdAt is handled by TripService
             };
 
             // 3. Save to Firestore

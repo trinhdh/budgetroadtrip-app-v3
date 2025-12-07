@@ -43,6 +43,7 @@ export type ItineraryDay = {
 };
 
 // --- AI Service Types ---
+export type TripVibe = 'balanced' | 'comfort' | 'explorer' | 'foodie';
 
 export type AiTripInput = {
     origin: string;
@@ -56,6 +57,8 @@ export type AiTripInput = {
     carName: string;
     mpg: string | number;
     gasPrice: string | number;
+    vibe: TripVibe;
+    isRoundTrip: boolean;
 };
 
 export type AiTripResponse = {

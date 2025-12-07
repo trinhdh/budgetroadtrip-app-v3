@@ -59,6 +59,7 @@ const MAPPING = createMapping({
   'lock.fill': 'lock',
   'exclamationmark.triangle.fill': 'warning', // ADDED: Warning/Budget alert
   'circle.grid.2x2.fill': 'grid-view',        // ADDED: Category/Other icon
+  'scale': 'scale',
 });
 
 export type IconSymbolName = keyof typeof MAPPING;
