@@ -6,8 +6,6 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const genAI = new GoogleGenAI({ apiKey: API_KEY });
 
-// --- 1. Define Zod Schemas (Single Source of Truth) ---
-
 const CategoryEnum = z.enum(['fuel', 'hotel', 'food', 'activities', 'other']);
 
 const GeoPointSchema = z.object({
@@ -21,7 +19,7 @@ const RecommendationSchema = z.object({
     rating: z.number(),
     address: z.string(),
     description: z.string(),
-    image: z.string().optional().default(""), // Handle optional/missing images gracefully
+    image: z.string().optional().default(""),
 });
 
 const TimelineItemSchema = z.object({

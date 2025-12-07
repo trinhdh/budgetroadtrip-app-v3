@@ -18,7 +18,7 @@ type Props = {
     form: {
         startDate: Date | null;
         duration: number; // Strictly a number
-        isRoundTrip: boolean | false;
+        isRoundTrip: boolean | null;
     };
     setForm: (data: any) => void;
 };
@@ -38,12 +38,8 @@ export default function StepTwo({ form, setForm }: Props) {
     };
 
     const updateDuration = (increment: boolean) => {
-        // Direct arithmetic since duration is a number
         const newValue = increment ? form.duration + 1 : form.duration - 1;
-
-        // Prevent going below 1 day
         if (newValue < 1) return;
-
         setForm({ ...form, duration: newValue });
     };
 
@@ -59,6 +55,18 @@ export default function StepTwo({ form, setForm }: Props) {
             day: 'numeric',
         });
     };
+
+    // --- NEW: Calculate End Date ---
+    const getEndDate = () => {
+        if (!form.startDate) return null;
+        // Clone the date so we don't mutate the state directly
+        const end = new Date(form.startDate);
+        // Add duration days
+        end.setDate(end.getDate() + form.duration);
+        return end;
+    };
+
+    const endDate = getEndDate();
 
     return (
         <View style={styles.stepContainer}>
@@ -116,6 +124,13 @@ export default function StepTwo({ form, setForm }: Props) {
                         <IconSymbol name="plus" size={24} color={colors.text} />
                     </TouchableOpacity>
                 </View>
+
+                {/* --- NEW: End Date Display --- */}
+                {endDate && (
+                    <ThemedText style={styles.endDateText}>
+                        Until {formatDate(endDate)}
+                    </ThemedText>
+                )}
             </View>
 
             {/* 3. Round Trip Switch */}
@@ -199,4 +214,13 @@ const styles = StyleSheet.create({
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
     modalContent: { width: '100%', borderRadius: 20, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
     modalHeader: { width: '100%', alignItems: 'flex-end', marginBottom: 10 },
+
+    // New style for the end date helper text
+    endDateText: {
+        fontSize: 14,
+        color: '#808080',
+        textAlign: 'center',
+        marginTop: 4,
+        fontFamily: Fonts.medium
+    }
 });

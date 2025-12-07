@@ -216,21 +216,21 @@ export default function MoreScreen() {
             />
 
             {/* --- CURRENCY SETTING (MODIFIED) --- */}
-            <View style={styles.separator} />
-            <SettingRow
+            {/* <View style={styles.separator} /> */}
+            {/* <SettingRow
               icon="dollarsign"
               label="Currency"
               value={currentCurrency}
               onPress={() => setIsCurrencyModalVisible(true)} // <--- OPENS NEW MODAL
-            />
+            /> */}
             {/* --- UNITS SETTING --- */}
-            <View style={styles.separator} />
-            <SettingRow
+            {/* <View style={styles.separator} /> */}
+            {/* <SettingRow
               icon="speedometer"
               label="Units"
               value={currentUnits}
               onPress={handleUnitsChange}
-            />
+            /> */}
           </View>
         </View>
 
