@@ -69,7 +69,8 @@ export default function HomeScreen() {
   const theme = useColorScheme() ?? 'light';
   const colors = Colors[theme];
 
-  const [activeTab, setActiveTab] = useState<'Active' | 'Past'>('Active');
+  // Updated Tab State
+  const [activeTab, setActiveTab] = useState<'Active' | 'Upcoming' | 'Past'>('Upcoming');
   const [userTrips, setUserTrips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -80,23 +81,37 @@ export default function HomeScreen() {
 
     const unsubscribe = TripService.subscribeToUserTrips(user.uid, (trips) => {
 
-      // Helper to safely format dates (Handles string | Date)
       const formatDate = (date: Date | string | null) => {
         if (!date) return 'TBD';
-        const d = new Date(date); // <--- Converts string to Date if needed
+        const d = new Date(date);
         return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       };
 
-      const formattedTrips = trips.map((trip, index) => ({
+      const formattedTrips = trips.map((trip) => ({
         ...trip,
         formattedStartDate: formatDate(trip.startDate),
         formattedEndDate: trip.endDate ? formatDate(trip.endDate) : '...',
-
-        // Image Fallback (Uses ID for consistency)
         image: trip.image || `https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1000&auto=format&fit=crop&sig=${trip.id}`,
+
+        // Helper dates for filtering logic
+        start: trip.startDate ? new Date(trip.startDate) : new Date(),
+        end: trip.endDate ? new Date(trip.endDate) : new Date(new Date().setDate(new Date().getDate() + 5)) // Fallback 5 days if missing
       }));
 
       setUserTrips(formattedTrips);
+
+      // --- LOGIC: Set Initial Active Tab ---
+      // 1. Check if ANY trip is currently active
+      const now = new Date();
+      const hasActive = formattedTrips.some(t => t.start <= now && t.end >= now);
+
+      if (hasActive) {
+        setActiveTab('Active');
+      } else {
+        // Default to Upcoming
+        setActiveTab('Upcoming');
+      }
+
       setLoading(false);
     });
 
@@ -114,27 +129,40 @@ export default function HomeScreen() {
   // --- FILTER TRIPS ---
   const filteredTrips = userTrips.filter(trip => {
     const now = new Date();
-    // Ensure we are comparing Dates, not strings
-    const tripDate = trip.startDate ? new Date(trip.startDate) : new Date();
+    // Normalize "now" to start of day for cleaner comparison
+    now.setHours(0, 0, 0, 0);
+    const start = new Date(trip.start);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(trip.end);
+    end.setHours(23, 59, 59, 999);
 
     if (activeTab === 'Active') {
-      // Future or current trips
-      return tripDate >= new Date(now.setDate(now.getDate() - 1));
+      return start <= now && end >= now;
+    } else if (activeTab === 'Upcoming') {
+      return start > now;
     } else {
-      // Past trips
-      return tripDate < new Date(now.setDate(now.getDate() - 1));
+      // Past
+      return end < now;
     }
   });
 
   return (
     <ThemedView style={styles.container}>
       <View style={styles.header}>
+        {/* --- 3-WAY TOGGLE --- */}
         <View style={styles.toggleContainer}>
           <TouchableOpacity
             style={[styles.toggleButton, activeTab === 'Active' && styles.activeToggleButton]}
             onPress={() => setActiveTab('Active')}>
             <ThemedText style={[styles.toggleText, activeTab === 'Active' && styles.activeToggleText]}>
               Active
+            </ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleButton, activeTab === 'Upcoming' && styles.activeToggleButton]}
+            onPress={() => setActiveTab('Upcoming')}>
+            <ThemedText style={[styles.toggleText, activeTab === 'Upcoming' && styles.activeToggleText]}>
+              Upcoming
             </ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
@@ -169,16 +197,24 @@ export default function HomeScreen() {
                   />
                 ))}
               </View>
-              <ThemedText type="title" style={styles.heroTitle}>Big trips, small budgets</ThemedText>
-              <ThemedText style={styles.heroSubtitle}>
-                {activeTab === 'Active' ? "No upcoming trips." : "No past trips."} Discover more without spending more.
+              <ThemedText type="title" style={styles.heroTitle}>
+                {activeTab === 'Active' ? "No active trip" : "No trips found"}
               </ThemedText>
-              <TouchableOpacity
-                style={[styles.ctaButton, { backgroundColor: colors.tint }]}
-                onPress={() => router.push('/create-trip')}
-                activeOpacity={0.8}>
-                <ThemedText style={styles.ctaButtonText}>Create a trip</ThemedText>
-              </TouchableOpacity>
+              <ThemedText style={styles.heroSubtitle}>
+                {activeTab === 'Active'
+                  ? "You aren't on the road right now. Check Upcoming!"
+                  : "Time to plan your next adventure."}
+              </ThemedText>
+
+              {/* Only show Create button if NOT in Past tab (optional UX choice) */}
+              {activeTab !== 'Past' && (
+                <TouchableOpacity
+                  style={[styles.ctaButton, { backgroundColor: colors.tint }]}
+                  onPress={() => router.push('/create-trip')}
+                  activeOpacity={0.8}>
+                  <ThemedText style={styles.ctaButtonText}>Plan a new trip</ThemedText>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             /* --- LIST STATE --- */
@@ -203,7 +239,14 @@ export default function HomeScreen() {
                     />
 
                     <View style={styles.cardTopRow}>
-                      <View></View>
+                      <View>
+                        {/* Optional: Add "Active" badge if needed */}
+                        {activeTab === 'Active' && (
+                          <View style={styles.activeBadge}>
+                            <ThemedText style={styles.activeBadgeText}>LIVE</ThemedText>
+                          </View>
+                        )}
+                      </View>
                       <View style={styles.budgetBadge}>
                         <ThemedText style={styles.budgetText}>${trip.totalBudget || trip.budget || 0}</ThemedText>
                       </View>
@@ -233,12 +276,15 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginBottom: 24 },
+  header: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, marginBottom: 24 }, // Centered Header
+
+  // Updated Toggle Container
   toggleContainer: { flexDirection: 'row', backgroundColor: '#F2F2F2', borderRadius: 30, padding: 4 },
-  toggleButton: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 24 },
+  toggleButton: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 24 }, // Slightly less padding to fit 3 items
   activeToggleButton: { backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
-  toggleText: { fontSize: 14, color: '#808080', fontFamily: Fonts.medium },
+  toggleText: { fontSize: 13, color: '#808080', fontFamily: Fonts.medium },
   activeToggleText: { color: '#000' },
+
   scrollContent: { flexGrow: 1 },
 
   // Empty State
@@ -261,5 +307,9 @@ const styles = StyleSheet.create({
   cardBottomContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   dateText: { color: 'rgba(255,255,255,0.9)', fontSize: 14, marginBottom: 4, fontWeight: '500' },
   destinationTitle: { color: '#fff', fontSize: 24, fontFamily: Fonts.bold, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
-  arrowButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }
+  arrowButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+
+  // New Active Badge
+  activeBadge: { backgroundColor: '#4CD964', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  activeBadgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' }
 });
