@@ -22,7 +22,7 @@ const VIBE_OPTIONS: VibeOption[] = [
     {
         id: 'balanced',
         label: 'Balanced',
-        icon: 'scale',
+        icon: 'star.fill',
         description: 'Standard mix of hotels, food, and fun.',
     },
     {

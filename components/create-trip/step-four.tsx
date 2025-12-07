@@ -96,8 +96,7 @@ export default function StepFour({ form, setForm }: Props) {
                     <IconSymbol name="dollarsign" size={20} color={colors.icon} style={styles.inputIcon} />
                     <TextInput
                         style={[styles.input, { color: colors.text }]}
-                        placeholder="3.20"
-                        placeholderTextColor="#999"
+                        placeholder="2.90" placeholderTextColor="#999"
                         keyboardType="decimal-pad"
                         value={form.gasPrice}
                         onChangeText={(text) => setForm({ ...form, gasPrice: text })}

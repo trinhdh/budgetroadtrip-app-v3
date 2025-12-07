@@ -55,7 +55,7 @@ export default function CreateTripScreen() {
         children: 0,
         carName: '',
         mpg: '',
-        gasPrice: '',
+        gasPrice: '2.90',
         budget: 500,
         vibe: 'balanced' as TripVibe,
     });
