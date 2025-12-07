@@ -63,6 +63,7 @@ export type AiTripResponse = {
     estimatedCost: number;
     budgetBreakdown: BudgetCategory[];
     itinerary: ItineraryDay[];
+    warning?: string;
 };
 
 // --- Firestore Data Types ---

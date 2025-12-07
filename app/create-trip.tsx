@@ -75,8 +75,7 @@ export default function CreateTripScreen() {
                 return;
             }
 
-            // 2. NEW: Check if they are valid numbers
-            // "2.9abc" -> Number() is NaN -> returns true
+            // 2. Check if they are valid numbers
             if (isNaN(Number(form.mpg)) || isNaN(Number(form.gasPrice))) {
                 Alert.alert('Invalid Input', 'Please enter valid numeric values for MPG and Gas Price (e.g. 25, 3.50).');
                 return;
@@ -114,6 +113,17 @@ export default function CreateTripScreen() {
                 }),
                 ImageService.getPlaceImage(form.destination)
             ]);
+
+            // --- CHECK FOR AI WARNING ---
+            if (aiPlan.warning) {
+                setIsLoading(false);
+                Alert.alert(
+                    "Unable to Plan Trip",
+                    aiPlan.warning,
+                    [{ text: "OK" }]
+                );
+                return;
+            }
 
             // 2. Combine Form Data + AI Data
             const finalTripData = {

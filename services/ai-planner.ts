@@ -52,6 +52,7 @@ const TripResponseSchema = z.object({
         amount: z.number(),
     })),
     itinerary: z.array(ItineraryDaySchema),
+    warning: z.string().optional(), // <--- NEW: Allow AI to return a warning
 });
 
 export const AiPlannerService = {
@@ -72,7 +73,15 @@ export const AiPlannerService = {
             Vehicle: ${carName} (MPG: ${mpg}, Gas: $${gasPrice}). 
             Total Budget: $${budget}.
 
-            **ITINERARY REQUIREMENTS:**
+            **FEASIBILITY CHECK:**
+            - Check if a road trip between these locations is possible (e.g. crossing oceans without ferries).
+            - Check if the budget is realistically sufficient for ${duration} days (Gas + Hotels + Food).
+            
+            **IF IMPOSSIBLE OR UNREALISTIC:**
+            - Return a JSON with a 'warning' field explaining EXACTLY why (e.g. "Budget of $200 is too low for 5 days" or "Cannot drive from New York to London").
+            - You can leave 'itinerary' as an empty array in this case.
+
+            **IF FEASIBLE, ITINERARY REQUIREMENTS:**
             - Create a day-by-day itinerary.
             - For **EACH DAY**, provide a 'timeline' array with at least 3 items.
             - Assign a sequential 'order' number (1, 2, 3...) to each timeline item.
