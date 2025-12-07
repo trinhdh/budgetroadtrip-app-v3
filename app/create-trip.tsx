@@ -1,5 +1,3 @@
-// trinhdh/budgetroadtrip-app-v3/budgetroadtrip-app-v3-develop/app/create-trip.tsx
-
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -50,7 +48,7 @@ export default function CreateTripScreen() {
         destination: '',
         startDate: null as Date | null,
         duration: 5,
-        isRoundTrip: false, // This state is already here
+        isRoundTrip: false,
         adults: 1,
         children: 0,
         carName: '',
@@ -117,7 +115,7 @@ export default function CreateTripScreen() {
                     mpg: form.mpg,
                     gasPrice: form.gasPrice,
                     vibe: form.vibe,
-                    isRoundTrip: form.isRoundTrip // <--- PASSED HERE
+                    isRoundTrip: form.isRoundTrip
                 }),
                 ImageService.getPlaceImage(form.destination)
             ]);
@@ -149,7 +147,6 @@ export default function CreateTripScreen() {
 
                 budget: form.budget,
 
-                // AI Outputs
                 title: aiPlan.tripName,
                 estimatedCost: aiPlan.estimatedCost,
                 budgetBreakdown: aiPlan.budgetBreakdown,
@@ -231,9 +228,17 @@ export default function CreateTripScreen() {
                     onPress={handleNext}
                     disabled={isLoading}
                 >
-                    <ThemedText style={styles.buttonText}>
-                        {step === totalSteps ? 'Create Trip' : 'Next'}
-                    </ThemedText>
+                    {/* CHANGED: Conditional rendering for button content */}
+                    {step === totalSteps ? (
+                        <View style={styles.aiButtonContent}>
+                            <IconSymbol name="wand.and.stars" size={24} color="#fff" />
+                            <ThemedText style={styles.buttonText}>
+                                Generate Trip Plan
+                            </ThemedText>
+                        </View>
+                    ) : (
+                        <ThemedText style={styles.buttonText}>Next</ThemedText>
+                    )}
                 </TouchableOpacity>
             </View>
         </ThemedView>
@@ -271,4 +276,11 @@ const styles = StyleSheet.create({
         elevation: 2,
     },
     buttonText: { color: '#fff', fontFamily: Fonts.bold, fontSize: 18 },
+
+    // NEW STYLE
+    aiButtonContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    }
 });

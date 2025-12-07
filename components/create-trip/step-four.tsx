@@ -6,12 +6,14 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { VehicleSelector } from './vehicle-selector';
+// 1. Import ExternalLink
+import { ExternalLink } from '@/components/external-link';
 
 type Props = {
     form: {
         carName: string;
-        mpg: string;      // Changed from number to string
-        gasPrice: string; // Changed from number to string
+        mpg: string;
+        gasPrice: string;
     };
     setForm: (data: any) => void;
 };
@@ -96,7 +98,8 @@ export default function StepFour({ form, setForm }: Props) {
                     <IconSymbol name="dollarsign" size={20} color={colors.icon} style={styles.inputIcon} />
                     <TextInput
                         style={[styles.input, { color: colors.text }]}
-                        placeholder="2.90" placeholderTextColor="#999"
+                        placeholder="2.90"
+                        placeholderTextColor="#999"
                         keyboardType="decimal-pad"
                         value={form.gasPrice}
                         onChangeText={(text) => setForm({ ...form, gasPrice: text })}
@@ -105,6 +108,13 @@ export default function StepFour({ form, setForm }: Props) {
                 <ThemedText style={styles.helperText}>
                     Based on national average. You can edit this.
                 </ThemedText>
+
+                {/* 2. Added External Link for Reference */}
+                <ExternalLink href="https://gasprices.aaa.com/">
+                    <ThemedText style={[styles.linkText, { color: colors.tint }]}>
+                        Check current gas prices (AAA)
+                    </ThemedText>
+                </ExternalLink>
             </View>
         </View>
     );
@@ -160,6 +170,11 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#808080',
         marginTop: 6,
+    },
+    linkText: {
+        fontSize: 12,
+        marginTop: 4,
+        textDecorationLine: 'underline',
     },
     divider: {
         height: 1,
