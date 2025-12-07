@@ -1,834 +1,604 @@
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    ActivityIndicator,
+    Alert,
+    Animated,
     Dimensions,
-    KeyboardAvoidingView,
-    Modal,
+    FlatList,
     Platform,
-    ScrollView,
+    Share,
     StyleSheet,
-    TextInput,
+    Text,
     TouchableOpacity,
-    TouchableWithoutFeedback,
-    View
+    View,
+    ViewToken
 } from 'react-native';
-import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+// --- FIREBASE IMPORTS ---
+import { Trip } from '@/constants/types';
+import { db } from '@/firebaseConfig';
+import { TripService } from '@/services/trip-service';
+import {
+    addDoc,
+    collection,
+    deleteDoc,
+    doc,
+    increment,
+    onSnapshot,
+    orderBy,
+    query,
+    updateDoc
+} from 'firebase/firestore';
+
+// --- Custom Components ---
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-// Make sure you have created this component from the previous step
-import { ReceiptCameraModal } from '@/components/ui/receipt-camera-modal';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-const { width } = Dimensions.get('window');
+// --- Modals ---
+import { AddExpenseModal } from '@/components/ui/add-expense-modal';
+import { AllExpensesModal } from '@/components/ui/all-expense-modal';
+import { BalancesModal } from '@/components/ui/balances-modal';
+import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
+import { ExpenseDetailModal } from '@/components/ui/expense-detail-modal';
+import { SwipeableExpenseRow } from '@/components/ui/swipeable-expense-row';
 
-// --- HELPERS ---
-const getCategoryLabel = (type: string) => {
-    switch (type) {
-        case 'hotel': return 'Accommodation';
-        case 'food': return 'Food';
-        case 'activity': return 'Activity';
-        default: return 'Other';
-    }
-};
+const { width, height } = Dimensions.get('window');
+const PARALLAX_HEADER_HEIGHT = 400;
 
-// --- MOCK DATA ---
-const INITIAL_DAY_DATA = {
-    title: 'Departure & Drive',
-    date: 'Dec 01',
-    notes: '',
-    stats: { miles: '450', hours: '6h 30m', cost: '220' },
-    region: { latitude: 36.0, longitude: -80.0, latitudeDelta: 6.0, longitudeDelta: 6.0 },
-    route: [
-        { latitude: 33.7490, longitude: -84.3880 },
-        { latitude: 35.2271, longitude: -80.8431 },
-        { latitude: 36.0014, longitude: -78.9382 },
-        { latitude: 37.5407, longitude: -77.4360 },
-    ],
-    timeline: [
-        {
-            id: '1',
-            time: '09:00 AM',
-            title: 'Stone Mountain Park',
-            desc: 'Morning Hike & Scenic Views',
-            address: '1000 Robert E Lee Blvd',
-            icon: 'mappin.circle.fill',
-            color: '#4A90E2',
-            type: 'activity',
-            price: 20,
-            image: 'https://images.unsplash.com/photo-1552083375-1447ce886485?q=80&w=1000&auto=format&fit=crop',
-            coordinates: { latitude: 33.8082, longitude: -84.1454 },
-        },
-        {
-            id: '2',
-            time: '12:30 PM',
-            title: 'Midwood Smokehouse',
-            desc: 'Lunch • Charlotte, NC',
-            address: '1401 Central Ave',
-            icon: 'fork.knife',
-            color: '#F5A623',
-            type: 'food',
-            price: 45,
-            coordinates: { latitude: 35.2271, longitude: -80.8431 },
-        },
-        {
-            id: '3',
-            time: '03:00 PM',
-            title: 'Duke University',
-            desc: 'Chapel Tour & Gardens',
-            address: 'Durham, NC 27708',
-            icon: 'mappin.circle.fill',
-            color: '#7ED321',
-            type: 'activity',
-            price: 0,
-            coordinates: { latitude: 36.0014, longitude: -78.9382 },
-        },
-        {
-            id: '4',
-            time: '07:00 PM',
-            title: 'The Jefferson Hotel',
-            desc: 'Check-in • Richmond, VA',
-            address: '101 W Franklin St',
-            icon: 'bed.double.fill',
-            color: '#9013FE',
-            type: 'hotel',
-            price: 180,
-            image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1000&auto=format&fit=crop',
-            coordinates: { latitude: 37.5407, longitude: -77.4360 },
-        }
-    ]
-};
-
-// --- MOCK EXPENSES ---
-const INITIAL_EXPENSES = [
-    { id: 'e1', merchant: 'Shell Gas Station', amount: 45.50, category: 'Gas', receipt: 'https://upload.wikimedia.org/wikipedia/commons/0/0b/ReceiptSwiss.jpg' },
-    { id: 'e2', merchant: '7-Eleven', amount: 12.25, category: 'Snacks', receipt: null },
-];
-
-const OTHER_HOTELS = [
-    { id: 'h2', title: 'Hilton Downtown', desc: 'City Center • 4 Star', price: 165, rating: 4.5, image: 'https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?q=80&w=500&auto=format&fit=crop' },
-    { id: 'h3', title: 'Graduate Richmond', desc: 'Boutique Hotel', price: 140, rating: 4.3, image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=500&auto=format&fit=crop' },
-    { id: 'h4', title: 'Quirk Hotel', desc: 'Arts District', price: 210, rating: 4.7, image: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=500&auto=format&fit=crop' },
-];
-
-const OTHER_FOOD = [
-    { id: 'f2', title: 'Tacos & Tequila', desc: 'Mexican • Casual', price: 25, rating: 4.6, image: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?q=80&w=500&auto=format&fit=crop' },
-    { id: 'f3', title: 'The Burger Joint', desc: 'American • Fast', price: 15, rating: 4.2, image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=500&auto=format&fit=crop' },
-];
-
-const OTHER_ACTIVITIES = [
-    { id: 'a2', title: 'City Museum', desc: 'History & Art', price: 12, rating: 4.8, image: 'https://images.unsplash.com/photo-1582555172866-f73bb12a2ab3?q=80&w=500&auto=format&fit=crop' },
-    { id: 'a3', title: 'Botanical Garden', desc: 'Nature Walk', price: 18, rating: 4.7, image: 'https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?q=80&w=500&auto=format&fit=crop' },
-];
-
-export default function DayDetailsScreen() {
+export default function TripDetailsScreen() {
     const router = useRouter();
+    const { id } = useLocalSearchParams();
+    const tripId = Array.isArray(id) ? id[0] : id;
+
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
     const insets = useSafeAreaInsets();
+
+    // --- STATE ---
+    const [trip, setTrip] = useState<Trip | null>(null);
+    const [expenses, setExpenses] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const [balancesVisible, setBalancesVisible] = useState(false);
+    const [paramsModalVisible, setParamsModalVisible] = useState(false);
+    const [addExpenseVisible, setAddExpenseVisible] = useState(false);
+    const [viewAllExpensesVisible, setViewAllExpensesVisible] = useState(false);
+    const [selectedExpense, setSelectedExpense] = useState<any>(null);
+
+    // --- 1. FETCH TRIP DATA ---
+    useEffect(() => {
+        if (!tripId) return;
+
+        const unsubscribeTrip = TripService.subscribeToTrip(tripId, (data) => {
+            // 1. FIX: Always stop loading, regardless of result
+            setLoading(false);
+
+            if (data) {
+                setTrip(data);
+            } else {
+                Alert.alert("Error", "Trip not found");
+                router.back();
+            }
+        });
+
+        return () => unsubscribeTrip();
+    }, [tripId]);
+
+    // --- 2. FETCH EXPENSES ---
+    useEffect(() => {
+        if (!tripId) return;
+
+        const expensesRef = collection(db, 'trips', tripId, 'expenses');
+        const q = query(expensesRef, orderBy('createdAt', 'desc'));
+
+        const unsubscribeExpenses = onSnapshot(q, (snapshot) => {
+            const fetchedExpenses = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setExpenses(fetchedExpenses);
+        });
+
+        return () => unsubscribeExpenses();
+    }, [tripId]);
+
+    // Calculate Total Spent
+    const totalSpent = useMemo(() => {
+        return expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    }, [expenses]);
+
+    const budgetPercent = trip ? (totalSpent / trip.budget) * 100 : 0;
+    const isOverBudget = trip && totalSpent > trip.budget;
+    const isNearBudget = !isOverBudget && budgetPercent >= 90;
+
+    // --- ACTIONS ---
+
+    const handleShare = async () => {
+        try {
+            const message = trip
+                ? `Check out my trip to ${trip.destination}! Budget: $${trip.budget}`
+                : "Check out my trip plan!";
+
+            await Share.share({
+                message: message,
+                title: 'Trip Details'
+            });
+        } catch (error: any) {
+            Alert.alert(error.message);
+        }
+    };
+
+    const handleSaveExpense = async (data: any) => {
+        if (!tripId) return;
+        try {
+            const newExpense = {
+                ...data,
+                amount: parseFloat(data.amount),
+                createdAt: new Date(),
+                addedBy: { name: 'You', avatar: 'https://ui-avatars.com/api/?name=You&background=333&color=fff' },
+                hasReceipt: !!data.receiptImage
+            };
+
+            await addDoc(collection(db, 'trips', tripId, 'expenses'), newExpense);
+
+            await updateDoc(doc(db, 'trips', tripId), {
+                spent: increment(newExpense.amount)
+            });
+
+            Alert.alert("Success", "Expense added!");
+        } catch (error) {
+            console.error("Error adding expense:", error);
+            Alert.alert("Error", "Failed to add expense.");
+        }
+    };
+
+    const handleDeleteExpense = async (expenseId: string) => {
+        if (!tripId) return;
+        try {
+            const expenseToDelete = expenses.find(e => e.id === expenseId);
+            const amount = expenseToDelete ? expenseToDelete.amount : 0;
+
+            await deleteDoc(doc(db, 'trips', tripId, 'expenses', expenseId));
+
+            await updateDoc(doc(db, 'trips', tripId), {
+                spent: increment(-amount)
+            });
+
+        } catch (error) {
+            Alert.alert("Error", "Failed to delete expense.");
+        }
+    };
+
+    const handleSettleDebt = async (debt: any) => {
+        if (!tripId) return;
+
+        const settlementExpense = {
+            title: 'Settlement',
+            category: 'Other',
+            date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
+            amount: debt.amount,
+            paidBy: debt.from.id,
+            splitBy: [debt.to.id],
+            addedBy: { name: 'System', avatar: '' },
+            isSettlement: true,
+            hasReceipt: false,
+            day: 0,
+            receiptImage: undefined,
+            createdAt: new Date()
+        };
+
+        try {
+            await addDoc(collection(db, 'trips', tripId, 'expenses'), settlementExpense);
+            Alert.alert("Success", "Payment recorded!");
+        } catch (error) {
+            Alert.alert("Error", "Could not settle debt.");
+        }
+    };
+
+    // --- MAP LOGIC ---
+    const [isMapMaximized, setIsMapMaximized] = useState(false);
     const mapRef = useRef<MapView>(null);
+    const scrollY = useRef(new Animated.Value(0)).current;
 
-    const [dayData, setDayData] = useState(INITIAL_DAY_DATA);
-    const [timelineData, setTimelineData] = useState(INITIAL_DAY_DATA.timeline);
-
-    // --- EXPENSES STATE ---
-    const [expenses, setExpenses] = useState(INITIAL_EXPENSES);
-    const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
-    const [isCameraVisible, setIsCameraVisible] = useState(false);
-
-    // Edit State
-    const [editMode, setEditMode] = useState<'none' | 'note' | 'activity' | 'expense'>('none');
-    const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-
-    const [editForm, setEditForm] = useState({
-        title: '',
-        price: '',
-        desc: '',
-        address: '',
-        notes: '',
-        // Expense specific fields
-        merchant: '',
-        amount: '',
-        category: 'Food',
-        receipt: null as string | null
+    const mapTranslateY = scrollY.interpolate({
+        inputRange: [-PARALLAX_HEADER_HEIGHT, 0, PARALLAX_HEADER_HEIGHT],
+        outputRange: [PARALLAX_HEADER_HEIGHT * 0.5, 0, -PARALLAX_HEADER_HEIGHT * 0.5],
+        extrapolate: 'clamp',
     });
 
-    // Replacement State
-    const [replaceModalVisible, setReplaceModalVisible] = useState(false);
-    const [selectedOption, setSelectedOption] = useState<any>(null);
-    const [itemToReplaceId, setItemToReplaceId] = useState<string | null>(null);
+    const mapScale = scrollY.interpolate({
+        inputRange: [-PARALLAX_HEADER_HEIGHT, 0],
+        outputRange: [1.5, 1],
+        extrapolateLeft: 'extend',
+        extrapolateRight: 'clamp',
+    });
 
-    // --- HELPER: Get Options for Item Type ---
-    const getOptions = (type: string) => {
-        if (type === 'hotel') return OTHER_HOTELS;
-        if (type === 'food') return OTHER_FOOD;
-        if (type === 'activity') return OTHER_ACTIVITIES;
-        return [];
-    };
+    const toggleMapMaximize = () => setIsMapMaximized(!isMapMaximized);
 
-    // --- HANDLERS ---
-    const openOptionDetails = (option: any, originalItemId: string) => {
-        setSelectedOption(option);
-        setItemToReplaceId(originalItemId);
-        setReplaceModalVisible(true);
-    };
-
-    const confirmReplacement = () => {
-        if (itemToReplaceId && selectedOption) {
-            setTimelineData(prev => prev.map(item =>
-                item.id === itemToReplaceId
-                    ? {
-                        ...item,
-                        title: selectedOption.title,
-                        desc: selectedOption.desc,
-                        price: selectedOption.price,
-                        image: selectedOption.image
-                    }
-                    : item
-            ));
-            setReplaceModalVisible(false);
-            setSelectedOption(null);
-            setItemToReplaceId(null);
+    const focusOnDay = useCallback((day: any) => {
+        if (mapRef.current && day.stopLocation) {
+            mapRef.current.animateToRegion({
+                latitude: day.stopLocation.latitude,
+                longitude: day.stopLocation.longitude,
+                latitudeDelta: 2,
+                longitudeDelta: 2,
+            }, 800);
         }
-    };
+    }, []);
 
-    const openNoteModal = () => {
-        setEditForm(prev => ({ ...prev, notes: dayData.notes || '' }));
-        setEditMode('note');
-    };
-
-    const openActivityModal = (item: any) => {
-        setSelectedItemId(item.id);
-        setEditForm(prev => ({
-            ...prev,
-            title: item.title,
-            desc: item.desc,
-            address: item.address || '',
-            price: item.price.toString(),
-        }));
-        setEditMode('activity');
-    };
-
-    const openAddActivityModal = () => {
-        setSelectedItemId(null);
-        setEditForm({ title: '', desc: '', address: '', price: '', notes: editForm.notes, merchant: '', amount: '', category: 'Activity', receipt: null });
-        setEditMode('activity');
-    };
-
-    const openAddExpenseModal = () => {
-        setSelectedItemId(null);
-        setEditForm({
-            ...editForm,
-            merchant: '',
-            amount: '',
-            category: 'Food',
-            receipt: null
-        });
-        setEditMode('expense');
-    };
-
-    const handleReceiptCaptured = (uri: string, data: any) => {
-        setIsCameraVisible(false);
-        // Auto-fill extracted data if available
-        setEditForm(prev => ({
-            ...prev,
-            receipt: uri,
-            merchant: data?.merchant || prev.merchant,
-            amount: data?.amount || prev.amount,
-            // category: data?.category || prev.category
-        }));
-    };
-
-    const saveChanges = () => {
-        if (editMode === 'note') {
-            setDayData({ ...dayData, notes: editForm.notes });
-        } else if (editMode === 'activity') {
-            if (selectedItemId) {
-                setTimelineData(prev => prev.map(item =>
-                    item.id === selectedItemId
-                        ? { ...item, title: editForm.title, desc: editForm.desc, address: editForm.address, price: Number(editForm.price) || 0 }
-                        : item
-                ));
-            } else {
-                const newItem = {
-                    id: Date.now().toString(),
-                    time: 'TBD',
-                    title: editForm.title,
-                    desc: editForm.desc,
-                    address: editForm.address,
-                    price: Number(editForm.price) || 0,
-                    icon: 'mappin.circle.fill',
-                    color: '#999',
-                    type: 'activity',
-                    coordinates: { latitude: 0, longitude: 0 }
-                };
-                setTimelineData(prev => [...prev, newItem]);
-            }
-        } else if (editMode === 'expense') {
-            const newExpense = {
-                id: Date.now().toString(),
-                merchant: editForm.merchant || 'Unknown',
-                amount: parseFloat(editForm.amount) || 0,
-                category: editForm.category,
-                receipt: editForm.receipt,
-            };
-            setExpenses([...expenses, newExpense]);
+    const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+        if (viewableItems.length > 0 && viewableItems[0].item) {
+            focusOnDay(viewableItems[0].item);
         }
-        setEditMode('none');
-    };
+    }).current;
 
-    // --- RENDER CARD ---
-    const renderItem = ({ item, drag, isActive }: RenderItemParams<any>) => {
-        const options = getOptions(item.type);
-        const hasOptions = options.length > 0;
+    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
+    // --- 2. FIX: Separate Loading from "Not Found" state ---
+    if (loading) {
         return (
-            <ScaleDecorator>
-                <View style={{ marginBottom: 16 }}>
-                    {/* Main Card */}
-                    <TouchableOpacity
-                        onLongPress={drag}
-                        disabled={isActive}
-                        activeOpacity={0.9}
-                        style={[
-                            styles.activityCard,
-                            {
-                                backgroundColor: isActive ? colors.tint + '10' : colors.background,
-                                borderColor: isActive ? colors.tint : colors.icon + '20',
-                                marginBottom: 0
-                            }
-                        ]}
-                    >
-                        {item.image && (
-                            <Image source={{ uri: item.image }} style={styles.activityImage} />
-                        )}
-
-                        <View style={styles.activityContent}>
-                            <View style={styles.activityHeader}>
-                                <View style={styles.titleRow}>
-                                    <View style={[styles.categoryBadge, { backgroundColor: item.color + '20', borderColor: item.color + '40' }]}>
-                                        <ThemedText style={[styles.categoryText, { color: item.color }]}>
-                                            {getCategoryLabel(item.type)}
-                                        </ThemedText>
-                                    </View>
-                                </View>
-                                <TouchableOpacity onPress={() => openActivityModal(item)} style={styles.editIconBtn}>
-                                    <IconSymbol name="pencil" size={18} color={colors.icon} />
-                                </TouchableOpacity>
-                            </View>
-
-                            <ThemedText type="defaultSemiBold" style={styles.cardTitle}>{item.title}</ThemedText>
-
-                            <View style={styles.activityMeta}>
-                                <IconSymbol name="clock.fill" size={12} color="#808080" />
-                                <ThemedText style={styles.metaText}>{item.time}</ThemedText>
-                                {item.address ? (
-                                    <>
-                                        <View style={styles.dotSeparator} />
-                                        <ThemedText style={styles.metaText} numberOfLines={1}>{item.address}</ThemedText>
-                                    </>
-                                ) : null}
-                            </View>
-
-                            <ThemedText style={styles.activityDesc}>{item.desc}</ThemedText>
-
-                            {/* Book Now Button (Only for Hotels) */}
-                            {item.type === 'hotel' && (
-                                <TouchableOpacity
-                                    style={[styles.bookButton, { backgroundColor: colors.tint }]}
-                                    onPress={() => alert('Booking flow...')}
-                                >
-                                    <ThemedText style={styles.bookButtonText}>Book Now</ThemedText>
-                                </TouchableOpacity>
-                            )}
-
-                            <View style={styles.activityFooter}>
-                                <View style={styles.priceTag}>
-                                    <ThemedText style={styles.priceText}>
-                                        {item.price === 0 ? 'Free' : `$${item.price}`}
-                                    </ThemedText>
-                                </View>
-                                <IconSymbol name="line.3.horizontal" size={16} color={colors.icon + '60'} />
-                            </View>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* --- OTHER OPTIONS (Inside the Item) --- */}
-                    {hasOptions && (
-                        <View style={styles.otherOptionsContainer}>
-                            <ThemedText style={styles.subSectionTitle}>Other {getCategoryLabel(item.type)} Options</ThemedText>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
-                                {options.map((option) => (
-                                    <TouchableOpacity
-                                        key={option.id}
-                                        style={styles.smallOptionCard}
-                                        onPress={() => openOptionDetails(option, item.id)}
-                                    >
-                                        <Image source={{ uri: option.image }} style={styles.smallOptionImage} />
-                                        <View style={styles.smallOptionContent}>
-                                            <ThemedText numberOfLines={1} style={styles.smallOptionTitle}>{option.title}</ThemedText>
-                                            <View style={styles.smallOptionFooter}>
-                                                <ThemedText style={styles.smallOptionPrice}>${option.price}</ThemedText>
-                                                <View style={styles.smallRating}>
-                                                    <IconSymbol name="star.fill" size={10} color="#FFD700" />
-                                                    <ThemedText style={styles.smallRatingText}>{option.rating}</ThemedText>
-                                                </View>
-                                            </View>
-                                        </View>
-                                    </TouchableOpacity>
-                                ))}
-                            </ScrollView>
-                        </View>
-                    )}
-                </View>
-            </ScaleDecorator>
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color={colors.tint} />
+            </View>
         );
-    };
+    }
 
-    const renderHeader = () => (
-        <View>
-            <View style={styles.mapHeader}>
-                <MapView
-                    ref={mapRef}
-                    style={styles.map}
-                    provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-                    initialRegion={dayData.region}
-                >
-                    <Polyline coordinates={dayData.route} strokeColor={colors.tint} strokeWidth={5} />
-                    {timelineData.map((item, index) => (
-                        <Marker
-                            key={item.id}
-                            coordinate={item.coordinates}
-                            anchor={{ x: 0.5, y: 1 }}
-                            zIndex={index + 10}
-                        >
-                            <View style={styles.markerContainer}>
-                                <View style={[styles.markerBubble, { borderColor: item.color }]}>
-                                    <IconSymbol name={item.icon as any} size={14} color={item.color} />
-                                </View>
-                                <View style={[styles.markerArrow, { borderTopColor: item.color }]} />
-                            </View>
-                        </Marker>
-                    ))}
-                </MapView>
-                <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={styles.topGradient} />
-                <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { top: insets.top + 10 }]}>
-                    <IconSymbol name="chevron.left" size={24} color="#fff" />
+    if (!trip) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ThemedText>Trip not found.</ThemedText>
+                <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
+                    <ThemedText style={{ color: colors.tint }}>Go Back</ThemedText>
                 </TouchableOpacity>
             </View>
-
-            <View style={styles.headerBlock}>
-                <View>
-                    <ThemedText style={styles.dateLabel}>Day 1 • {dayData.date}</ThemedText>
-                    <ThemedText type="title">{dayData.title}</ThemedText>
-                </View>
-                <View style={styles.statRow}>
-                    <View style={styles.statItem}>
-                        <IconSymbol name="speedometer" size={16} color="#808080" />
-                        <ThemedText style={styles.statText}>{dayData.stats.miles} mi</ThemedText>
-                    </View>
-                    <View style={styles.statItem}>
-                        <IconSymbol name="dollarsign" size={16} color={colors.tint} />
-                        <ThemedText style={[styles.statText, { color: colors.tint, fontWeight: 'bold' }]}>
-                            ${dayData.stats.cost}
-                        </ThemedText>
-                    </View>
-                </View>
-            </View>
-            <View style={styles.divider} />
-            <ThemedText type="subtitle" style={styles.sectionTitle}>Timeline</ThemedText>
-        </View>
-    );
-
-    const renderFooter = () => (
-        <View style={styles.footerContainer}>
-            <TouchableOpacity style={[styles.addItemButton, { borderColor: colors.icon + '40' }]} onPress={openAddActivityModal}>
-                <IconSymbol name="plus" size={20} color={colors.text} />
-                <ThemedText style={styles.addItemText}>Add Activity</ThemedText>
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
-            {/* --- EXPENSES SECTION --- */}
-            <View style={styles.sectionHeaderRow}>
-                <ThemedText type="subtitle" style={styles.sectionTitle}>Expenses</ThemedText>
-                <TouchableOpacity onPress={openAddExpenseModal}>
-                    <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium }}>+ Add</ThemedText>
-                </TouchableOpacity>
-            </View>
-
-            {expenses.map((exp) => (
-                <View key={exp.id} style={styles.expenseRow}>
-                    <View style={styles.expenseIcon}>
-                        <IconSymbol name="dollarsign" size={16} color="#fff" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                        <ThemedText style={styles.expenseMerchant}>{exp.merchant}</ThemedText>
-                        <ThemedText style={styles.expenseCategory}>{exp.category}</ThemedText>
-                    </View>
-
-                    {/* Receipt Thumbnail */}
-                    {exp.receipt && (
-                        <TouchableOpacity onPress={() => setReceiptPreview(exp.receipt)}>
-                            <Image source={{ uri: exp.receipt }} style={styles.receiptThumbnail} />
-                        </TouchableOpacity>
-                    )}
-
-                    <ThemedText style={styles.expenseAmount}>-${exp.amount.toFixed(2)}</ThemedText>
-                </View>
-            ))}
-
-            <View style={styles.divider} />
-
-            <View style={styles.sectionHeaderRow}>
-                <ThemedText type="subtitle" style={styles.sectionTitle}>Notes</ThemedText>
-            </View>
-            {dayData.notes ? (
-                <TouchableOpacity onPress={openNoteModal} activeOpacity={0.8} style={styles.notesContainer}>
-                    <ThemedText style={styles.notesText}>{dayData.notes}</ThemedText>
-                    <View style={styles.noteEditIcon}>
-                        <IconSymbol name="pencil" size={14} color="#666" />
-                    </View>
-                </TouchableOpacity>
-            ) : (
-                <TouchableOpacity onPress={openNoteModal} style={[styles.addItemButton, { borderColor: colors.icon + '40', marginTop: 0 }]}>
-                    <IconSymbol name="plus" size={20} color={colors.text} />
-                    <ThemedText style={styles.addItemText}>Add Note</ThemedText>
-                </TouchableOpacity>
-            )}
-        </View>
-    );
+        );
+    }
 
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <ThemedView style={styles.container}>
                 <Stack.Screen options={{ headerShown: false }} />
 
-                <DraggableFlatList
-                    data={timelineData}
-                    onDragEnd={({ data }) => setTimelineData(data)}
-                    keyExtractor={(item) => item.id}
-                    renderItem={renderItem}
-                    ListHeaderComponent={renderHeader}
-                    ListFooterComponent={renderFooter}
-                    contentContainerStyle={{ paddingBottom: 100 }}
-                    showsVerticalScrollIndicator={false}
-                />
-
-                {/* --- EDIT MODAL --- */}
-                <Modal
-                    animationType="fade"
-                    transparent={true}
-                    visible={editMode !== 'none'}
-                    onRequestClose={() => setEditMode('none')}
-                >
-                    <View style={styles.modalOverlay}>
-                        <TouchableWithoutFeedback onPress={() => setEditMode('none')}>
-                            <View style={styles.modalBackdrop} />
-                        </TouchableWithoutFeedback>
-                        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
-                            <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-                                <View style={styles.modalHeader}>
-                                    <ThemedText type="subtitle">
-                                        {editMode === 'expense' ? 'Add Expense' :
-                                            editMode === 'activity'
-                                                ? (selectedItemId ? 'Edit Activity' : 'New Activity')
-                                                : 'General Note'}
-                                    </ThemedText>
-                                    <TouchableOpacity onPress={() => setEditMode('none')}>
-                                        <IconSymbol name="minus" size={24} color={colors.text} style={{ transform: [{ rotate: '45deg' }] }} />
-                                    </TouchableOpacity>
+                {/* --- BACKGROUND MAP --- */}
+                <Animated.View style={[
+                    styles.parallaxHeader,
+                    {
+                        height: isMapMaximized ? height : PARALLAX_HEADER_HEIGHT,
+                        transform: isMapMaximized ? [] : [{ translateY: mapTranslateY }, { scale: mapScale }],
+                        zIndex: isMapMaximized ? 200 : 0,
+                    }
+                ]}>
+                    <MapView
+                        ref={mapRef}
+                        style={StyleSheet.absoluteFill}
+                        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                        initialRegion={{
+                            latitude: trip.itinerary?.[0]?.stopLocation.latitude || 37.78825,
+                            longitude: trip.itinerary?.[0]?.stopLocation.longitude || -122.4324,
+                            latitudeDelta: 8.0,
+                            longitudeDelta: 8.0,
+                        }}
+                        scrollEnabled={isMapMaximized}
+                        zoomEnabled={isMapMaximized}
+                    >
+                        {trip.itinerary?.map((day) => (
+                            <Marker
+                                key={day.day}
+                                coordinate={day.stopLocation}
+                                title={day.title}
+                            >
+                                <View style={[styles.dayMarkerPill, { backgroundColor: colors.tint }]}>
+                                    <Text style={styles.dayMarkerText}>Day {day.day}</Text>
                                 </View>
+                                <View style={[styles.markerArrow, { borderTopColor: colors.tint }]} />
+                            </Marker>
+                        ))}
+                    </MapView>
 
-                                {editMode === 'activity' && (
-                                    <>
-                                        <View style={styles.inputContainer}>
-                                            <ThemedText style={styles.label}>Title</ThemedText>
-                                            <TextInput style={[styles.input, { color: colors.text, borderColor: colors.icon }]} value={editForm.title} onChangeText={(text) => setEditForm({ ...editForm, title: text })} placeholder="e.g. Visit Museum" />
-                                        </View>
-                                        <View style={styles.inputContainer}>
-                                            <ThemedText style={styles.label}>Description</ThemedText>
-                                            <TextInput style={[styles.input, { color: colors.text, borderColor: colors.icon }]} value={editForm.desc} onChangeText={(text) => setEditForm({ ...editForm, desc: text })} placeholder="Short description" />
-                                        </View>
-                                        <View style={styles.inputContainer}>
-                                            <ThemedText style={styles.label}>Address</ThemedText>
-                                            <TextInput style={[styles.input, { color: colors.text, borderColor: colors.icon }]} value={editForm.address} onChangeText={(text) => setEditForm({ ...editForm, address: text })} placeholder="123 Main St" />
-                                        </View>
-                                        <View style={styles.inputContainer}>
-                                            <ThemedText style={styles.label}>Cost ($)</ThemedText>
-                                            <TextInput style={[styles.input, { color: colors.text, borderColor: colors.icon }]} value={editForm.price} onChangeText={(text) => setEditForm({ ...editForm, price: text })} keyboardType="numeric" placeholder="0 for Free" />
-                                        </View>
-                                    </>
-                                )}
+                    {!isMapMaximized && (
+                        <LinearGradient
+                            colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.8)']}
+                            style={StyleSheet.absoluteFill}
+                            pointerEvents="none"
+                        />
+                    )}
 
-                                {/* --- EXPENSE FORM --- */}
-                                {editMode === 'expense' && (
-                                    <>
-                                        {/* Scan Button */}
+                    {/* --- MAXIMIZED UI --- */}
+                    {isMapMaximized && (
+                        <>
+                            <TouchableOpacity
+                                style={[styles.closeMapButton, { top: insets.top + 10 }]}
+                                onPress={toggleMapMaximize}
+                            >
+                                <IconSymbol name="xmark" size={20} color="#333" />
+                            </TouchableOpacity>
+
+                            <View style={[styles.carouselContainer, { paddingBottom: insets.bottom + 20 }]}>
+                                <FlatList
+                                    data={trip.itinerary}
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    snapToInterval={width * 0.8 + 15}
+                                    decelerationRate="fast"
+                                    contentContainerStyle={{ paddingHorizontal: 20 }}
+                                    keyExtractor={(item) => item.day.toString()}
+                                    onViewableItemsChanged={onViewableItemsChanged}
+                                    viewabilityConfig={viewabilityConfig}
+                                    renderItem={({ item }) => (
                                         <TouchableOpacity
-                                            style={styles.scanButton}
-                                            onPress={() => setIsCameraVisible(true)}
+                                            style={styles.mapCard}
+                                            onPress={() => {
+                                                setIsMapMaximized(false);
+                                                // router.push('/trip-details/day-details');
+                                            }}
+                                            activeOpacity={0.9}
                                         >
-                                            <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>
-                                                {editForm.receipt ? 'Receipt Scanned! (Retake)' : 'Scan Receipt'}
-                                            </ThemedText>
-                                        </TouchableOpacity>
-
-                                        <View style={styles.inputContainer}>
-                                            <ThemedText style={styles.label}>Merchant</ThemedText>
-                                            <TextInput
-                                                style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
-                                                value={editForm.merchant}
-                                                onChangeText={(text) => setEditForm({ ...editForm, merchant: text })}
-                                                placeholder="e.g. Starbucks"
-                                            />
-                                        </View>
-                                        <View style={styles.inputContainer}>
-                                            <ThemedText style={styles.label}>Amount ($)</ThemedText>
-                                            <TextInput
-                                                style={[styles.input, { color: colors.text, borderColor: colors.icon }]}
-                                                value={editForm.amount}
-                                                onChangeText={(text) => setEditForm({ ...editForm, amount: text })}
-                                                keyboardType="numeric"
-                                                placeholder="0.00"
-                                            />
-                                        </View>
-                                    </>
-                                )}
-
-                                {editMode === 'note' && (
-                                    <View style={styles.inputContainer}>
-                                        <TextInput style={[styles.textArea, { color: colors.text, borderColor: colors.icon }]} value={editForm.notes} onChangeText={(text) => setEditForm({ ...editForm, notes: text })} placeholder="Write your notes here..." multiline numberOfLines={6} textAlignVertical="top" autoFocus={true} />
-                                    </View>
-                                )}
-
-                                <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.tint }]} onPress={saveChanges}>
-                                    <ThemedText style={styles.saveButtonText}>Save</ThemedText>
-                                </TouchableOpacity>
-                            </View>
-                        </KeyboardAvoidingView>
-                    </View>
-                </Modal>
-
-                {/* --- REPLACEMENT MODAL --- */}
-                <Modal
-                    animationType="slide"
-                    transparent={true}
-                    visible={replaceModalVisible}
-                    onRequestClose={() => setReplaceModalVisible(false)}
-                >
-                    <View style={styles.modalOverlay}>
-                        <TouchableWithoutFeedback onPress={() => setReplaceModalVisible(false)}>
-                            <View style={styles.modalBackdrop} />
-                        </TouchableWithoutFeedback>
-                        <View style={[styles.modalContent, { backgroundColor: colors.background, paddingBottom: 50 }]}>
-                            {selectedOption && (
-                                <>
-                                    <View style={styles.modalHeader}>
-                                        <ThemedText type="subtitle">Option Details</ThemedText>
-                                        <TouchableOpacity onPress={() => setReplaceModalVisible(false)}>
-                                            <IconSymbol name="minus" size={24} color={colors.text} style={{ transform: [{ rotate: '45deg' }] }} />
-                                        </TouchableOpacity>
-                                    </View>
-
-                                    <Image source={{ uri: selectedOption.image }} style={styles.replaceModalImage} />
-
-                                    <View style={{ marginTop: 16 }}>
-                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <ThemedText type="title" style={{ fontSize: 22 }}>{selectedOption.title}</ThemedText>
-                                            <View style={styles.ratingBadge}>
-                                                <IconSymbol name="star.fill" size={14} color="#fff" />
-                                                <ThemedText style={styles.ratingText}>{selectedOption.rating}</ThemedText>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={styles.mapCardTitle}>Day {item.day}: {item.title}</Text>
+                                                <Text style={styles.mapCardSubtitle}>{item.distance} driving</Text>
                                             </View>
-                                        </View>
-                                        <ThemedText style={{ color: '#808080', fontSize: 16, marginTop: 4 }}>{selectedOption.desc}</ThemedText>
-                                        <ThemedText style={{ fontSize: 20, fontFamily: Fonts.bold, marginTop: 12 }}>${selectedOption.price}</ThemedText>
-                                    </View>
+                                        </TouchableOpacity>
+                                    )}
+                                />
+                            </View>
+                        </>
+                    )}
+                </Animated.View>
 
-                                    <TouchableOpacity
-                                        style={[styles.saveButton, { backgroundColor: colors.tint, marginTop: 24 }]}
-                                        onPress={confirmReplacement}
-                                    >
-                                        <ThemedText style={styles.saveButtonText}>Replace Current Item</ThemedText>
-                                    </TouchableOpacity>
-                                </>
-                            )}
+                {/* --- NAVBAR --- */}
+                {!isMapMaximized && (
+                    <View style={[styles.navBar, { top: insets.top + 10 }]}>
+                        <TouchableOpacity onPress={() => router.back()} style={styles.glassButton}>
+                            <IconSymbol name="chevron.left" size={24} color="#fff" />
+                        </TouchableOpacity>
+
+                        <View style={styles.navRightGroup}>
+                            <TouchableOpacity onPress={handleShare} style={styles.glassButton}>
+                                <IconSymbol name="square.and.arrow.up" size={20} color="#fff" />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.glassButton} onPress={toggleMapMaximize} activeOpacity={0.7}>
+                                <IconSymbol name="map.fill" size={20} color="#fff" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.glassPill,
+                                    isOverBudget && { backgroundColor: '#FF3B30' },
+                                    isNearBudget && { backgroundColor: '#FF9500' }
+                                ]}
+                                onPress={() => setParamsModalVisible(true)}
+                                activeOpacity={0.7}
+                            >
+                                <IconSymbol name="dollarsign" size={16} color="#fff" style={{ marginRight: 2 }} />
+                                <ThemedText style={styles.budgetText}>{trip.budget}</ThemedText>
+                            </TouchableOpacity>
                         </View>
                     </View>
-                </Modal>
+                )}
 
-                {/* --- REAL CAMERA MODAL --- */}
-                <ReceiptCameraModal
-                    visible={isCameraVisible}
-                    onClose={() => setIsCameraVisible(false)}
-                    onCapture={handleReceiptCaptured}
-                />
+                {/* --- CONTENT SCROLL --- */}
+                <Animated.ScrollView
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ paddingBottom: 100 }}
+                    scrollEventThrottle={16}
+                    onScroll={Animated.event(
+                        [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                        { useNativeDriver: true }
+                    )}
+                    style={[styles.scrollView, { opacity: isMapMaximized ? 0 : 1 }]}
+                    pointerEvents={isMapMaximized ? "none" : "box-none"}
+                >
+                    <View style={{ height: PARALLAX_HEADER_HEIGHT - 60 }} pointerEvents="none" />
 
-                {/* --- FULL SCREEN RECEIPT PREVIEW --- */}
-                <Modal visible={!!receiptPreview} transparent={true} animationType="fade">
-                    <View style={styles.receiptModalOverlay}>
-                        <TouchableOpacity style={styles.receiptCloseBtn} onPress={() => setReceiptPreview(null)}>
-                            <IconSymbol name="minus" size={30} color="#fff" style={{ transform: [{ rotate: '45deg' }] }} />
-                        </TouchableOpacity>
-                        {receiptPreview && (
-                            <Image source={{ uri: receiptPreview }} style={styles.fullReceiptImage} contentFit="contain" />
-                        )}
+                    <View style={[styles.bodyContainer, { backgroundColor: colors.background }]} pointerEvents="auto">
+
+                        <View style={styles.titleSection}>
+                            <ThemedText style={styles.tripLabel}>Trip to</ThemedText>
+                            <ThemedText style={styles.destinationTitle}>{trip.destination}</ThemedText>
+                            <View style={styles.subtitleRow}>
+                                <IconSymbol name="paperplane.fill" size={14} color="#666" />
+                                <ThemedText style={styles.subtitleText}>From {trip.origin}</ThemedText>
+                                <View style={styles.dotSeparator} />
+                                <IconSymbol name="calendar" size={14} color="#666" />
+                                <ThemedText style={styles.subtitleText}>
+                                    {trip.startDate ? new Date(trip.startDate).toLocaleDateString() : 'TBD'}
+                                </ThemedText>
+                            </View>
+                        </View>
+
+                        {/* Budget Breakdown */}
+                        <View style={styles.section}>
+                            <ThemedText type="subtitle" style={styles.sectionTitle}>Budget Breakdown</ThemedText>
+                            <View style={styles.budgetGrid}>
+                                {trip.budgetBreakdown?.map((item, index) => (
+                                    <View key={index} style={[styles.budgetCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
+                                        <View>
+                                            <ThemedText style={styles.budgetAmount}>${item.amount}</ThemedText>
+                                            <ThemedText style={styles.budgetLabel}>{item.category}</ThemedText>
+                                        </View>
+                                    </View>
+                                ))}
+                            </View>
+                        </View>
+
+                        {/* Recent Expenses Section */}
+                        <View style={styles.section}>
+                            <View style={styles.sectionHeaderRow}>
+                                <ThemedText type="subtitle" style={styles.sectionTitle}>Recent Expenses</ThemedText>
+                                <View style={{ flexDirection: 'row', gap: 15 }}>
+                                    <TouchableOpacity onPress={() => setBalancesVisible(true)}>
+                                        <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>Settle Up</ThemedText>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => setViewAllExpensesVisible(true)}>
+                                        <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>View All</ThemedText>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+
+                            {(isOverBudget || isNearBudget) && (
+                                <View style={[styles.warningBanner, { backgroundColor: isOverBudget ? '#FFEBEE' : '#FFF3E0' }]}>
+                                    <IconSymbol name="exclamationmark.triangle.fill" size={18} color={isOverBudget ? '#C62828' : '#EF6C00'} />
+                                    <ThemedText style={[styles.warningText, { color: isOverBudget ? '#C62828' : '#EF6C00' }]}>
+                                        {isOverBudget
+                                            ? `Over Budget by $${(totalSpent - trip.budget).toFixed(0)}!`
+                                            : `Approaching limit: ${budgetPercent.toFixed(0)}% spent`
+                                        }
+                                    </ThemedText>
+                                </View>
+                            )}
+
+                            <View style={[styles.expensesContainer, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
+                                {expenses.slice(0, 3).map((item, index) => (
+                                    <View key={item.id}>
+                                        <SwipeableExpenseRow
+                                            item={item}
+                                            onPress={setSelectedExpense}
+                                            onDelete={handleDeleteExpense}
+                                        />
+                                        {index < 2 && <View style={{ height: 1, backgroundColor: colors.icon + '10' }} />}
+                                    </View>
+                                ))}
+                            </View>
+
+                            <TouchableOpacity
+                                onPress={() => setAddExpenseVisible(true)}
+                                style={[
+                                    styles.addItemButton,
+                                    { borderColor: colors.icon + '40', marginTop: 16 }
+                                ]}
+                            >
+                                <IconSymbol name="plus" size={20} color={colors.text} />
+                                <ThemedText style={styles.addItemText}>Add Expense</ThemedText>
+                            </TouchableOpacity>
+
+                        </View>
+
+                        {/* Itinerary */}
+                        <View style={styles.section}>
+                            <ThemedText type="subtitle" style={styles.sectionTitle}>Itinerary</ThemedText>
+                            {trip.itinerary?.map((day, index) => (
+                                <TouchableOpacity
+                                    key={day.day}
+                                    onPress={() => router.push({
+                                        pathname: '/trip-details/day-details',
+                                        params: { tripId: trip.id, dayIndex: index }
+                                    })}
+                                    style={[styles.dayCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}
+                                >
+                                    <View style={[styles.dayBadge, { backgroundColor: colors.tint + '20' }]}>
+                                        <ThemedText style={[styles.dayNumber, { color: colors.tint }]}>Day {day.day}</ThemedText>
+                                    </View>
+                                    <View style={styles.dayContent}>
+                                        <ThemedText type="defaultSemiBold">{day.title}</ThemedText>
+                                        <ThemedText style={styles.grayText}>{day.distance}</ThemedText>
+                                    </View>
+                                    <IconSymbol name="chevron.right" size={20} color={colors.icon} />
+                                </TouchableOpacity>
+                            ))}
+                        </View>
                     </View>
-                </Modal>
+                </Animated.ScrollView>
 
+                {/* --- MODALS --- */}
+                <BalancesModal
+                    visible={balancesVisible}
+                    onClose={() => setBalancesVisible(false)}
+                    debts={[]} // Logic for debts calculation needs to be re-added based on expenses
+                    currentUser="u1"
+                    onSettle={handleSettleDebt}
+                />
+                <AddExpenseModal
+                    visible={addExpenseVisible}
+                    onClose={() => setAddExpenseVisible(false)}
+                    itineraryDays={trip.itinerary || []}
+                    onSave={handleSaveExpense}
+                />
+                <AllExpensesModal
+                    visible={viewAllExpensesVisible}
+                    onClose={() => setViewAllExpensesVisible(false)}
+                    expenses={expenses}
+                    onSelectExpense={setSelectedExpense}
+                    onDeleteExpense={handleDeleteExpense}
+                />
+                <ExpenseDetailModal
+                    visible={!!selectedExpense}
+                    onClose={() => setSelectedExpense(null)}
+                    expense={selectedExpense}
+                />
+                <BottomSheetModal isVisible={paramsModalVisible} onClose={() => setParamsModalVisible(false)} title="Trip Parameters" height="50%">
+                    <ThemedText style={styles.modalSubtitle}>Trip Details</ThemedText>
+                    <View style={styles.paramRow}>
+                        <ThemedText style={styles.paramLabel}>Budget</ThemedText>
+                        <ThemedText style={styles.paramValue}>${trip.budget}</ThemedText>
+                    </View>
+                    <View style={styles.paramSeparator} />
+                    <View style={styles.paramRow}>
+                        <ThemedText style={styles.paramLabel}>Total Spent</ThemedText>
+                        <ThemedText style={[styles.paramValue, isOverBudget && { color: '#FF3B30' }]}>
+                            ${totalSpent.toFixed(2)}
+                        </ThemedText>
+                    </View>
+                </BottomSheetModal>
             </ThemedView>
         </GestureHandlerRootView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
-    mapHeader: { height: 300, width: '100%', position: 'relative' },
-    map: { width: '100%', height: '100%' },
-    topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 120 },
-    backButton: { position: 'absolute', left: 20, padding: 8, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 20 },
-    markerContainer: { alignItems: 'center', justifyContent: 'center' },
-    markerBubble: { backgroundColor: '#fff', padding: 6, borderRadius: 12, borderWidth: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 },
-    markerArrow: { width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#fff', marginTop: -2 },
-    headerBlock: { paddingHorizontal: 24, paddingTop: 24, marginBottom: 20 },
-    dateLabel: { color: '#808080', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontFamily: Fonts.medium },
-    statRow: { flexDirection: 'row', marginTop: 12, gap: 12 },
-    statItem: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F5F5F5', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8 },
-    statText: { fontSize: 14, fontFamily: Fonts.medium },
-    divider: { height: 1, backgroundColor: '#F0F0F0', marginBottom: 20, marginHorizontal: 24 },
-    sectionTitle: { fontSize: 18, marginLeft: 24, marginBottom: 10 },
-
-    // Card Styles
-    activityCard: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#F5F5F5', padding: 12, marginHorizontal: 24, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
-    activityImage: { width: '100%', height: 120, borderRadius: 12, marginBottom: 12 },
-    activityContent: { gap: 6 },
-    activityHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    titleRow: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 },
-    categoryBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
-    categoryText: { fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
-    cardTitle: { fontSize: 16, marginTop: 4 },
-    editIconBtn: { padding: 4, marginLeft: 8 },
-    activityMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4, flexWrap: 'wrap' },
-    metaText: { fontSize: 12, color: '#808080' },
-    dotSeparator: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#ccc', marginHorizontal: 4 },
-    activityDesc: { color: '#808080', fontSize: 13, marginBottom: 8 },
-    activityFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
-    priceTag: { backgroundColor: '#F9F9F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#EEEEEE' },
-    priceText: { fontSize: 12, color: '#555', fontFamily: Fonts.medium },
-
-    // Book Button
-    bookButton: { marginTop: 12, marginBottom: 4, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-    bookButtonText: { color: '#fff', fontFamily: Fonts.bold, fontSize: 14 },
-
-    // Other Options
-    otherOptionsContainer: { marginTop: 8, paddingLeft: 24, marginBottom: 20 },
-    subSectionTitle: { fontSize: 12, fontFamily: Fonts.bold, color: '#808080', marginBottom: 8, textTransform: 'uppercase' },
-    smallOptionCard: { width: 130, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#EEEEEE', overflow: 'hidden', marginRight: 12 },
-    smallOptionImage: { width: '100%', height: 80 },
-    smallOptionContent: { padding: 8 },
-    smallOptionTitle: { fontSize: 12, fontFamily: Fonts.medium, marginBottom: 4 },
-    smallOptionFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    smallOptionPrice: { fontSize: 12, fontFamily: Fonts.bold },
-    smallRating: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-    smallRatingText: { fontSize: 10, color: '#666' },
-
-    // Footer & Notes
-    footerContainer: { paddingHorizontal: 24, paddingBottom: 20 },
-    addItemButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', marginBottom: 20 },
-    addItemText: { fontSize: 15, fontFamily: Fonts.medium },
-    sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-    notesContainer: { backgroundColor: '#FFFDE7', padding: 16, borderRadius: 12, borderLeftWidth: 4, borderLeftColor: '#FBC02D' },
-    noteEditIcon: { position: 'absolute', right: 12, top: 12, opacity: 0.5 },
-    notesText: { fontSize: 15, color: '#333', lineHeight: 22 },
-
-    // Modals
-    modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-    modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-    modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    inputContainer: { marginBottom: 16 },
-    label: { fontSize: 14, marginBottom: 6, fontFamily: Fonts.medium, color: '#666' },
-    input: { borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 16 },
-    textArea: { borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 16, minHeight: 120 },
-    saveButton: { height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
-    saveButtonText: { color: '#fff', fontSize: 16, fontFamily: Fonts.bold },
-
-    // Replace Modal Specifics
-    replaceModalImage: { width: '100%', height: 200, borderRadius: 16 },
-    ratingBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, gap: 4 },
-    ratingText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-
-    // Expense Specific
-    expenseRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F5F5F5',
-    },
-    expenseIcon: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: '#ccc', // Placeholder color
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    expenseMerchant: {
-        fontSize: 16,
-        fontFamily: Fonts.medium,
-    },
-    expenseCategory: {
-        fontSize: 12,
-        color: '#808080',
-    },
-    expenseAmount: {
-        fontSize: 16,
-        fontFamily: Fonts.bold,
-        color: '#E71D36', // Red for expense
-        marginLeft: 10,
-    },
-    receiptThumbnail: {
-        width: 32,
-        height: 40,
-        borderRadius: 4,
-        marginLeft: 8,
-        borderWidth: 1,
-        borderColor: '#ddd',
-    },
-    scanButton: {
-        backgroundColor: '#333',
-        borderRadius: 12,
-        paddingVertical: 14,
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: 8,
-        marginBottom: 20,
-    },
-    receiptModalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.9)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    fullReceiptImage: {
-        width: '90%',
-        height: '80%',
-    },
-    receiptCloseBtn: {
-        position: 'absolute',
-        top: 50,
-        right: 20,
-        padding: 10,
-        zIndex: 10,
-    },
+    container: { flex: 1, backgroundColor: '#F9FAFB' },
+    scrollView: { flex: 1 },
+    parallaxHeader: { position: 'absolute', top: 0, left: 0, right: 0, width: '100%', zIndex: 0, overflow: 'hidden' },
+    bodyContainer: { flex: 1, borderTopLeftRadius: 30, borderTopRightRadius: 30, minHeight: height - PARALLAX_HEADER_HEIGHT, paddingTop: 30, marginTop: -30, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10 },
+    navBar: { position: 'absolute', left: 20, right: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 100 },
+    navRightGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    glassButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+    glassPill: { backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', flexDirection: 'row', alignItems: 'center', height: 40 },
+    budgetText: { color: '#fff', fontFamily: Fonts.bold, fontSize: 14 },
+    addItemButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed' },
+    addItemText: { fontSize: 16, fontFamily: Fonts.medium, color: '#666' },
+    warningBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 10, borderRadius: 8, marginBottom: 12, gap: 8 },
+    warningText: { fontSize: 14, fontWeight: 'bold' },
+    closeMapButton: { position: 'absolute', left: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 5, zIndex: 201 },
+    carouselContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 201 },
+    mapCard: { width: width * 0.8, backgroundColor: '#fff', borderRadius: 16, padding: 16, marginRight: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 5, flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+    dayBadgeSmall: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, marginRight: 12 },
+    dayBadgeText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+    mapCardTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+    mapCardSubtitle: { fontSize: 14, color: '#888', marginTop: 2 },
+    cardArrow: { padding: 8 },
+    titleSection: { paddingHorizontal: 20, marginBottom: 20 },
+    tripLabel: { color: '#666', fontSize: 14, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1, fontFamily: Fonts.medium },
+    destinationTitle: { fontSize: 32, fontFamily: Fonts.bold, marginBottom: 10, color: '#1a1a1a' },
+    subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    subtitleText: { color: '#666', fontSize: 15, fontFamily: Fonts.medium },
+    dotSeparator: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#ccc', marginHorizontal: 4 },
+    dayMarkerPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3, elevation: 3 },
+    markerArrow: { width: 0, height: 0, backgroundColor: 'transparent', borderStyle: 'solid', borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', alignSelf: 'center', marginTop: -2 },
+    dayMarkerText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+    section: { paddingHorizontal: 20, marginBottom: 24 },
+    sectionTitle: { fontSize: 18, marginBottom: 12, color: '#111' },
+    budgetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+    budgetCard: { width: '48%', padding: 16, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+    iconCircle: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+    budgetAmount: { fontSize: 16, fontFamily: Fonts.bold },
+    budgetLabel: { fontSize: 12, color: '#808080' },
+    sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+    expensesContainer: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+    dayCard: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+    dayBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginRight: 12 },
+    dayNumber: { fontFamily: Fonts.bold, fontSize: 14 },
+    dayContent: { flex: 1 },
+    grayText: { color: '#808080', fontSize: 13, marginTop: 2 },
+    modalSubtitle: { fontSize: 14, color: '#808080', marginBottom: 24 },
+    paramRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
+    paramLabel: { fontSize: 16, color: '#666', fontFamily: Fonts.medium },
+    paramValue: { fontSize: 16, fontFamily: Fonts.bold },
+    paramSeparator: { height: 1, backgroundColor: '#F0F0F0' }
 });

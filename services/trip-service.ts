@@ -2,10 +2,15 @@ import { db } from '@/firebaseConfig';
 import {
     addDoc,
     collection,
+    deleteDoc,
+    doc,
+    increment,
     onSnapshot,
+    orderBy,
     query,
     Timestamp,
     Unsubscribe,
+    updateDoc,
     where
 } from 'firebase/firestore';
 
@@ -74,5 +79,82 @@ export const TripService = {
         }, (error) => {
             console.error("Error fetching trips:", error);
         });
+    },
+
+    /**
+     * Real-time listener for a single trip
+     */
+    subscribeToTrip(tripId: string, onUpdate: (trip: Trip | null) => void): Unsubscribe {
+        const ref = doc(db, 'trips', tripId);
+
+        return onSnapshot(ref, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                // Safe Date Conversion
+                const tripData = {
+                    id: docSnap.id,
+                    ...data,
+                    startDate: data.startDate instanceof Timestamp ? data.startDate.toDate() : (data.startDate ? new Date(data.startDate) : null),
+                    endDate: data.endDate instanceof Timestamp ? data.endDate.toDate() : (data.endDate ? new Date(data.endDate) : null),
+                } as Trip;
+                onUpdate(tripData);
+            } else {
+                onUpdate(null); // Trip deleted or not found
+            }
+        }, (error) => {
+            console.error("Error fetching trip details:", error);
+        });
+    },
+
+    /**
+     * Real-time listener for EXPENSES of a trip
+     */
+    subscribeToExpenses(tripId: string, onUpdate: (expenses: any[]) => void): Unsubscribe {
+        const expensesRef = collection(db, 'trips', tripId, 'expenses');
+        const q = query(expensesRef, orderBy('createdAt', 'desc'));
+
+        return onSnapshot(q, (snapshot) => {
+            const fetchedExpenses = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            onUpdate(fetchedExpenses);
+        }, (error) => {
+            console.error("Error fetching expenses:", error);
+        });
+    },
+
+    /**
+     * Add a new expense and update the trip total
+     */
+    async addExpense(tripId: string, expense: any) {
+        try {
+            // 1. Add to Subcollection
+            await addDoc(collection(db, 'trips', tripId, 'expenses'), expense);
+
+            // 2. Update Trip Total
+            await updateDoc(doc(db, 'trips', tripId), {
+                spent: increment(expense.amount)
+            });
+        } catch (error) {
+            console.error("Error adding expense:", error);
+            throw error;
+        }
+    },
+
+    /**
+     * Delete an expense and update the trip total
+     */
+    async deleteExpense(tripId: string, expenseId: string, amount: number) {
+        try {
+            await deleteDoc(doc(db, 'trips', tripId, 'expenses', expenseId));
+
+            await updateDoc(doc(db, 'trips', tripId), {
+                spent: increment(-amount)
+            });
+        } catch (error) {
+            console.error("Error deleting expense:", error);
+            throw error;
+        }
     }
 };

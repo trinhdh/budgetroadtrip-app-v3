@@ -1,7 +1,8 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     Animated,
     Dimensions,
@@ -14,191 +15,167 @@ import {
     View,
     ViewToken
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// NOTE: Make sure to wrap your App root with GestureHandlerRootView for Swipeable to work!
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// --- Custom Components ---
+// --- SERVICE & CONTEXT ---
+import { Trip } from '@/constants/types';
+import { useAuth } from '@/context/AuthContext'; // Import Auth
+import { TripService } from '@/services/trip-service';
+
+// --- COMPONENTS ---
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-// --- Modals (New Paths) ---
+// --- MODALS ---
 import { AddExpenseModal } from '@/components/ui/add-expense-modal';
 import { AllExpensesModal } from '@/components/ui/all-expense-modal';
 import { BalancesModal } from '@/components/ui/balances-modal';
 import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { ExpenseDetailModal } from '@/components/ui/expense-detail-modal';
-import { SwipeableExpenseRow } from '@/components/ui/swipeable-expense-row'; // Import Row
+import { SwipeableExpenseRow } from '@/components/ui/swipeable-expense-row';
 
 const { width, height } = Dimensions.get('window');
 const PARALLAX_HEADER_HEIGHT = 400;
 
-// --- MOCK DATA ---
-const TRIP_MEMBERS = [
-    { id: 'u1', name: 'You', avatar: 'https://ui-avatars.com/api/?name=You&background=333&color=fff', email: 'you@example.com' },
-    { id: 'u2', name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff', email: 'alex@example.com' },
-    { id: 'u3', name: 'Sam', avatar: 'https://ui-avatars.com/api/?name=Sam&background=2EC4B6&color=fff', email: 'sam@example.com' },
-];
-const TRIP = {
-    id: '1',
-    destination: 'New York City',
-    origin: 'Atlanta',
-    dates: 'Dec 01 - Dec 05',
-    totalBudget: 1500,
-    spent: 1240,
-    travelers: 2,
-    vehicle: 'Sedan (30 mpg)',
-    budgetType: 'Manual',
-    image: 'https://images.unsplash.com/photo-1605833556294-ea5c7a74f57d?q=80&w=1000&auto=format&fit=crop',
-
-    originCoords: { latitude: 33.7490, longitude: -84.3880 },
-    destCoords: { latitude: 40.7128, longitude: -74.0060 },
-
-    budgetBreakdown: [
-        { id: 1, category: 'Fuel', amount: 150, icon: 'speedometer', color: '#FF9F1C' },
-        { id: 2, category: 'Hotel', amount: 600, icon: 'house.fill', color: '#2EC4B6' },
-        { id: 3, category: 'Food', amount: 350, icon: 'leaf', color: '#E71D36' },
-        { id: 4, category: 'Activities', amount: 140, icon: 'wand.and.stars', color: '#7209B7' },
-    ],
-
-    itinerary: [
-        {
-            day: 1,
-            title: 'Departure -> Richmond',
-            distance: '450 mi',
-            color: '#FF9F1C',
-            path: [{ latitude: 33.7490, longitude: -84.3880 }, { latitude: 35.2271, longitude: -80.8431 }, { latitude: 37.5407, longitude: -77.4360 }],
-            stopLocation: { latitude: 37.5407, longitude: -77.4360 }
-        },
-        {
-            day: 2,
-            title: 'Richmond -> NYC',
-            distance: '420 mi',
-            color: '#2EC4B6',
-            path: [{ latitude: 37.5407, longitude: -77.4360 }, { latitude: 38.9072, longitude: -77.0369 }, { latitude: 39.9526, longitude: -75.1652 }, { latitude: 40.7128, longitude: -74.0060 }],
-            stopLocation: { latitude: 39.9526, longitude: -75.1652 }
-        },
-        {
-            day: 3,
-            title: 'Manhattan Exploration',
-            distance: '10 mi',
-            color: '#7209B7',
-            path: [{ latitude: 40.7128, longitude: -74.0060 }, { latitude: 40.7580, longitude: -73.9855 }, { latitude: 40.7829, longitude: -73.9654 }],
-            stopLocation: { latitude: 40.7580, longitude: -73.9855 }
-        },
-    ]
-};
-
-const INITIAL_EXPENSES = [
-    {
-        id: '101', title: 'Shell Gas Station', amount: 45.50, date: 'Dec 01', category: 'Fuel', hasReceipt: true, day: 1,
-        addedBy: { name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff' },
-        receiptImage: 'https://templates.invoicehome.com/receipt-template-us-neat-750px.png',
-        paidBy: 'u1', // You paid
-        splitBy: ['u1', 'u2', 'u3'], // Split equally among all
-    },
-    {
-        id: '102', title: 'Starbucks Coffee', amount: 12.25, date: 'Dec 02', category: 'Food', hasReceipt: false, day: 2,
-        addedBy: { name: 'Sam', avatar: 'https://ui-avatars.com/api/?name=Sam&background=2EC4B6&color=fff' },
-        paidBy: 'u2', // Alex paid
-        splitBy: ['u1', 'u2'], // Only You and Alex ate
-    },
-    {
-        id: '103', title: 'Museum Ticket', amount: 25.00, date: 'Dec 02', category: 'Activities', hasReceipt: true, day: 2,
-        addedBy: { name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff' }
-    },
-];
-
 export default function TripDetailsScreen() {
     const router = useRouter();
+    const { id } = useLocalSearchParams();
+    const tripId = Array.isArray(id) ? id[0] : id;
+
+    const { user } = useAuth(); // Get current user
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
     const insets = useSafeAreaInsets();
 
     // --- STATE ---
-    const [expenses, setExpenses] = useState(INITIAL_EXPENSES);
+    const [trip, setTrip] = useState<Trip | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [expenses, setExpenses] = useState<any[]>([]);
+
     const [balancesVisible, setBalancesVisible] = useState(false);
-
-    const debts = [
-        {
-            from: { id: 'u2', name: 'Alex', avatar: 'https://ui-avatars.com/api/?name=Alex&background=FF9F1C&color=fff' },
-            to: { id: 'u1', name: 'You', avatar: 'https://ui-avatars.com/api/?name=You&background=333&color=fff' },
-            amount: 35.50
-        }
-    ];
-    // Calculate Total Spent
-    const totalSpent = useMemo(() => {
-        return expenses.reduce((sum, item) => sum + (typeof item.amount === 'string' ? parseFloat(item.amount) : item.amount), 0);
-    }, [expenses]);
-
-    const budgetPercent = (totalSpent / TRIP.totalBudget) * 100;
-    const isOverBudget = totalSpent > TRIP.totalBudget;
-    const isNearBudget = !isOverBudget && budgetPercent >= 90;
-
-    // Modals
     const [paramsModalVisible, setParamsModalVisible] = useState(false);
     const [addExpenseVisible, setAddExpenseVisible] = useState(false);
     const [viewAllExpensesVisible, setViewAllExpensesVisible] = useState(false);
     const [selectedExpense, setSelectedExpense] = useState<any>(null);
 
+    // --- 1. FETCH TRIP ---
+    useEffect(() => {
+        if (!tripId) return;
+        const unsubscribeTrip = TripService.subscribeToTrip(tripId, (data) => {
+            setLoading(false);
+            if (data) {
+                setTrip(data);
+            } else {
+                Alert.alert("Error", "Trip not found");
+                router.back();
+            }
+        });
+        return () => unsubscribeTrip();
+    }, [tripId]);
+
+    // --- 2. FETCH EXPENSES ---
+    useEffect(() => {
+        if (!tripId) return;
+        const unsubscribeExpenses = TripService.subscribeToExpenses(tripId, (fetchedExpenses) => {
+            setExpenses(fetchedExpenses);
+        });
+        return () => unsubscribeExpenses();
+    }, [tripId]);
+
+    // Calculate Total Spent
+    const totalSpent = useMemo(() => {
+        return expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    }, [expenses]);
+
+    const budgetPercent = trip ? (totalSpent / trip.budget) * 100 : 0;
+    const isOverBudget = trip && totalSpent > trip.budget;
+    const isNearBudget = !isOverBudget && budgetPercent >= 90;
+
     // --- ACTIONS ---
 
-    const handleSaveExpense = (data: any) => {
-        const newExpense = {
-            ...data,
-            id: Math.random().toString(),
-            addedBy: { name: 'You', avatar: 'https://ui-avatars.com/api/?name=You&background=333&color=fff' },
-            hasReceipt: !!data.receiptImage
-        };
-
-        const newTotal = totalSpent + parseFloat(data.amount);
-
-        if (newTotal > TRIP.totalBudget) {
-            Alert.alert("Budget Exceeded!", `This pushes total to $${newTotal.toFixed(2)}.`);
-        } else if (newTotal >= TRIP.totalBudget * 0.9) {
-            Alert.alert("Budget Warning", `You are at ${((newTotal / TRIP.totalBudget) * 100).toFixed(0)}% of budget.`);
-        } else {
-            Alert.alert("Success", "Expense added!");
+    const handleShare = async () => {
+        try {
+            const message = trip
+                ? `Check out my trip to ${trip.destination}! Budget: $${trip.budget}`
+                : "Check out my trip plan!";
+            await Share.share({ message, title: 'Trip Details' });
+        } catch (error: any) {
+            Alert.alert(error.message);
         }
-
-        setExpenses(prev => [newExpense, ...prev]);
     };
 
-    const handleDeleteExpense = (expenseId: string) => {
-        setExpenses(prev => prev.filter(ex => ex.id !== expenseId));
-        // Optional: Alert.alert("Deleted", "The expense has been removed.");
+    const handleSaveExpense = async (data: any) => {
+        if (!tripId || !user) return;
+
+        try {
+            const newExpense = {
+                ...data,
+                amount: parseFloat(data.amount),
+                createdAt: new Date(),
+                // 1. RECORD WHO ADDED IT
+                addedBy: {
+                    uid: user.uid,
+                    name: user.displayName || user.email?.split('@')[0] || 'Traveler',
+                    avatar: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'Traveler'}&background=random`
+                },
+                hasReceipt: !!data.receiptImage
+            };
+
+            await TripService.addExpense(tripId, newExpense);
+            Alert.alert("Success", "Expense added!");
+        } catch (error) {
+            Alert.alert("Error", "Failed to add expense.");
+        }
     };
 
-    const handleSettleDebt = (debt: any) => {
-        const newExpense = {
-            id: Math.random().toString(),
+    const handleDeleteExpense = async (expenseId: string) => {
+        if (!tripId) return;
+        try {
+            const expenseToDelete = expenses.find(e => e.id === expenseId);
+            const amount = expenseToDelete ? Number(expenseToDelete.amount) : 0;
+            await TripService.deleteExpense(tripId, expenseId, amount);
+        } catch (error) {
+            Alert.alert("Error", "Failed to delete expense.");
+        }
+    };
+
+    const handleSettleDebt = async (debt: any) => {
+        if (!tripId || !user) return;
+
+        const settlementExpense = {
             title: 'Settlement',
             category: 'Other',
             date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
             amount: debt.amount,
             paidBy: debt.from.id,
             splitBy: [debt.to.id],
-            addedBy: { name: 'System', avatar: '' },
+            // 2. RECORD WHO SETTLED IT
+            addedBy: {
+                uid: user.uid,
+                name: user.displayName || 'Traveler',
+                avatar: user.photoURL || ''
+            },
             isSettlement: true,
-
-            // --- ADD THESE LINES TO FIX THE TYPE ERROR ---
             hasReceipt: false,
-            day: 0, // Or whatever default number you prefer
-            receiptImage: undefined
+            day: 0,
+            receiptImage: undefined,
+            createdAt: new Date()
         };
-        // Add to expenses list (this will trigger recalculation of debts)
-        setExpenses(prev => [newExpense, ...prev]);
 
-        // Optional: Close modal or show success message
-        // setBalancesVisible(false); 
-        Alert.alert("Success", `Payment recorded!`);
+        try {
+            await TripService.addExpense(tripId, settlementExpense);
+            Alert.alert("Success", "Payment recorded!");
+        } catch (error) {
+            Alert.alert("Error", "Could not settle debt.");
+        }
     };
 
-    // --- MAP & SCROLL LOGIC ---
+    // --- MAP LOGIC ---
     const [isMapMaximized, setIsMapMaximized] = useState(false);
     const mapRef = useRef<MapView>(null);
     const scrollY = useRef(new Animated.Value(0)).current;
@@ -218,13 +195,7 @@ export default function TripDetailsScreen() {
 
     const toggleMapMaximize = () => setIsMapMaximized(!isMapMaximized);
 
-    const handleShare = async () => {
-        try {
-            await Share.share({ message: `Check out my trip to ${TRIP.destination}!`, title: `Trip to ${TRIP.destination}` });
-        } catch (error: any) { Alert.alert(error.message); }
-    };
-
-    const focusOnDay = useCallback((day: typeof TRIP.itinerary[0]) => {
+    const focusOnDay = useCallback((day: any) => {
         if (mapRef.current && day.stopLocation) {
             mapRef.current.animateToRegion({
                 latitude: day.stopLocation.latitude,
@@ -243,12 +214,31 @@ export default function TripDetailsScreen() {
 
     const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
+    if (loading) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color={colors.tint} />
+            </View>
+        );
+    }
+
+    if (!trip) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ThemedText>Trip not found.</ThemedText>
+                <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
+                    <ThemedText style={{ color: colors.tint }}>Go Back</ThemedText>
+                </TouchableOpacity>
+            </View>
+        );
+    }
+
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <ThemedView style={styles.container}>
                 <Stack.Screen options={{ headerShown: false }} />
 
-                {/* --- BACKGROUND MAP --- */}
+                {/* BACKGROUND MAP */}
                 <Animated.View style={[
                     styles.parallaxHeader,
                     {
@@ -262,40 +252,26 @@ export default function TripDetailsScreen() {
                         style={StyleSheet.absoluteFill}
                         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
                         initialRegion={{
-                            latitude: 37.5,
-                            longitude: -79.0,
-                            latitudeDelta: 12.0,
-                            longitudeDelta: 12.0,
+                            latitude: trip.itinerary?.[0]?.stopLocation.latitude || 37.78825,
+                            longitude: trip.itinerary?.[0]?.stopLocation.longitude || -122.4324,
+                            latitudeDelta: 8.0,
+                            longitudeDelta: 8.0,
                         }}
                         scrollEnabled={isMapMaximized}
                         zoomEnabled={isMapMaximized}
-                        pitchEnabled={isMapMaximized}
-                        rotateEnabled={isMapMaximized}
                     >
-                        {TRIP.itinerary.map((day) => (
-                            <React.Fragment key={day.day}>
-                                <Polyline coordinates={day.path} strokeColor={day.color} strokeWidth={5} />
-                                <Marker
-                                    coordinate={day.stopLocation}
-                                    anchor={{ x: 0.5, y: 1 }}
-                                    onPress={(e) => {
-                                        if (!isMapMaximized) {
-                                            e.stopPropagation();
-                                            router.push('/trip-details/day-details');
-                                        } else {
-                                            focusOnDay(day);
-                                        }
-                                    }}
-                                >
-                                    <View style={[styles.dayMarkerPill, { backgroundColor: day.color }]}>
-                                        <Text style={styles.dayMarkerText}>Day {day.day}</Text>
-                                    </View>
-                                    <View style={[styles.markerArrow, { borderTopColor: day.color }]} />
-                                </Marker>
-                            </React.Fragment>
+                        {trip.itinerary?.map((day) => (
+                            <Marker
+                                key={day.day}
+                                coordinate={day.stopLocation}
+                                title={day.title}
+                            >
+                                <View style={[styles.dayMarkerPill, { backgroundColor: colors.tint }]}>
+                                    <Text style={styles.dayMarkerText}>Day {day.day}</Text>
+                                </View>
+                                <View style={[styles.markerArrow, { borderTopColor: colors.tint }]} />
+                            </Marker>
                         ))}
-                        <Marker coordinate={TRIP.originCoords} title={TRIP.origin} />
-                        <Marker coordinate={TRIP.destCoords} title={TRIP.destination} />
                     </MapView>
 
                     {!isMapMaximized && (
@@ -306,7 +282,7 @@ export default function TripDetailsScreen() {
                         />
                     )}
 
-                    {/* --- MAXIMIZED UI --- */}
+                    {/* MAXIMIZED UI */}
                     {isMapMaximized && (
                         <>
                             <TouchableOpacity
@@ -318,7 +294,7 @@ export default function TripDetailsScreen() {
 
                             <View style={[styles.carouselContainer, { paddingBottom: insets.bottom + 20 }]}>
                                 <FlatList
-                                    data={TRIP.itinerary}
+                                    data={trip.itinerary}
                                     horizontal
                                     showsHorizontalScrollIndicator={false}
                                     snapToInterval={width * 0.8 + 15}
@@ -330,21 +306,12 @@ export default function TripDetailsScreen() {
                                     renderItem={({ item }) => (
                                         <TouchableOpacity
                                             style={styles.mapCard}
-                                            onPress={() => {
-                                                setIsMapMaximized(false);
-                                                router.push('/trip-details/day-details');
-                                            }}
+                                            onPress={() => setIsMapMaximized(false)}
                                             activeOpacity={0.9}
                                         >
-                                            <View style={[styles.dayBadgeSmall, { backgroundColor: item.color }]}>
-                                                <Text style={styles.dayBadgeText}>Day {item.day}</Text>
-                                            </View>
                                             <View style={{ flex: 1 }}>
-                                                <Text style={styles.mapCardTitle}>{item.title}</Text>
+                                                <Text style={styles.mapCardTitle}>Day {item.day}: {item.title}</Text>
                                                 <Text style={styles.mapCardSubtitle}>{item.distance} driving</Text>
-                                            </View>
-                                            <View style={styles.cardArrow}>
-                                                <IconSymbol name="chevron.right" size={16} color="#999" />
                                             </View>
                                         </TouchableOpacity>
                                     )}
@@ -354,7 +321,7 @@ export default function TripDetailsScreen() {
                     )}
                 </Animated.View>
 
-                {/* --- NAVBAR --- */}
+                {/* NAVBAR */}
                 {!isMapMaximized && (
                     <View style={[styles.navBar, { top: insets.top + 10 }]}>
                         <TouchableOpacity onPress={() => router.back()} style={styles.glassButton}>
@@ -378,13 +345,13 @@ export default function TripDetailsScreen() {
                                 activeOpacity={0.7}
                             >
                                 <IconSymbol name="dollarsign" size={16} color="#fff" style={{ marginRight: 2 }} />
-                                <ThemedText style={styles.budgetText}>{TRIP.totalBudget}</ThemedText>
+                                <ThemedText style={styles.budgetText}>{trip.budget}</ThemedText>
                             </TouchableOpacity>
                         </View>
                     </View>
                 )}
 
-                {/* --- CONTENT SCROLL --- */}
+                {/* SCROLL CONTENT */}
                 <Animated.ScrollView
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={{ paddingBottom: 100 }}
@@ -402,13 +369,15 @@ export default function TripDetailsScreen() {
 
                         <View style={styles.titleSection}>
                             <ThemedText style={styles.tripLabel}>Trip to</ThemedText>
-                            <ThemedText style={styles.destinationTitle}>{TRIP.destination}</ThemedText>
+                            <ThemedText style={styles.destinationTitle}>{trip.destination}</ThemedText>
                             <View style={styles.subtitleRow}>
                                 <IconSymbol name="paperplane.fill" size={14} color="#666" />
-                                <ThemedText style={styles.subtitleText}>From {TRIP.origin}</ThemedText>
+                                <ThemedText style={styles.subtitleText}>From {trip.origin}</ThemedText>
                                 <View style={styles.dotSeparator} />
                                 <IconSymbol name="calendar" size={14} color="#666" />
-                                <ThemedText style={styles.subtitleText}>{TRIP.dates}</ThemedText>
+                                <ThemedText style={styles.subtitleText}>
+                                    {trip.startDate ? new Date(trip.startDate).toLocaleDateString() : 'TBD'}
+                                </ThemedText>
                             </View>
                         </View>
 
@@ -416,11 +385,8 @@ export default function TripDetailsScreen() {
                         <View style={styles.section}>
                             <ThemedText type="subtitle" style={styles.sectionTitle}>Budget Breakdown</ThemedText>
                             <View style={styles.budgetGrid}>
-                                {TRIP.budgetBreakdown.map((item) => (
-                                    <View key={item.id} style={[styles.budgetCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
-                                        <View style={[styles.iconCircle, { backgroundColor: item.color + '15' }]}>
-                                            <IconSymbol name={item.icon as any} size={20} color={item.color} />
-                                        </View>
+                                {trip.budgetBreakdown?.map((item, index) => (
+                                    <View key={index} style={[styles.budgetCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
                                         <View>
                                             <ThemedText style={styles.budgetAmount}>${item.amount}</ThemedText>
                                             <ThemedText style={styles.budgetLabel}>{item.category}</ThemedText>
@@ -449,7 +415,7 @@ export default function TripDetailsScreen() {
                                     <IconSymbol name="exclamationmark.triangle.fill" size={18} color={isOverBudget ? '#C62828' : '#EF6C00'} />
                                     <ThemedText style={[styles.warningText, { color: isOverBudget ? '#C62828' : '#EF6C00' }]}>
                                         {isOverBudget
-                                            ? `Over Budget by $${(totalSpent - TRIP.totalBudget).toFixed(0)}!`
+                                            ? `Over Budget by $${(totalSpent - trip.budget).toFixed(0)}!`
                                             : `Approaching limit: ${budgetPercent.toFixed(0)}% spent`
                                         }
                                     </ThemedText>
@@ -464,8 +430,6 @@ export default function TripDetailsScreen() {
                                             onPress={setSelectedExpense}
                                             onDelete={handleDeleteExpense}
                                         />
-                                        {/* Divider logic handled in row or container borders */}
-                                        {index < 2 && <View style={{ height: 1, backgroundColor: colors.icon + '10' }} />}
                                     </View>
                                 ))}
                             </View>
@@ -486,14 +450,21 @@ export default function TripDetailsScreen() {
                         {/* Itinerary */}
                         <View style={styles.section}>
                             <ThemedText type="subtitle" style={styles.sectionTitle}>Itinerary</ThemedText>
-                            {TRIP.itinerary.map((day) => (
-                                <TouchableOpacity key={day.day} onPress={() => router.push('/trip-details/day-details')} style={[styles.dayCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
-                                    <View style={[styles.dayBadge, { backgroundColor: day.color + '20' }]}>
-                                        <ThemedText style={[styles.dayNumber, { color: day.color }]}>Day {day.day}</ThemedText>
+                            {trip.itinerary?.map((day, index) => (
+                                <TouchableOpacity
+                                    key={day.day}
+                                    onPress={() => router.push({
+                                        pathname: '/trip-details/day-details',
+                                        params: { tripId: trip.id, dayIndex: index }
+                                    })}
+                                    style={[styles.dayCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}
+                                >
+                                    <View style={[styles.dayBadge, { backgroundColor: colors.tint + '20' }]}>
+                                        <ThemedText style={[styles.dayNumber, { color: colors.tint }]}>Day {day.day}</ThemedText>
                                     </View>
                                     <View style={styles.dayContent}>
                                         <ThemedText type="defaultSemiBold">{day.title}</ThemedText>
-                                        <ThemedText style={styles.grayText}>{day.distance} driving</ThemedText>
+                                        <ThemedText style={styles.grayText}>{day.distance}</ThemedText>
                                     </View>
                                     <IconSymbol name="chevron.right" size={20} color={colors.icon} />
                                 </TouchableOpacity>
@@ -506,18 +477,33 @@ export default function TripDetailsScreen() {
                 <BalancesModal
                     visible={balancesVisible}
                     onClose={() => setBalancesVisible(false)}
-                    debts={debts}
-                    currentUser="u1" // The ID representing 'You'
-                    onSettle={handleSettleDebt} // <--- Pass function here
+                    debts={[]} // Logic for debts calculation needs to be re-added based on expenses
+                    currentUser="u1"
+                    onSettle={handleSettleDebt}
                 />
-                <AddExpenseModal visible={addExpenseVisible} onClose={() => setAddExpenseVisible(false)} itineraryDays={TRIP.itinerary} onSave={handleSaveExpense} />
-                <AllExpensesModal visible={viewAllExpensesVisible} onClose={() => setViewAllExpensesVisible(false)} expenses={expenses} onSelectExpense={setSelectedExpense} onDeleteExpense={handleDeleteExpense} />
-                <ExpenseDetailModal visible={!!selectedExpense} onClose={() => setSelectedExpense(null)} expense={selectedExpense} />
+                <AddExpenseModal
+                    visible={addExpenseVisible}
+                    onClose={() => setAddExpenseVisible(false)}
+                    itineraryDays={trip.itinerary || []}
+                    onSave={handleSaveExpense}
+                />
+                <AllExpensesModal
+                    visible={viewAllExpensesVisible}
+                    onClose={() => setViewAllExpensesVisible(false)}
+                    expenses={expenses}
+                    onSelectExpense={setSelectedExpense}
+                    onDeleteExpense={handleDeleteExpense}
+                />
+                <ExpenseDetailModal
+                    visible={!!selectedExpense}
+                    onClose={() => setSelectedExpense(null)}
+                    expense={selectedExpense}
+                />
                 <BottomSheetModal isVisible={paramsModalVisible} onClose={() => setParamsModalVisible(false)} title="Trip Parameters" height="50%">
-                    <ThemedText style={styles.modalSubtitle}>This is the data you submitted to generate this plan.</ThemedText>
+                    <ThemedText style={styles.modalSubtitle}>Trip Details</ThemedText>
                     <View style={styles.paramRow}>
                         <ThemedText style={styles.paramLabel}>Budget</ThemedText>
-                        <ThemedText style={styles.paramValue}>${TRIP.totalBudget}</ThemedText>
+                        <ThemedText style={styles.paramValue}>${trip.budget}</ThemedText>
                     </View>
                     <View style={styles.paramSeparator} />
                     <View style={styles.paramRow}>
