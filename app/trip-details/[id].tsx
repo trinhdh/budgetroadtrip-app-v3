@@ -399,7 +399,7 @@ export default function TripDetailsScreen() {
                         {/* Recent Expenses Section */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeaderRow}>
-                                <ThemedText type="subtitle" style={styles.sectionTitle}>Recent Expenses</ThemedText>
+                                <ThemedText type="subtitle" style={[styles.sectionTitle, { marginBottom: 0 }]}>Recent Expenses</ThemedText>
                                 <View style={{ flexDirection: 'row', gap: 15 }}>
                                     <TouchableOpacity onPress={() => setBalancesVisible(true)}>
                                         <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>Settle Up</ThemedText>
@@ -422,17 +422,24 @@ export default function TripDetailsScreen() {
                                 </View>
                             )}
 
-                            <View style={[styles.expensesContainer, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
-                                {expenses.slice(0, 3).map((item, index) => (
-                                    <View key={item.id}>
-                                        <SwipeableExpenseRow
-                                            item={item}
-                                            onPress={setSelectedExpense}
-                                            onDelete={handleDeleteExpense}
-                                        />
-                                    </View>
-                                ))}
-                            </View>
+                            {/* Only render container if expenses exist to avoid empty border line */}
+                            {expenses.length > 0 && (
+                                <View style={[styles.expensesContainer, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
+                                    {expenses.slice(0, 3).map((item, index) => (
+                                        <View key={item.id}>
+                                            <SwipeableExpenseRow
+                                                item={item}
+                                                onPress={setSelectedExpense}
+                                                onDelete={handleDeleteExpense}
+                                            />
+                                            {/* Add separator only between items */}
+                                            {index < Math.min(expenses.length, 3) - 1 && (
+                                                <View style={{ height: 1, backgroundColor: colors.icon + '10' }} />
+                                            )}
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
 
                             <TouchableOpacity
                                 onPress={() => setAddExpenseVisible(true)}
