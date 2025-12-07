@@ -53,10 +53,11 @@ export default function CreateTripScreen() {
         carName: '',
         mpg: '',        // Initialized as string
         gasPrice: '',   // Initialized as string
-        budget: 1000,
+        budget: 500,
     });
 
     const handleNext = () => {
+        // --- Validation Logic ---
         if (step === 1) {
             if (!form.origin || !form.destination) {
                 Alert.alert('Incomplete', 'Please select both origin and destination.');
@@ -68,12 +69,21 @@ export default function CreateTripScreen() {
                 return;
             }
         } else if (step === 4) {
+            // 1. Check if empty
             if (!form.mpg || !form.gasPrice) {
                 Alert.alert('Incomplete', 'Please select a vehicle or enter MPG/Gas Price.');
                 return;
             }
+
+            // 2. NEW: Check if they are valid numbers
+            // "2.9abc" -> Number() is NaN -> returns true
+            if (isNaN(Number(form.mpg)) || isNaN(Number(form.gasPrice))) {
+                Alert.alert('Invalid Input', 'Please enter valid numeric values for MPG and Gas Price (e.g. 25, 3.50).');
+                return;
+            }
         }
 
+        // --- Navigation Logic ---
         if (step < totalSteps) {
             setStep(step + 1);
         } else {
