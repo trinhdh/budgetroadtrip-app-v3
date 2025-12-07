@@ -247,7 +247,10 @@ export default function HomeScreen() {
                     <View style={styles.cardTopRow}>
                       <View></View>
                       <View style={styles.budgetBadge}>
-                        <ThemedText style={styles.budgetText}>${trip.totalBudget || trip.budget || 0}</ThemedText>
+                        {/* CHANGED: Display Estimated Cost with Tilde */}
+                        <ThemedText style={styles.budgetText}>
+                          ~${Math.round(trip.estimatedCost || trip.budget || 0)}
+                        </ThemedText>
                       </View>
                     </View>
 

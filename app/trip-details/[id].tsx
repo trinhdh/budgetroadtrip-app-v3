@@ -274,7 +274,6 @@ export default function TripDetailsScreen() {
                                 title={day.title}
                             >
                                 <View style={[styles.dayMarkerPill, { backgroundColor: colors.tint }]}>
-                                    {/* FIX: Use index + 1 for display */}
                                     <Text style={styles.dayMarkerText}>Day {index + 1}</Text>
                                 </View>
                                 <View style={[styles.markerArrow, { borderTopColor: colors.tint }]} />
@@ -318,7 +317,6 @@ export default function TripDetailsScreen() {
                                             activeOpacity={0.9}
                                         >
                                             <View style={{ flex: 1 }}>
-                                                {/* FIX: Use index + 1 for display */}
                                                 <Text style={styles.mapCardTitle}>Day {index + 1}: {item.title}</Text>
                                                 <Text style={styles.mapCardSubtitle}>{item.distance} driving</Text>
                                             </View>
@@ -354,7 +352,8 @@ export default function TripDetailsScreen() {
                                 activeOpacity={0.7}
                             >
                                 <IconSymbol name="dollarsign" size={16} color="#fff" style={{ marginRight: 2 }} />
-                                <ThemedText style={styles.budgetText}>{trip.budget}</ThemedText>
+                                {/* CHANGE: Show Estimated Cost with Tilde */}
+                                <ThemedText style={styles.budgetText}>~{Math.round(trip.estimatedCost)}</ThemedText>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -477,7 +476,6 @@ export default function TripDetailsScreen() {
                                     style={[styles.dayCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}
                                 >
                                     <View style={[styles.dayBadge, { backgroundColor: colors.tint + '20' }]}>
-                                        {/* FIX: Use index + 1 for display */}
                                         <ThemedText style={[styles.dayNumber, { color: colors.tint }]}>Day {index + 1}</ThemedText>
                                     </View>
                                     <View style={styles.dayContent}>
@@ -491,6 +489,7 @@ export default function TripDetailsScreen() {
                     </View>
                 </Animated.ScrollView>
 
+                {/* --- MODALS --- */}
                 <BalancesModal
                     visible={balancesVisible}
                     onClose={() => setBalancesVisible(false)}
@@ -519,8 +518,13 @@ export default function TripDetailsScreen() {
                 <BottomSheetModal isVisible={paramsModalVisible} onClose={() => setParamsModalVisible(false)} title="Trip Parameters" height="50%">
                     <ThemedText style={styles.modalSubtitle}>Trip Details</ThemedText>
                     <View style={styles.paramRow}>
-                        <ThemedText style={styles.paramLabel}>Budget</ThemedText>
+                        <ThemedText style={styles.paramLabel}>My Budget Limit</ThemedText>
                         <ThemedText style={styles.paramValue}>${trip.budget}</ThemedText>
+                    </View>
+                    <View style={styles.paramSeparator} />
+                    <View style={styles.paramRow}>
+                        <ThemedText style={styles.paramLabel}>AI Estimated Cost</ThemedText>
+                        <ThemedText style={styles.paramValue}>~${Math.round(trip.estimatedCost)}</ThemedText>
                     </View>
                     <View style={styles.paramSeparator} />
                     <View style={styles.paramRow}>

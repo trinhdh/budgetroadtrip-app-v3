@@ -146,7 +146,7 @@ export const AiPlannerService = {
 
             const rawData = JSON.parse(responseText);
             const parsedData = TripResponseSchema.parse(rawData);
-
+            console.log("Parsed Data:", parsedData);
             return parsedData as AiTripResponse;
 
         } catch (error) {

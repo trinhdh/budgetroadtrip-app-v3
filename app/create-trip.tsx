@@ -59,7 +59,6 @@ export default function CreateTripScreen() {
     });
 
     const handleNext = () => {
-        // --- Validation Logic ---
         if (step === 1) {
             if (!form.origin || !form.destination) {
                 Alert.alert('Incomplete', 'Please select both origin and destination.');
@@ -79,14 +78,12 @@ export default function CreateTripScreen() {
                 Alert.alert('Incomplete', 'Please select a vehicle or enter MPG/Gas Price.');
                 return;
             }
-
             if (isNaN(Number(form.mpg)) || isNaN(Number(form.gasPrice))) {
                 Alert.alert('Invalid Input', 'Please enter valid numeric values for MPG and Gas Price (e.g. 25, 3.50).');
                 return;
             }
         }
 
-        // --- Navigation Logic ---
         if (step < totalSteps) {
             setStep(step + 1);
         } else {
@@ -103,7 +100,6 @@ export default function CreateTripScreen() {
         setIsLoading(true);
 
         try {
-            // 1. Run AI and Image Search in Parallel
             const [aiPlan, coverImage] = await Promise.all([
                 AiPlannerService.generateTripPlan({
                     origin: form.origin,
@@ -120,52 +116,80 @@ export default function CreateTripScreen() {
                 ImageService.getPlaceImage(form.destination)
             ]);
 
-            // --- CHECK FOR AI WARNING ---
-            if (aiPlan.warning) {
+            // Helper to save data (to be called directly or after alert confirmation)
+            const proceedWithSave = async () => {
+                try {
+                    const finalTripData = {
+                        origin: form.origin,
+                        destination: form.destination,
+                        startDate: form.startDate ? form.startDate.toISOString() : null,
+                        duration: form.duration,
+                        travelers: { adults: form.adults, children: form.children },
+                        vehicle: {
+                            name: form.carName,
+                            mpg: Number(form.mpg) || 0,
+                            gasPrice: Number(form.gasPrice) || 0
+                        },
+                        budget: form.budget,
+                        title: aiPlan.tripName,
+                        estimatedCost: aiPlan.estimatedCost,
+                        budgetBreakdown: aiPlan.budgetBreakdown,
+                        itinerary: aiPlan.itinerary,
+                        image: coverImage || undefined,
+                        spent: 0,
+                    };
+
+                    const tripId = await TripService.saveTrip(user.uid, finalTripData);
+
+                    setIsLoading(false);
+                    router.replace({
+                        pathname: '/trip-details/[id]',
+                        params: { id: tripId }
+                    });
+                } catch (error) {
+                    setIsLoading(false);
+                    Alert.alert("Error", "Failed to save the trip.");
+                    console.error(error);
+                }
+            };
+
+            // --- 1. CHECK FOR HARD FAILURE (Empty Itinerary) ---
+            if (!aiPlan.itinerary || aiPlan.itinerary.length === 0) {
                 setIsLoading(false);
                 Alert.alert(
                     "Unable to Plan Trip",
-                    aiPlan.warning,
+                    aiPlan.warning || "The AI could not generate a valid itinerary for this request. Please try adjusting your budget or duration.",
                     [{ text: "OK" }]
                 );
                 return;
             }
 
-            // 2. Combine Form Data + AI Data
-            const finalTripData = {
-                origin: form.origin,
-                destination: form.destination,
-                startDate: form.startDate ? form.startDate.toISOString() : null,
-                duration: form.duration,
-                travelers: { adults: form.adults, children: form.children },
+            // --- 2. CHECK FOR SOFT WARNING (Plan exists, but AI has concerns) ---
+            if (aiPlan.warning) {
+                setIsLoading(false); // Pause spinner to show alert
+                Alert.alert(
+                    "Trip Planner Note",
+                    aiPlan.warning + "\n\nDo you still want to proceed with this plan?",
+                    [
+                        {
+                            text: "Edit Details",
+                            style: "cancel",
+                            onPress: () => { } // Stays on screen to edit
+                        },
+                        {
+                            text: "Proceed Anyway",
+                            onPress: () => {
+                                setIsLoading(true); // Restart spinner
+                                proceedWithSave();
+                            }
+                        }
+                    ]
+                );
+                return;
+            }
 
-                vehicle: {
-                    name: form.carName,
-                    mpg: Number(form.mpg) || 0,
-                    gasPrice: Number(form.gasPrice) || 0
-                },
-
-                budget: form.budget,
-
-                title: aiPlan.tripName,
-                estimatedCost: aiPlan.estimatedCost,
-                budgetBreakdown: aiPlan.budgetBreakdown,
-                itinerary: aiPlan.itinerary,
-
-                image: coverImage || undefined,
-                spent: 0,
-            };
-
-            // 3. Save to Firestore
-            const tripId = await TripService.saveTrip(user.uid, finalTripData);
-
-            // 4. Success & Navigate
-            setIsLoading(false);
-
-            router.replace({
-                pathname: '/trip-details/[id]',
-                params: { id: tripId }
-            });
+            // --- 3. NO WARNINGS, PROCEED ---
+            await proceedWithSave();
 
         } catch (error: any) {
             setIsLoading(false);
@@ -228,7 +252,6 @@ export default function CreateTripScreen() {
                     onPress={handleNext}
                     disabled={isLoading}
                 >
-                    {/* CHANGED: Conditional rendering for button content */}
                     {step === totalSteps ? (
                         <View style={styles.aiButtonContent}>
                             <IconSymbol name="wand.and.stars" size={24} color="#fff" />
@@ -276,8 +299,6 @@ const styles = StyleSheet.create({
         elevation: 2,
     },
     buttonText: { color: '#fff', fontFamily: Fonts.bold, fontSize: 18 },
-
-    // NEW STYLE
     aiButtonContent: {
         flexDirection: 'row',
         alignItems: 'center',
