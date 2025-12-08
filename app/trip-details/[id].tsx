@@ -1,5 +1,3 @@
-// trinhdh/budgetroadtrip-app-v3/budgetroadtrip-app-v3-develop/app/trip-details/[id].tsx
-
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -10,6 +8,7 @@ import {
     Dimensions,
     FlatList,
     Platform,
+    ScrollView,
     Share,
     StyleSheet,
     Text,
@@ -19,11 +18,16 @@ import {
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+// Note: If you stuck with the RouteService (manual API) approach from the previous step, keep using Polyline with routeCoordinates. 
+// If you reverted to MapViewDirections (library), use that. 
+// I will assume we are using the **manual RouteService** approach consistent with the last working state for "Routes API".
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- SERVICE & CONTEXT ---
-import { Trip } from '@/constants/types';
+import { GeoPoint, Trip } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
+import { RouteService } from '@/services/route-service';
 import { TripService } from '@/services/trip-service';
 
 // --- COMPONENTS ---
@@ -44,6 +48,23 @@ import { SwipeableExpenseRow } from '@/components/ui/swipeable-expense-row';
 const { width, height } = Dimensions.get('window');
 const PARALLAX_HEADER_HEIGHT = 400;
 
+// Helper to capitalize vibe text
+const formatVibe = (vibe?: string) => {
+    if (!vibe) return 'Standard';
+    return vibe.charAt(0).toUpperCase() + vibe.slice(1);
+};
+
+// Helper for Budget Category Icons & Colors
+const getCategoryDetails = (category: string) => {
+    switch (category.toLowerCase()) {
+        case 'fuel': return { icon: 'speedometer', color: '#FF9F1C' };
+        case 'food': return { icon: 'leaf', color: '#E71D36' };
+        case 'hotel': return { icon: 'bed.double.fill', color: '#2EC4B6' };
+        case 'activities': return { icon: 'wand.and.stars', color: '#7209B7' };
+        default: return { icon: 'circle.grid.2x2.fill', color: '#808080' };
+    }
+};
+
 export default function TripDetailsScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
@@ -58,6 +79,7 @@ export default function TripDetailsScreen() {
     const [trip, setTrip] = useState<Trip | null>(null);
     const [loading, setLoading] = useState(true);
     const [expenses, setExpenses] = useState<any[]>([]);
+    const [routeCoordinates, setRouteCoordinates] = useState<GeoPoint[]>([]);
 
     const [balancesVisible, setBalancesVisible] = useState(false);
     const [paramsModalVisible, setParamsModalVisible] = useState(false);
@@ -89,6 +111,29 @@ export default function TripDetailsScreen() {
         return () => unsubscribeExpenses();
     }, [tripId]);
 
+    // --- 3. FETCH ROUTE ---
+    useEffect(() => {
+        const fetchRoute = async () => {
+            if (!trip || !trip.originCoordinates || !trip.itinerary || trip.itinerary.length === 0) return;
+
+            const stops = trip.itinerary.map(d => d.stopLocation);
+            const destination = stops[stops.length - 1];
+            const waypoints = stops.slice(0, -1);
+
+            const path = await RouteService.getRoute(
+                trip.originCoordinates,
+                destination,
+                waypoints
+            );
+
+            if (path) {
+                setRouteCoordinates(path);
+            }
+        };
+
+        fetchRoute();
+    }, [trip]);
+
     // Calculate Total Spent
     const totalSpent = useMemo(() => {
         return expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
@@ -98,8 +143,20 @@ export default function TripDetailsScreen() {
     const isOverBudget = trip && totalSpent > trip.budget;
     const isNearBudget = !isOverBudget && budgetPercent >= 90;
 
-    // --- ACTIONS ---
+    const getDateRange = () => {
+        if (!trip?.startDate) return 'TBD';
+        const start = new Date(trip.startDate);
+        const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
+        if (trip.endDate) {
+            const end = new Date(trip.endDate);
+            const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            return `${startStr} - ${endStr}`;
+        }
+        return startStr;
+    };
+
+    // --- ACTIONS ---
     const handleShare = async () => {
         try {
             const message = trip
@@ -113,7 +170,6 @@ export default function TripDetailsScreen() {
 
     const handleSaveExpense = async (data: any) => {
         if (!tripId || !user) return;
-
         try {
             const newExpense = {
                 ...data,
@@ -126,7 +182,6 @@ export default function TripDetailsScreen() {
                 },
                 hasReceipt: !!data.receiptImage
             };
-
             await TripService.addExpense(tripId, newExpense);
             Alert.alert("Success", "Expense added!");
         } catch (error) {
@@ -147,27 +202,21 @@ export default function TripDetailsScreen() {
 
     const handleSettleDebt = async (debt: any) => {
         if (!tripId || !user) return;
-
-        const settlementExpense = {
-            title: 'Settlement',
-            category: 'Other',
-            date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
-            amount: debt.amount,
-            paidBy: debt.from.id,
-            splitBy: [debt.to.id],
-            addedBy: {
-                uid: user.uid,
-                name: user.displayName || 'Traveler',
-                avatar: user.photoURL || ''
-            },
-            isSettlement: true,
-            hasReceipt: false,
-            day: 0,
-            receiptImage: undefined,
-            createdAt: new Date()
-        };
-
         try {
+            const settlementExpense = {
+                title: 'Settlement',
+                category: 'Other',
+                date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
+                amount: debt.amount,
+                paidBy: debt.from.id,
+                splitBy: [debt.to.id],
+                addedBy: { uid: user.uid, name: user.displayName || 'Traveler', avatar: user.photoURL || '' },
+                isSettlement: true,
+                hasReceipt: false,
+                day: 0,
+                receiptImage: undefined,
+                createdAt: new Date()
+            };
             await TripService.addExpense(tripId, settlementExpense);
             Alert.alert("Success", "Payment recorded!");
         } catch (error) {
@@ -251,7 +300,6 @@ export default function TripDetailsScreen() {
                         ref={mapRef}
                         style={StyleSheet.absoluteFill}
                         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-                        // Focus on Origin if available, otherwise first stop
                         initialRegion={{
                             latitude: trip.originCoordinates?.latitude || trip.itinerary?.[0]?.stopLocation.latitude || 37.78825,
                             longitude: trip.originCoordinates?.longitude || trip.itinerary?.[0]?.stopLocation.longitude || -122.4324,
@@ -261,18 +309,25 @@ export default function TripDetailsScreen() {
                         scrollEnabled={isMapMaximized}
                         zoomEnabled={isMapMaximized}
                     >
-                        {/* 1. ROUTE LINE: Connect Origin -> Day 1 -> Day 2... */}
-                        {trip.itinerary && trip.itinerary.length > 0 && (
+                        {/* 1. ACTUAL DRIVING ROUTE */}
+                        {routeCoordinates.length > 0 ? (
                             <Polyline
-                                coordinates={[
-                                    // Start at Origin (if available)
-                                    ...(trip.originCoordinates ? [trip.originCoordinates] : []),
-                                    ...trip.itinerary.map(day => day.stopLocation)
-                                ]}
+                                coordinates={routeCoordinates}
                                 strokeColor={colors.tint}
-                                strokeWidth={3}
-                                lineDashPattern={[1]}
+                                strokeWidth={4}
                             />
+                        ) : (
+                            trip.itinerary && trip.itinerary.length > 0 && (
+                                <Polyline
+                                    coordinates={[
+                                        ...(trip.originCoordinates ? [trip.originCoordinates] : []),
+                                        ...trip.itinerary.map(day => day.stopLocation)
+                                    ]}
+                                    strokeColor={colors.tint}
+                                    strokeWidth={2}
+                                    lineDashPattern={[10, 5]}
+                                />
+                            )
                         )}
 
                         {/* 2. START MARKER */}
@@ -280,22 +335,22 @@ export default function TripDetailsScreen() {
                             <Marker
                                 coordinate={trip.originCoordinates}
                                 title={`Start: ${trip.origin}`}
-                                zIndex={10}
+                                zIndex={20}
                             >
                                 <View style={[styles.dayMarkerPill, { backgroundColor: '#333', borderColor: '#fff' }]}>
                                     <Text style={styles.dayMarkerText}>START</Text>
                                 </View>
-                                {/* Triangle Arrow */}
                                 <View style={[styles.markerArrow, { borderTopColor: '#333' }]} />
                             </Marker>
                         )}
 
-                        {/* 3. DAY MARKERS (Existing) */}
+                        {/* 3. DAY MARKERS (Stops) */}
                         {trip.itinerary?.map((day, index) => (
                             <Marker
-                                key={day.day}
+                                key={`day-${day.day}`}
                                 coordinate={day.stopLocation}
                                 title={day.title}
+                                zIndex={10}
                             >
                                 <View style={[styles.dayMarkerPill, { backgroundColor: colors.tint }]}>
                                     <Text style={styles.dayMarkerText}>Day {index + 1}</Text>
@@ -303,6 +358,32 @@ export default function TripDetailsScreen() {
                                 <View style={[styles.markerArrow, { borderTopColor: colors.tint }]} />
                             </Marker>
                         ))}
+
+                        {/* 4. ACTIVITY MARKERS (Food, Hotel, Activities) */}
+                        {trip.itinerary?.flatMap((day) =>
+                            day.timeline?.map((item, index) => {
+                                // Filter for specific types
+                                if (!['food', 'hotel', 'activities'].includes(item.type.toLowerCase())) return null;
+
+                                const { icon, color } = getCategoryDetails(item.type);
+
+                                return (
+                                    <Marker
+                                        key={`activity-${day.day}-${index}`}
+                                        coordinate={item.coordinates}
+                                        title={item.title}
+                                        description={item.type}
+                                        anchor={{ x: 0.5, y: 0.5 }}
+                                        zIndex={5} // Below Start/Day markers
+                                    >
+                                        <View style={[styles.miniActivityMarker, { backgroundColor: color }]}>
+                                            <IconSymbol name={icon as any} size={12} color="#fff" />
+                                        </View>
+                                    </Marker>
+                                );
+                            })
+                        )}
+
                     </MapView>
 
                     {!isMapMaximized && (
@@ -407,7 +488,7 @@ export default function TripDetailsScreen() {
                                 <View style={styles.dotSeparator} />
                                 <IconSymbol name="calendar" size={14} color="#666" />
                                 <ThemedText style={styles.subtitleText}>
-                                    {trip.startDate ? new Date(trip.startDate).toLocaleDateString() : 'TBD'}
+                                    {getDateRange()}
                                 </ThemedText>
                             </View>
                         </View>
@@ -416,14 +497,20 @@ export default function TripDetailsScreen() {
                         <View style={styles.section}>
                             <ThemedText type="subtitle" style={styles.sectionTitle}>Budget Breakdown</ThemedText>
                             <View style={styles.budgetGrid}>
-                                {trip.budgetBreakdown?.map((item, index) => (
-                                    <View key={index} style={[styles.budgetCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
-                                        <View>
-                                            <ThemedText style={styles.budgetAmount}>${item.amount}</ThemedText>
-                                            <ThemedText style={styles.budgetLabel}>{item.category}</ThemedText>
+                                {trip.budgetBreakdown?.map((item, index) => {
+                                    const { icon, color } = getCategoryDetails(item.category);
+                                    return (
+                                        <View key={index} style={[styles.budgetCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
+                                            <View style={[styles.budgetIconContainer, { backgroundColor: color + '20' }]}>
+                                                <IconSymbol name={icon as any} size={18} color={color} />
+                                            </View>
+                                            <View>
+                                                <ThemedText style={styles.budgetAmount}>${item.amount}</ThemedText>
+                                                <ThemedText style={styles.budgetLabel}>{item.category}</ThemedText>
+                                            </View>
                                         </View>
-                                    </View>
-                                ))}
+                                    );
+                                })}
                             </View>
                         </View>
 
@@ -489,25 +576,43 @@ export default function TripDetailsScreen() {
                         {/* Itinerary */}
                         <View style={styles.section}>
                             <ThemedText type="subtitle" style={styles.sectionTitle}>Itinerary</ThemedText>
-                            {trip.itinerary?.map((day, index) => (
-                                <TouchableOpacity
-                                    key={day.day}
-                                    onPress={() => router.push({
-                                        pathname: '/trip-details/day-details',
-                                        params: { tripId: trip.id, dayIndex: index }
-                                    })}
-                                    style={[styles.dayCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}
-                                >
-                                    <View style={[styles.dayBadge, { backgroundColor: colors.tint + '20' }]}>
-                                        <ThemedText style={[styles.dayNumber, { color: colors.tint }]}>Day {index + 1}</ThemedText>
-                                    </View>
-                                    <View style={styles.dayContent}>
-                                        <ThemedText type="defaultSemiBold">{day.title}</ThemedText>
-                                        <ThemedText style={styles.grayText}>{day.distance}</ThemedText>
-                                    </View>
-                                    <IconSymbol name="chevron.right" size={20} color={colors.icon} />
-                                </TouchableOpacity>
-                            ))}
+                            <View style={styles.timelineList}>
+                                {trip.itinerary?.map((day, index) => {
+                                    const isLast = index === (trip.itinerary?.length || 0) - 1;
+                                    const dayNum = index + 1;
+                                    const paddedDay = dayNum < 10 ? `0${dayNum}` : dayNum;
+
+                                    return (
+                                        <View key={day.day} style={styles.stepItem}>
+                                            <View style={styles.stepLeft}>
+                                                <ThemedText style={styles.stepDayLabel}>DAY</ThemedText>
+                                                <ThemedText style={[styles.stepDayValue, { color: colors.tint }]}>{paddedDay}</ThemedText>
+                                                {!isLast && (
+                                                    <View style={[styles.stepLine, { backgroundColor: colors.icon + '20' }]} />
+                                                )}
+                                            </View>
+
+                                            <TouchableOpacity
+                                                style={[styles.stepCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}
+                                                onPress={() => router.push({
+                                                    pathname: '/trip-details/day-details',
+                                                    params: { tripId: trip.id, dayIndex: index }
+                                                })}
+                                                activeOpacity={0.7}
+                                            >
+                                                <View style={{ flex: 1 }}>
+                                                    <ThemedText type="defaultSemiBold" style={styles.stepCardTitle}>{day.title}</ThemedText>
+                                                    <View style={styles.stepCardMeta}>
+                                                        <IconSymbol name="car" size={14} color="#808080" />
+                                                        <ThemedText style={styles.grayText}>{day.distance} drive</ThemedText>
+                                                    </View>
+                                                </View>
+                                                <IconSymbol name="chevron.right" size={20} color={colors.icon} />
+                                            </TouchableOpacity>
+                                        </View>
+                                    );
+                                })}
+                            </View>
                         </View>
                     </View>
                 </Animated.ScrollView>
@@ -524,6 +629,7 @@ export default function TripDetailsScreen() {
                     visible={addExpenseVisible}
                     onClose={() => setAddExpenseVisible(false)}
                     itineraryDays={trip.itinerary || []}
+                    tripStartDate={trip.startDate}
                     onSave={handleSaveExpense}
                 />
                 <AllExpensesModal
@@ -538,24 +644,63 @@ export default function TripDetailsScreen() {
                     onClose={() => setSelectedExpense(null)}
                     expense={selectedExpense}
                 />
-                <BottomSheetModal isVisible={paramsModalVisible} onClose={() => setParamsModalVisible(false)} title="Trip Parameters" height="50%">
-                    <ThemedText style={styles.modalSubtitle}>Trip Details</ThemedText>
-                    <View style={styles.paramRow}>
-                        <ThemedText style={styles.paramLabel}>My Budget Limit</ThemedText>
-                        <ThemedText style={styles.paramValue}>${trip.budget}</ThemedText>
-                    </View>
-                    <View style={styles.paramSeparator} />
-                    <View style={styles.paramRow}>
-                        <ThemedText style={styles.paramLabel}>AI Estimated Cost</ThemedText>
-                        <ThemedText style={styles.paramValue}>~${Math.round(trip.estimatedCost)}</ThemedText>
-                    </View>
-                    <View style={styles.paramSeparator} />
-                    <View style={styles.paramRow}>
-                        <ThemedText style={styles.paramLabel}>Total Spent</ThemedText>
-                        <ThemedText style={[styles.paramValue, isOverBudget && { color: '#FF3B30' }]}>
-                            ${totalSpent.toFixed(2)}
-                        </ThemedText>
-                    </View>
+
+                <BottomSheetModal isVisible={paramsModalVisible} onClose={() => setParamsModalVisible(false)} title="Trip Details" height="65%">
+                    <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+                        <ThemedText style={styles.modalSubtitle}>Overview</ThemedText>
+                        <View style={styles.paramRow}>
+                            <ThemedText style={styles.paramLabel}>Dates</ThemedText>
+                            <View style={{ alignItems: 'flex-end' }}>
+                                <ThemedText style={styles.paramValue}>{getDateRange()}</ThemedText>
+                                <ThemedText style={{ fontSize: 12, color: '#808080' }}>
+                                    {trip.duration} Days • {trip.isRoundTrip ? 'Round Trip' : 'One Way'}
+                                </ThemedText>
+                            </View>
+                        </View>
+                        <View style={styles.paramSeparator} />
+                        <View style={styles.paramRow}>
+                            <ThemedText style={styles.paramLabel}>Trip Vibe</ThemedText>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <IconSymbol name="star.fill" size={16} color={colors.tint} />
+                                <ThemedText style={styles.paramValue}>{formatVibe(trip.vibe)}</ThemedText>
+                            </View>
+                        </View>
+                        <View style={styles.paramSeparator} />
+                        <ThemedText style={[styles.modalSubtitle, { marginTop: 24 }]}>Logistics & Budget</ThemedText>
+                        <View style={styles.paramRow}>
+                            <ThemedText style={styles.paramLabel}>Travelers</ThemedText>
+                            <ThemedText style={styles.paramValue}>
+                                {trip.travelers.adults} Adults, {trip.travelers.children} Children
+                            </ThemedText>
+                        </View>
+                        <View style={styles.paramSeparator} />
+                        <View style={styles.paramRow}>
+                            <ThemedText style={styles.paramLabel}>Vehicle</ThemedText>
+                            <View style={{ alignItems: 'flex-end' }}>
+                                <ThemedText style={styles.paramValue}>{trip.vehicle.name}</ThemedText>
+                                <ThemedText style={{ fontSize: 12, color: '#808080' }}>
+                                    {trip.vehicle.mpg} mpg • ${trip.vehicle.gasPrice}/gal
+                                </ThemedText>
+                            </View>
+                        </View>
+                        <View style={styles.paramSeparator} />
+                        <View style={styles.paramRow}>
+                            <ThemedText style={styles.paramLabel}>My Budget</ThemedText>
+                            <ThemedText style={styles.paramValue}>${trip.budget}</ThemedText>
+                        </View>
+                        <View style={styles.paramSeparator} />
+                        <View style={styles.paramRow}>
+                            <ThemedText style={styles.paramLabel}>AI Estimate</ThemedText>
+                            <ThemedText style={styles.paramValue}>~${Math.round(trip.estimatedCost)}</ThemedText>
+                        </View>
+                        <View style={styles.paramSeparator} />
+                        <View style={styles.paramRow}>
+                            <ThemedText style={styles.paramLabel}>Total Spent</ThemedText>
+                            <ThemedText style={[styles.paramValue, isOverBudget && { color: '#FF3B30' }]}>
+                                ${totalSpent.toFixed(2)}
+                            </ThemedText>
+                        </View>
+                    </ScrollView>
                 </BottomSheetModal>
             </ThemedView>
         </GestureHandlerRootView>
@@ -586,7 +731,7 @@ const styles = StyleSheet.create({
     cardArrow: { padding: 8 },
     titleSection: { paddingHorizontal: 20, marginBottom: 20 },
     tripLabel: { color: '#666', fontSize: 14, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1, fontFamily: Fonts.medium },
-    destinationTitle: { fontSize: 32, fontFamily: Fonts.bold, marginBottom: 10, color: '#1a1a1a' },
+    destinationTitle: { fontSize: 32, fontFamily: Fonts.bold, marginBottom: 10, color: '#1a1a1a', lineHeight: 32 },
     subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     subtitleText: { color: '#666', fontSize: 15, fontFamily: Fonts.medium },
     dotSeparator: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#ccc', marginHorizontal: 4 },
@@ -596,20 +741,41 @@ const styles = StyleSheet.create({
     section: { paddingHorizontal: 20, marginBottom: 24 },
     sectionTitle: { fontSize: 18, marginBottom: 12, color: '#111' },
     budgetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-    budgetCard: { width: '48%', padding: 16, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+    budgetCard: { width: '48%', padding: 12, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+    budgetIconContainer: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
     iconCircle: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
     budgetAmount: { fontSize: 16, fontFamily: Fonts.bold },
-    budgetLabel: { fontSize: 12, color: '#808080' },
+    budgetLabel: { fontSize: 12, color: '#808080', textTransform: 'capitalize' },
     sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
     expensesContainer: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
-    dayCard: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
-    dayBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginRight: 12 },
-    dayNumber: { fontFamily: Fonts.bold, fontSize: 14 },
-    dayContent: { flex: 1 },
-    grayText: { color: '#808080', fontSize: 13, marginTop: 2 },
     modalSubtitle: { fontSize: 14, color: '#808080', marginBottom: 24 },
     paramRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
     paramLabel: { fontSize: 16, color: '#666', fontFamily: Fonts.medium },
     paramValue: { fontSize: 16, fontFamily: Fonts.bold },
-    paramSeparator: { height: 1, backgroundColor: '#F0F0F0' }
+    paramSeparator: { height: 1, backgroundColor: '#F0F0F0' },
+    timelineList: { paddingLeft: 0 },
+    stepItem: { flexDirection: 'row', marginBottom: 20 },
+    stepLeft: { alignItems: 'center', marginRight: 16, width: 40, paddingTop: 8 },
+    stepDayLabel: { fontSize: 10, fontWeight: 'bold', color: '#999', letterSpacing: 1, marginBottom: 2 },
+    stepDayValue: { fontSize: 24, fontFamily: Fonts.bold, lineHeight: 28 },
+    stepLine: { flex: 1, width: 2, backgroundColor: '#eee', marginTop: 8, borderRadius: 1 },
+    stepCard: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+    stepCardTitle: { fontSize: 16, marginBottom: 4, color: '#333' },
+    stepCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    grayText: { color: '#808080', fontSize: 13 },
+    // NEW STYLE FOR ACTIVITY MARKERS
+    miniActivityMarker: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
+        elevation: 3,
+    }
 });

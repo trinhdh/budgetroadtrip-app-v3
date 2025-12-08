@@ -84,7 +84,8 @@ export type TripPayload = {
     budget: number;
 
     vehicle: { name: string; mpg: number; gasPrice: number };
-
+    vibe?: TripVibe;
+    isRoundTrip?: boolean;
     title: string;
     estimatedCost: number;
     budgetBreakdown: BudgetCategory[];

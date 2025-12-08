@@ -26,11 +26,14 @@ import StepThree from '@/components/create-trip/step-three';
 import StepTwo from '@/components/create-trip/step-two';
 import { ProcessingModal } from '@/components/ui/processing-modal';
 
-import { GeoPoint, TripVibe } from '@/constants/types';
+import { TripVibe } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { AiPlannerService } from '@/services/ai-planner';
 import { ImageService } from '@/services/image-service';
 import { TripService } from '@/services/trip-service';
+
+// Define coordinate type locally
+type Coords = { latitude: number; longitude: number } | null;
 
 export default function CreateTripScreen() {
     const router = useRouter();
@@ -45,8 +48,9 @@ export default function CreateTripScreen() {
 
     const [form, setForm] = useState({
         origin: '',
-        originCoordinates: null as GeoPoint | null,
+        originCoordinates: null as Coords,
         destination: '',
+        destinationCoordinates: null as Coords,
         startDate: null as Date | null,
         duration: 5,
         isRoundTrip: false,
@@ -117,15 +121,25 @@ export default function CreateTripScreen() {
                 ImageService.getPlaceImage(form.destination)
             ]);
 
-            // Helper to save data (to be called directly or after alert confirmation)
+            // Helper to save data
             const proceedWithSave = async () => {
                 try {
+                    // CALCULATE END DATE
+                    let endDateObj = null;
+                    if (form.startDate) {
+                        endDateObj = new Date(form.startDate);
+                        // Matches logic in StepTwo (StartDate + Duration)
+                        endDateObj.setDate(endDateObj.getDate() + form.duration);
+                    }
+
                     const finalTripData = {
                         origin: form.origin,
                         originCoordinates: form.originCoordinates,
                         destination: form.destination,
                         startDate: form.startDate ? form.startDate.toISOString() : null,
+                        endDate: endDateObj ? endDateObj.toISOString() : null, // <--- SAVED HERE
                         duration: form.duration,
+                        isRoundTrip: form.isRoundTrip,
                         travelers: { adults: form.adults, children: form.children },
                         vehicle: {
                             name: form.carName,
@@ -133,6 +147,7 @@ export default function CreateTripScreen() {
                             gasPrice: Number(form.gasPrice) || 0
                         },
                         budget: form.budget,
+                        vibe: form.vibe,
                         title: aiPlan.tripName,
                         estimatedCost: aiPlan.estimatedCost,
                         budgetBreakdown: aiPlan.budgetBreakdown,
@@ -168,7 +183,7 @@ export default function CreateTripScreen() {
 
             // --- 2. CHECK FOR SOFT WARNING (Plan exists, but AI has concerns) ---
             if (aiPlan.warning) {
-                setIsLoading(false); // Pause spinner to show alert
+                setIsLoading(false);
                 Alert.alert(
                     "Trip Planner Note",
                     aiPlan.warning + "\n\nDo you still want to proceed with this plan?",
@@ -176,12 +191,12 @@ export default function CreateTripScreen() {
                         {
                             text: "Edit Details",
                             style: "cancel",
-                            onPress: () => { } // Stays on screen to edit
+                            onPress: () => { }
                         },
                         {
                             text: "Proceed Anyway",
                             onPress: () => {
-                                setIsLoading(true); // Restart spinner
+                                setIsLoading(true);
                                 proceedWithSave();
                             }
                         }
