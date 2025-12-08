@@ -51,6 +51,7 @@ export default function CreateTripScreen() {
         originCoordinates: null as Coords,
         destination: '',
         destinationCoordinates: null as Coords,
+        mode: 'ai' as 'ai' | 'manual',
         startDate: null as Date | null,
         duration: 5,
         isRoundTrip: false,
@@ -63,7 +64,15 @@ export default function CreateTripScreen() {
         vibe: 'balanced' as TripVibe,
     });
 
+    // Helper to determine if we are on the last step for the current mode
+    const isLastStep = (currentStep: number, mode: string) => {
+        if (mode === 'manual' && currentStep === 2) return true; // Manual ends at Step 2 (Dates)
+        if (currentStep === totalSteps) return true; // AI ends at Step 5
+        return false;
+    };
+
     const handleNext = () => {
+        // --- VALIDATION ---
         if (step === 1) {
             if (!form.origin || !form.destination) {
                 Alert.alert('Incomplete', 'Please select both origin and destination.');
@@ -78,21 +87,19 @@ export default function CreateTripScreen() {
                 Alert.alert('Incomplete', 'Please fill in all date details.');
                 return;
             }
-        } else if (step === 4) {
+        } else if (step === 4 && form.mode === 'ai') {
+            // Step 4 validation is only needed for AI mode
             if (!form.mpg || !form.gasPrice) {
                 Alert.alert('Incomplete', 'Please select a vehicle or enter MPG/Gas Price.');
                 return;
             }
-            if (isNaN(Number(form.mpg)) || isNaN(Number(form.gasPrice))) {
-                Alert.alert('Invalid Input', 'Please enter valid numeric values for MPG and Gas Price (e.g. 25, 3.50).');
-                return;
-            }
         }
 
-        if (step < totalSteps) {
-            setStep(step + 1);
-        } else {
+        // --- NAVIGATION LOGIC ---
+        if (isLastStep(step, form.mode)) {
             handleGenerateTrip();
+        } else {
+            setStep(step + 1);
         }
     };
 
@@ -105,8 +112,38 @@ export default function CreateTripScreen() {
         setIsLoading(true);
 
         try {
-            const [aiPlan, coverImage] = await Promise.all([
-                AiPlannerService.generateTripPlan({
+            let aiPlan: any;
+            let coverImage: string | null = null;
+
+            // 1. FETCH IMAGE (Try to get a cover image)
+            try {
+                coverImage = await ImageService.getPlaceImage(form.destination);
+            } catch (ignored) {
+                console.log("Could not fetch image, using default");
+            }
+
+            // 2. GENERATE PLAN
+            if (form.mode === 'manual') {
+                // --- MANUAL MODE: Create Skeleton ---
+                // We generate empty days based on the Duration from Step 2
+                const manualItinerary = Array.from({ length: form.duration }, (_, i) => ({
+                    day: i + 1,
+                    title: `Day ${i + 1}: ${form.destination}`,
+                    distance: '0 km',
+                    stopLocation: form.destinationCoordinates || form.originCoordinates || { latitude: 0, longitude: 0 },
+                    timeline: [],
+                }));
+
+                aiPlan = {
+                    tripName: `${form.destination} Trip`,
+                    estimatedCost: 0,
+                    originCoordinates: form.originCoordinates,
+                    budgetBreakdown: [],
+                    itinerary: manualItinerary,
+                };
+            } else {
+                // --- AI MODE: Call Service ---
+                aiPlan = await AiPlannerService.generateTripPlan({
                     origin: form.origin,
                     destination: form.destination,
                     duration: form.duration,
@@ -117,37 +154,38 @@ export default function CreateTripScreen() {
                     gasPrice: form.gasPrice,
                     vibe: form.vibe,
                     isRoundTrip: form.isRoundTrip
-                }),
-                ImageService.getPlaceImage(form.destination)
-            ]);
+                });
+            }
 
-            // Helper to save data
+            // 3. SAVE TO FIREBASE
             const proceedWithSave = async () => {
                 try {
-                    // CALCULATE END DATE
                     let endDateObj = null;
                     if (form.startDate) {
                         endDateObj = new Date(form.startDate);
-                        // Matches logic in StepTwo (StartDate + Duration)
                         endDateObj.setDate(endDateObj.getDate() + form.duration);
                     }
 
                     const finalTripData = {
                         origin: form.origin,
-                        originCoordinates: form.originCoordinates,
+                        originCoordinates: form.originCoordinates || aiPlan.originCoordinates,
                         destination: form.destination,
+                        destinationCoordinates: form.destinationCoordinates || undefined,
                         startDate: form.startDate ? form.startDate.toISOString() : null,
-                        endDate: endDateObj ? endDateObj.toISOString() : null, // <--- SAVED HERE
+                        endDate: endDateObj ? endDateObj.toISOString() : null,
                         duration: form.duration,
                         isRoundTrip: form.isRoundTrip,
+
+                        // Use form values (or defaults if skipped)
                         travelers: { adults: form.adults, children: form.children },
                         vehicle: {
-                            name: form.carName,
+                            name: form.carName || 'Unknown Vehicle',
                             mpg: Number(form.mpg) || 0,
                             gasPrice: Number(form.gasPrice) || 0
                         },
                         budget: form.budget,
                         vibe: form.vibe,
+
                         title: aiPlan.tripName,
                         estimatedCost: aiPlan.estimatedCost,
                         budgetBreakdown: aiPlan.budgetBreakdown,
@@ -170,47 +208,30 @@ export default function CreateTripScreen() {
                 }
             };
 
-            // --- 1. CHECK FOR HARD FAILURE (Empty Itinerary) ---
-            if (!aiPlan.itinerary || aiPlan.itinerary.length === 0) {
+            if (form.mode === 'ai' && (!aiPlan.itinerary || aiPlan.itinerary.length === 0)) {
                 setIsLoading(false);
-                Alert.alert(
-                    "Unable to Plan Trip",
-                    aiPlan.warning || "The AI could not generate a valid itinerary for this request. Please try adjusting your budget or duration.",
-                    [{ text: "OK" }]
-                );
+                Alert.alert("Unable to Plan Trip", aiPlan.warning || "Error generating plan.", [{ text: "OK" }]);
                 return;
             }
 
-            // --- 2. CHECK FOR SOFT WARNING (Plan exists, but AI has concerns) ---
-            if (aiPlan.warning) {
+            if (aiPlan.warning && form.mode === 'ai') {
                 setIsLoading(false);
                 Alert.alert(
                     "Trip Planner Note",
-                    aiPlan.warning + "\n\nDo you still want to proceed with this plan?",
+                    aiPlan.warning + "\n\nDo you still want to proceed?",
                     [
-                        {
-                            text: "Edit Details",
-                            style: "cancel",
-                            onPress: () => { }
-                        },
-                        {
-                            text: "Proceed Anyway",
-                            onPress: () => {
-                                setIsLoading(true);
-                                proceedWithSave();
-                            }
-                        }
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Proceed", onPress: () => { setIsLoading(true); proceedWithSave(); } }
                     ]
                 );
                 return;
             }
 
-            // --- 3. NO WARNINGS, PROCEED ---
             await proceedWithSave();
 
         } catch (error: any) {
             setIsLoading(false);
-            Alert.alert("Generation Failed", "Could not create trip plan. Please try again.");
+            Alert.alert("Generation Failed", "Could not create trip plan.");
             console.error(error);
         }
     };
@@ -236,7 +257,7 @@ export default function CreateTripScreen() {
                 </TouchableOpacity>
 
                 <ThemedText type="subtitle" style={styles.headerTitle}>
-                    Step {step} of {totalSteps}
+                    {form.mode === 'manual' && step > 2 ? 'Finishing...' : `Step ${step} of ${form.mode === 'manual' ? 2 : totalSteps}`}
                 </ThemedText>
 
                 <View style={{ width: 80 }} />
@@ -255,9 +276,11 @@ export default function CreateTripScreen() {
                         <View>
                             {step === 1 && <StepOne form={form} setForm={setForm} />}
                             {step === 2 && <StepTwo form={form} setForm={setForm} />}
-                            {step === 3 && <StepThree form={form} setForm={setForm} />}
-                            {step === 4 && <StepFour form={form} setForm={setForm} />}
-                            {step === 5 && <StepFive form={form} setForm={setForm} />}
+
+                            {/* Only show these if AI Mode */}
+                            {form.mode === 'ai' && step === 3 && <StepThree form={form} setForm={setForm} />}
+                            {form.mode === 'ai' && step === 4 && <StepFour form={form} setForm={setForm} />}
+                            {form.mode === 'ai' && step === 5 && <StepFive form={form} setForm={setForm} />}
                         </View>
                     </TouchableWithoutFeedback>
                 </ScrollView>
@@ -269,11 +292,15 @@ export default function CreateTripScreen() {
                     onPress={handleNext}
                     disabled={isLoading}
                 >
-                    {step === totalSteps ? (
+                    {isLastStep(step, form.mode) ? (
                         <View style={styles.aiButtonContent}>
-                            <IconSymbol name="wand.and.stars" size={24} color="#fff" />
+                            <IconSymbol
+                                name={form.mode === 'ai' ? "wand.and.stars" : "checkmark.circle.fill"}
+                                size={24}
+                                color="#fff"
+                            />
                             <ThemedText style={styles.buttonText}>
-                                Generate Trip Plan
+                                {form.mode === 'ai' ? 'Generate Plan' : 'Create Trip'}
                             </ThemedText>
                         </View>
                     ) : (
