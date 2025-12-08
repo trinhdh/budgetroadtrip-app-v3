@@ -4,12 +4,23 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   View,
 } from 'react-native';
+
+// --- GESTURE HANDLER IMPORTS ---
+import {
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
+
+
+// Import ReanimatedSwipeable from its specific path as a default import
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+
 import Animated, {
   FadeInDown,
   useAnimatedStyle,
@@ -17,7 +28,7 @@ import Animated, {
   withTiming
 } from 'react-native-reanimated';
 
-// --- IMPORTS ---
+// --- INTERNAL IMPORTS ---
 import { useAuth } from '@/context/AuthContext';
 import { TripService } from '@/services/trip-service';
 
@@ -63,6 +74,98 @@ const HeroImageCard = ({
   );
 };
 
+// --- 2. SWIPEABLE TRIP CARD COMPONENT ---
+const TripCard = ({
+  trip,
+  router,
+  onDelete
+}: {
+  trip: any,
+  router: any,
+  onDelete: (id: string) => void
+}) => {
+
+  // The Red Delete Button Logic
+  const renderRightActions = (_progress: any, _dragX: any) => {
+    return (
+      <View style={styles.deleteActionContainer}>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => confirmDelete()}
+        >
+          <IconSymbol name="trash.fill" size={28} color="#fff" />
+          <ThemedText style={styles.deleteText}>Delete</ThemedText>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const confirmDelete = () => {
+    Alert.alert(
+      "Delete Trip?",
+      "This action cannot be undone. All data and expenses will be lost.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => onDelete(trip.id)
+        }
+      ]
+    );
+  };
+
+  return (
+    <ReanimatedSwipeable
+      friction={2}
+      enableTrackpadTwoFingerGesture
+      rightThreshold={40}
+      renderRightActions={renderRightActions}
+      containerStyle={styles.swipeContainer}
+    >
+      <TouchableOpacity
+        style={styles.immersiveCard}
+        activeOpacity={0.95}
+        onPress={() => router.push({
+          pathname: '/trip-details/[id]',
+          params: { id: trip.id }
+        })}
+      >
+        <Image source={{ uri: trip.image }} style={StyleSheet.absoluteFill} contentFit="cover" transition={500} />
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.8)']}
+          style={styles.cardOverlay}
+        />
+
+        <View style={styles.cardTopRow}>
+          <View></View>
+          <View style={styles.budgetBadge}>
+            <ThemedText style={styles.budgetText}>
+              ~${Math.round(trip.estimatedCost || trip.budget || 0)}
+            </ThemedText>
+          </View>
+        </View>
+
+        <View style={styles.cardBottomContent}>
+          <View style={styles.cardTextContainer}>
+            <ThemedText style={styles.dateText}>
+              {trip.formattedStartDate} - {trip.formattedEndDate}
+            </ThemedText>
+            <ThemedText style={styles.destinationTitle} numberOfLines={2} ellipsizeMode="tail">
+              {trip.destination}
+            </ThemedText>
+          </View>
+
+          <View style={styles.arrowButton}>
+            <IconSymbol name="chevron.right" size={20} color="#fff" />
+          </View>
+        </View>
+      </TouchableOpacity>
+    </ReanimatedSwipeable>
+  );
+};
+
+// --- 3. MAIN SCREEN ---
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -87,27 +190,19 @@ export default function HomeScreen() {
       };
 
       const formattedTrips = trips.map((trip, index) => {
-        // 1. Resolve Start Date
         const startDateObj = trip.startDate ? new Date(trip.startDate) : new Date();
-
-        // 2. Resolve End Date (Use stored endDate OR calculate from duration)
         let endDateObj = trip.endDate ? new Date(trip.endDate) : null;
 
         if (!endDateObj && trip.duration) {
           endDateObj = new Date(startDateObj);
-          // Subtract 1 because if you start on the 1st for 1 day, you end on the 1st
           endDateObj.setDate(startDateObj.getDate() + (trip.duration - 1));
         }
 
         return {
           ...trip,
           formattedStartDate: formatDate(startDateObj),
-          // 3. Use the calculated object for the string
           formattedEndDate: endDateObj ? formatDate(endDateObj) : 'TBD',
-
           image: trip.image || `https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1000&auto=format&fit=crop&sig=${trip.id}`,
-
-          // Helper dates for filtering logic
           start: startDateObj,
           end: endDateObj || new Date(new Date().setDate(new Date().getDate() + 5))
         };
@@ -117,7 +212,6 @@ export default function HomeScreen() {
 
       const now = new Date();
       const hasActive = formattedTrips.some(t => t.start <= now && t.end >= now);
-
       if (hasActive) {
         setActiveTab('Active');
       } else {
@@ -138,6 +232,15 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  // --- HANDLE DELETE ---
+  const handleDeleteTrip = async (tripId: string) => {
+    try {
+      await TripService.deleteTrip(tripId);
+    } catch (error) {
+      Alert.alert("Error", "Failed to delete trip.");
+    }
+  };
+
   // --- FILTER TRIPS ---
   const filteredTrips = userTrips.filter(trip => {
     const now = new Date();
@@ -157,126 +260,95 @@ export default function HomeScreen() {
   });
 
   return (
-    <ThemedView style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.toggleContainer}>
-          <TouchableOpacity
-            style={[styles.toggleButton, activeTab === 'Active' && styles.activeToggleButton]}
-            onPress={() => setActiveTab('Active')}>
-            <ThemedText style={[styles.toggleText, activeTab === 'Active' && styles.activeToggleText]}>
-              Active
-            </ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleButton, activeTab === 'Upcoming' && styles.activeToggleButton]}
-            onPress={() => setActiveTab('Upcoming')}>
-            <ThemedText style={[styles.toggleText, activeTab === 'Upcoming' && styles.activeToggleText]}>
-              Upcoming
-            </ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleButton, activeTab === 'Past' && styles.activeToggleButton]}
-            onPress={() => setActiveTab('Past')}>
-            <ThemedText style={[styles.toggleText, activeTab === 'Past' && styles.activeToggleText]}>
-              Past
-            </ThemedText>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={colors.tint} />
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}>
-
-          {filteredTrips.length === 0 ? (
-            <View style={styles.emptyStateContainer}>
-              <View style={styles.heroContainer}>
-                {HERO_IMAGES.map((image, index) => (
-                  <HeroImageCard
-                    key={index}
-                    image={image}
-                    index={index}
-                    activeImageIndex={activeImageIndex}
-                  />
-                ))}
-              </View>
-              <ThemedText type="title" style={styles.heroTitle}>
-                {activeTab === 'Active' ? "No active trip" : "No trips found"}
+    // !!! IMPORTANT: THIS WRAPPER IS REQUIRED FOR SWIPEABLE !!!
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemedView style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity
+              style={[styles.toggleButton, activeTab === 'Active' && styles.activeToggleButton]}
+              onPress={() => setActiveTab('Active')}>
+              <ThemedText style={[styles.toggleText, activeTab === 'Active' && styles.activeToggleText]}>
+                Active
               </ThemedText>
-              <ThemedText style={styles.heroSubtitle}>
-                {activeTab === 'Active'
-                  ? "You aren't on the road right now. Check Upcoming!"
-                  : "Time to plan your next adventure."}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleButton, activeTab === 'Upcoming' && styles.activeToggleButton]}
+              onPress={() => setActiveTab('Upcoming')}>
+              <ThemedText style={[styles.toggleText, activeTab === 'Upcoming' && styles.activeToggleText]}>
+                Upcoming
               </ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleButton, activeTab === 'Past' && styles.activeToggleButton]}
+              onPress={() => setActiveTab('Past')}>
+              <ThemedText style={[styles.toggleText, activeTab === 'Past' && styles.activeToggleText]}>
+                Past
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
 
-              {activeTab !== 'Past' && (
-                <TouchableOpacity
-                  style={[styles.ctaButton, { backgroundColor: colors.tint }]}
-                  onPress={() => router.push('/create-trip')}
-                  activeOpacity={0.8}>
-                  <ThemedText style={styles.ctaButtonText}>Plan a new trip</ThemedText>
-                </TouchableOpacity>
-              )}
-            </View>
-          ) : (
-            <View style={styles.listContainer}>
-              {filteredTrips.map((trip, index) => (
-                <Animated.View
-                  key={trip.id}
-                  entering={FadeInDown.delay(index * 100).springify()}
-                >
-                  <TouchableOpacity
-                    style={styles.immersiveCard}
-                    activeOpacity={0.95}
-                    onPress={() => router.push({
-                      pathname: '/trip-details/[id]',
-                      params: { id: trip.id }
-                    })}
-                  >
-                    <Image source={{ uri: trip.image }} style={StyleSheet.absoluteFill} contentFit="cover" transition={500} />
-                    <LinearGradient
-                      colors={['transparent', 'rgba(0,0,0,0.8)']}
-                      style={styles.cardOverlay}
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color={colors.tint} />
+          </View>
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}>
+
+            {filteredTrips.length === 0 ? (
+              <View style={styles.emptyStateContainer}>
+                <View style={styles.heroContainer}>
+                  {HERO_IMAGES.map((image, index) => (
+                    <HeroImageCard
+                      key={index}
+                      image={image}
+                      index={index}
+                      activeImageIndex={activeImageIndex}
                     />
+                  ))}
+                </View>
+                <ThemedText type="title" style={styles.heroTitle}>
+                  {activeTab === 'Active' ? "No active trip" : "No trips found"}
+                </ThemedText>
+                <ThemedText style={styles.heroSubtitle}>
+                  {activeTab === 'Active'
+                    ? "You aren't on the road right now. Check Upcoming!"
+                    : "Time to plan your next adventure."}
+                </ThemedText>
 
-                    <View style={styles.cardTopRow}>
-                      <View></View>
-                      <View style={styles.budgetBadge}>
-                        {/* CHANGED: Display Estimated Cost with Tilde */}
-                        <ThemedText style={styles.budgetText}>
-                          ~${Math.round(trip.estimatedCost || trip.budget || 0)}
-                        </ThemedText>
-                      </View>
-                    </View>
-
-                    <View style={styles.cardBottomContent}>
-                      <View style={styles.cardTextContainer}>
-                        <ThemedText style={styles.dateText}>
-                          {trip.formattedStartDate} - {trip.formattedEndDate}
-                        </ThemedText>
-                        <ThemedText style={styles.destinationTitle} numberOfLines={2} ellipsizeMode="tail">
-                          {trip.destination}
-                        </ThemedText>
-                      </View>
-
-                      <View style={styles.arrowButton}>
-                        <IconSymbol name="chevron.right" size={20} color="#fff" />
-                      </View>
-                    </View>
+                {activeTab !== 'Past' && (
+                  <TouchableOpacity
+                    style={[styles.ctaButton, { backgroundColor: colors.tint }]}
+                    onPress={() => router.push('/create-trip')}
+                    activeOpacity={0.8}>
+                    <ThemedText style={styles.ctaButtonText}>Plan a new trip</ThemedText>
                   </TouchableOpacity>
-                </Animated.View>
-              ))}
-              <View style={{ height: 100 }} />
-            </View>
-          )}
-        </ScrollView>
-      )}
-    </ThemedView>
+                )}
+              </View>
+            ) : (
+              <View style={styles.listContainer}>
+                {filteredTrips.map((trip, index) => (
+                  <Animated.View
+                    key={trip.id}
+                    entering={FadeInDown.delay(index * 100).springify()}
+                  >
+                    <TripCard
+                      trip={trip}
+                      router={router}
+                      onDelete={handleDeleteTrip}
+                    />
+                  </Animated.View>
+                ))}
+                <View style={{ height: 100 }} />
+              </View>
+            )}
+          </ScrollView>
+        )}
+      </ThemedView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -305,6 +377,36 @@ const styles = StyleSheet.create({
 
   // List State
   listContainer: { paddingHorizontal: 20, gap: 20 },
+
+  // SWIPE STYLES
+  swipeContainer: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: 'transparent'
+  },
+  deleteActionContainer: {
+    width: 100,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingLeft: 10
+  },
+  deleteButton: {
+    backgroundColor: '#FF3B30',
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 24,
+  },
+  deleteText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: 'bold'
+  },
+
+  // Card Styles
   immersiveCard: { height: 220, borderRadius: 24, overflow: 'hidden', justifyContent: 'space-between', padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 8, backgroundColor: '#333' },
   cardOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '60%' },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },

@@ -5,6 +5,7 @@ import {
     deleteDoc,
     doc,
     getDoc,
+    getDocs,
     increment,
     onSnapshot,
     orderBy,
@@ -12,7 +13,8 @@ import {
     Timestamp,
     Unsubscribe,
     updateDoc,
-    where
+    where,
+    writeBatch
 } from 'firebase/firestore';
 
 // 1. Import shared types (Ensure file name matches, e.g. 'types.ts')
@@ -109,6 +111,70 @@ export const TripService = {
         }, (error) => {
             console.error("Error fetching trip details:", error);
         });
+    },
+
+    /**
+     * Deletes a trip and its associated expenses.
+     * @param tripId The ID of the trip to delete.
+     */
+    async deleteTrip(tripId: string): Promise<void> {
+        try {
+            // 1. Create a Batch (to ensure all deletes happen together or fail together)
+            const batch = writeBatch(db);
+
+            // 2. Reference the Trip Document
+            const tripRef = doc(db, 'trips', tripId);
+            batch.delete(tripRef);
+
+            // 3. Find and Delete Associated Expenses (Cleanup)
+            // Assuming you store expenses in a top-level 'expenses' collection
+            const expensesRef = collection(db, 'expenses');
+            const q = query(expensesRef, where('tripId', '==', tripId));
+            const expenseSnapshot = await getDocs(q);
+
+            expenseSnapshot.forEach((doc) => {
+                batch.delete(doc.ref);
+            });
+
+            // 4. Commit the changes
+            await batch.commit();
+            console.log(`Trip ${tripId} and ${expenseSnapshot.size} expenses deleted successfully.`);
+
+        } catch (error) {
+            console.error("Error deleting trip:", error);
+            throw error;
+        }
+    },
+
+    /**
+     * Updates the timeline for a specific day (used for reordering or deleting)
+     */
+    async updateDayTimeline(tripId: string, dayIndex: number, newTimeline: any[]) {
+        try {
+            const tripRef = doc(db, 'trips', tripId);
+            const tripSnap = await getDoc(tripRef);
+
+            if (tripSnap.exists()) {
+                const tripData = tripSnap.data();
+                const itinerary = tripData.itinerary || [];
+
+                if (itinerary[dayIndex]) {
+                    // Update the timeline
+                    itinerary[dayIndex].timeline = newTimeline;
+
+                    // Update stopLocation to the last activity if available (optional but good for continuity)
+                    if (newTimeline.length > 0) {
+                        const lastItem = newTimeline[newTimeline.length - 1];
+                        itinerary[dayIndex].stopLocation = lastItem.coordinates;
+                    }
+
+                    await updateDoc(tripRef, { itinerary });
+                }
+            }
+        } catch (error) {
+            console.error("Error updating timeline:", error);
+            throw error;
+        }
     },
 
     /**

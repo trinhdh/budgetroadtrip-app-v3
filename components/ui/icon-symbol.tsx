@@ -22,13 +22,19 @@ const MAPPING = createMapping({
   'chevron.left': 'chevron-left',
   'plus': 'add',
   'minus': 'remove',
-  'xmark': 'close',               // ADDED: Close button
+  'xmark': 'close',
   'list.bullet': 'list',
   'line.3.horizontal': 'menu',
   'ellipsis.circle.fill': 'more-horiz',
-  'square.and.arrow.up': 'share', // ADDED: Share icon
+  'square.and.arrow.up': 'share',
   'minus.circle.fill': 'remove-circle',
   'checkmark.circle.fill': 'check-circle',
+
+  // --- MISSING ICONS ADDED HERE ---
+  'play.fill': 'play-arrow',        // For the "Start" marker
+  'banknote': 'attach-money',       // For Expenses
+  'banknote.fill': 'attach-money',  // Alternative Expense icon
+  'fuelpump.fill': 'local-gas-station', // For Fuel stops
 
   // --- Objects & Concepts ---
   'calendar': 'calendar-today',
@@ -43,23 +49,24 @@ const MAPPING = createMapping({
   'bed.double.fill': 'hotel',
   'fork.knife': 'restaurant',
   'mappin.circle.fill': 'pin-drop',
-  'map.fill': 'map',             // ADDED: Map toggle
+  'map.fill': 'map',
   'clock.fill': 'access-time',
   'star.fill': 'star',
   'camera': 'camera-alt',
-  'camera.viewfinder': 'center-focus-weak', // ADDED: Scan icon
+  'camera.fill': 'photo-camera',    // Added: For Activities
+  'camera.viewfinder': 'center-focus-weak',
   'gear': 'settings',
   'bell.fill': 'notifications',
   'paintbrush.fill': 'palette',
   'envelope.fill': 'mail',
   'doc.text.fill': 'description',
-  'doc.text': 'description',      // ADDED: Single doc
+  'doc.text': 'description',
   'trash.fill': 'delete',
   'arrow.right.rectangle': 'logout',
   'lock.fill': 'lock',
-  'exclamationmark.triangle.fill': 'warning', // ADDED: Warning/Budget alert
-  'circle.grid.2x2.fill': 'grid-view',        // ADDED: Category/Other icon
-  'mappin.and.ellipse': 'map',
+  'exclamationmark.triangle.fill': 'warning',
+  'circle.grid.2x2.fill': 'grid-view',
+  'mappin.and.ellipse': 'add-location', // Updated: Better match for "Add Activity"
 });
 
 export type IconSymbolName = keyof typeof MAPPING;
