@@ -1,3 +1,5 @@
+// trinhdh/budgetroadtrip-app-v3/budgetroadtrip-app-v3-develop/components/create-trip/step-one.tsx
+
 import { ThemedText } from '@/components/themed-text';
 import { LocationSearchModal } from '@/components/ui/location-search-modal';
 import { Colors, Fonts } from '@/constants/theme';
@@ -9,6 +11,8 @@ type Props = {
     form: {
         origin: string;
         destination: string;
+        // Add coordinates to the prop type definition so TS knows about them
+        originCoordinates?: { latitude: number; longitude: number } | null;
     };
     setForm: (data: any) => void;
 };
@@ -24,8 +28,21 @@ export default function StepOne({ form, setForm }: Props) {
         // data.description usually contains "City, State, Country"
         const locationName = data.description;
 
+        // 1. EXTRACT COORDINATES (Lat/Lng)
+        // details.geometry.location contains { lat: number, lng: number }
+        const coords = details?.geometry?.location
+            ? {
+                latitude: details.geometry.location.lat,
+                longitude: details.geometry.location.lng,
+            }
+            : null;
+
         if (activeField === 'origin') {
-            setForm({ ...form, origin: locationName });
+            setForm({
+                ...form,
+                origin: locationName,
+                originCoordinates: coords, // <--- SAVE COORDINATES
+            });
         } else if (activeField === 'destination') {
             setForm({ ...form, destination: locationName });
         }

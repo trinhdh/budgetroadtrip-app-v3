@@ -74,6 +74,7 @@ export type AiTripResponse = {
 export type TripPayload = {
     userId: string;
     origin: string;
+    originCoordinates?: GeoPoint | null;
     destination: string;
     startDate: Date | string | null;
     endDate?: Date | string | null;

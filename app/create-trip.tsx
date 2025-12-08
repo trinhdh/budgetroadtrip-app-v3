@@ -26,7 +26,7 @@ import StepThree from '@/components/create-trip/step-three';
 import StepTwo from '@/components/create-trip/step-two';
 import { ProcessingModal } from '@/components/ui/processing-modal';
 
-import { TripVibe } from '@/constants/types';
+import { GeoPoint, TripVibe } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { AiPlannerService } from '@/services/ai-planner';
 import { ImageService } from '@/services/image-service';
@@ -45,6 +45,7 @@ export default function CreateTripScreen() {
 
     const [form, setForm] = useState({
         origin: '',
+        originCoordinates: null as GeoPoint | null,
         destination: '',
         startDate: null as Date | null,
         duration: 5,
@@ -121,6 +122,7 @@ export default function CreateTripScreen() {
                 try {
                     const finalTripData = {
                         origin: form.origin,
+                        originCoordinates: form.originCoordinates,
                         destination: form.destination,
                         startDate: form.startDate ? form.startDate.toISOString() : null,
                         duration: form.duration,

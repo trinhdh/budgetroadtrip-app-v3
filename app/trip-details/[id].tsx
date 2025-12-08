@@ -1,3 +1,5 @@
+// trinhdh/budgetroadtrip-app-v3/budgetroadtrip-app-v3-develop/app/trip-details/[id].tsx
+
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -249,24 +251,46 @@ export default function TripDetailsScreen() {
                         ref={mapRef}
                         style={StyleSheet.absoluteFill}
                         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                        // Focus on Origin if available, otherwise first stop
                         initialRegion={{
-                            latitude: trip.itinerary?.[0]?.stopLocation.latitude || 37.78825,
-                            longitude: trip.itinerary?.[0]?.stopLocation.longitude || -122.4324,
+                            latitude: trip.originCoordinates?.latitude || trip.itinerary?.[0]?.stopLocation.latitude || 37.78825,
+                            longitude: trip.originCoordinates?.longitude || trip.itinerary?.[0]?.stopLocation.longitude || -122.4324,
                             latitudeDelta: 8.0,
                             longitudeDelta: 8.0,
                         }}
                         scrollEnabled={isMapMaximized}
                         zoomEnabled={isMapMaximized}
                     >
-                        {trip.itinerary && trip.itinerary.length > 1 && (
+                        {/* 1. ROUTE LINE: Connect Origin -> Day 1 -> Day 2... */}
+                        {trip.itinerary && trip.itinerary.length > 0 && (
                             <Polyline
-                                coordinates={trip.itinerary.map(day => day.stopLocation)}
+                                coordinates={[
+                                    // Start at Origin (if available)
+                                    ...(trip.originCoordinates ? [trip.originCoordinates] : []),
+                                    ...trip.itinerary.map(day => day.stopLocation)
+                                ]}
                                 strokeColor={colors.tint}
                                 strokeWidth={3}
                                 lineDashPattern={[1]}
                             />
                         )}
 
+                        {/* 2. START MARKER */}
+                        {trip.originCoordinates && (
+                            <Marker
+                                coordinate={trip.originCoordinates}
+                                title={`Start: ${trip.origin}`}
+                                zIndex={10}
+                            >
+                                <View style={[styles.dayMarkerPill, { backgroundColor: '#333', borderColor: '#fff' }]}>
+                                    <Text style={styles.dayMarkerText}>START</Text>
+                                </View>
+                                {/* Triangle Arrow */}
+                                <View style={[styles.markerArrow, { borderTopColor: '#333' }]} />
+                            </Marker>
+                        )}
+
+                        {/* 3. DAY MARKERS (Existing) */}
                         {trip.itinerary?.map((day, index) => (
                             <Marker
                                 key={day.day}
@@ -352,7 +376,6 @@ export default function TripDetailsScreen() {
                                 activeOpacity={0.7}
                             >
                                 <IconSymbol name="dollarsign" size={16} color="#fff" style={{ marginRight: 2 }} />
-                                {/* CHANGE: Show Estimated Cost with Tilde */}
                                 <ThemedText style={styles.budgetText}>~{Math.round(trip.estimatedCost)}</ThemedText>
                             </TouchableOpacity>
                         </View>

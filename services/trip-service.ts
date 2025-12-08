@@ -32,6 +32,10 @@ export const TripService = {
                     mpg: Number(tripData.vehicle.mpg) || 0,
                     gasPrice: Number(tripData.vehicle.gasPrice) || 0,
                 },
+                originCoordinates: tripData.originCoordinates ? {
+                    latitude: tripData.originCoordinates.latitude,
+                    longitude: tripData.originCoordinates.longitude
+                } : null,
                 // Ensure dates are Date objects
                 startDate: tripData.startDate ? new Date(tripData.startDate) : null,
                 endDate: tripData.endDate ? new Date(tripData.endDate) : null,
