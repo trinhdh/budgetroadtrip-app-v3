@@ -4,6 +4,7 @@ import {
     collection,
     deleteDoc,
     doc,
+    getDoc,
     increment,
     onSnapshot,
     orderBy,
@@ -158,6 +159,39 @@ export const TripService = {
             });
         } catch (error) {
             console.error("Error deleting expense:", error);
+            throw error;
+        }
+    },
+    /**
+     * Adds a new activity to a specific day's timeline
+     */
+    async addActivityToDay(tripId: string, dayIndex: number, activityItem: any) {
+        try {
+            const tripRef = doc(db, 'trips', tripId);
+            const tripSnap = await getDoc(tripRef);
+
+            if (tripSnap.exists()) {
+                const tripData = tripSnap.data();
+                const itinerary = tripData.itinerary || [];
+
+                if (itinerary[dayIndex]) {
+                    // Initialize timeline if it doesn't exist
+                    if (!itinerary[dayIndex].timeline) {
+                        itinerary[dayIndex].timeline = [];
+                    }
+
+                    // Add the new item
+                    itinerary[dayIndex].timeline.push(activityItem);
+
+                    // Update the stopLocation for the day to be the last activity (optional, but good for routing)
+                    // itinerary[dayIndex].stopLocation = activityItem.coordinates;
+
+                    // Save back to Firestore
+                    await updateDoc(tripRef, { itinerary });
+                }
+            }
+        } catch (error) {
+            console.error("Error adding activity:", error);
             throw error;
         }
     }

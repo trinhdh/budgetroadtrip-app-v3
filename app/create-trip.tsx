@@ -129,7 +129,7 @@ export default function CreateTripScreen() {
                 const manualItinerary = Array.from({ length: form.duration }, (_, i) => ({
                     day: i + 1,
                     title: `Day ${i + 1}: ${form.destination}`,
-                    distance: '0 km',
+                    distance: '0 mi',
                     stopLocation: form.destinationCoordinates || form.originCoordinates || { latitude: 0, longitude: 0 },
                     timeline: [],
                 }));

@@ -18,10 +18,6 @@ import {
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-// Note: If you stuck with the RouteService (manual API) approach from the previous step, keep using Polyline with routeCoordinates. 
-// If you reverted to MapViewDirections (library), use that. 
-// I will assume we are using the **manual RouteService** approach consistent with the last working state for "Routes API".
-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- SERVICE & CONTEXT ---
@@ -282,6 +278,13 @@ export default function TripDetailsScreen() {
         );
     }
 
+    // Determine what to show in the header bubble
+    // If estimated cost is > 0 (AI Trip), show Estimate. 
+    // If estimated cost is 0 (Manual Trip), show Budget Limit.
+    const headerCostDisplay = trip.estimatedCost > 0
+        ? `~${Math.round(trip.estimatedCost)}`
+        : `$${trip.budget}`;
+
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <ThemedView style={styles.container}>
@@ -344,7 +347,7 @@ export default function TripDetailsScreen() {
                             </Marker>
                         )}
 
-                        {/* 3. DAY MARKERS (Stops) */}
+                        {/* 3. DAY MARKERS */}
                         {trip.itinerary?.map((day, index) => (
                             <Marker
                                 key={`day-${day.day}`}
@@ -359,14 +362,11 @@ export default function TripDetailsScreen() {
                             </Marker>
                         ))}
 
-                        {/* 4. ACTIVITY MARKERS (Food, Hotel, Activities) */}
+                        {/* 4. ACTIVITY MARKERS */}
                         {trip.itinerary?.flatMap((day) =>
                             day.timeline?.map((item, index) => {
-                                // Filter for specific types
                                 if (!['food', 'hotel', 'activities'].includes(item.type.toLowerCase())) return null;
-
                                 const { icon, color } = getCategoryDetails(item.type);
-
                                 return (
                                     <Marker
                                         key={`activity-${day.day}-${index}`}
@@ -374,7 +374,7 @@ export default function TripDetailsScreen() {
                                         title={item.title}
                                         description={item.type}
                                         anchor={{ x: 0.5, y: 0.5 }}
-                                        zIndex={5} // Below Start/Day markers
+                                        zIndex={5}
                                     >
                                         <View style={[styles.miniActivityMarker, { backgroundColor: color }]}>
                                             <IconSymbol name={icon as any} size={12} color="#fff" />
@@ -383,7 +383,6 @@ export default function TripDetailsScreen() {
                                 );
                             })
                         )}
-
                     </MapView>
 
                     {!isMapMaximized && (
@@ -457,7 +456,8 @@ export default function TripDetailsScreen() {
                                 activeOpacity={0.7}
                             >
                                 <IconSymbol name="dollarsign" size={16} color="#fff" style={{ marginRight: 2 }} />
-                                <ThemedText style={styles.budgetText}>~{Math.round(trip.estimatedCost)}</ThemedText>
+                                {/* Updated Header Display */}
+                                <ThemedText style={styles.budgetText}>{headerCostDisplay}</ThemedText>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -493,26 +493,28 @@ export default function TripDetailsScreen() {
                             </View>
                         </View>
 
-                        {/* Budget Breakdown */}
-                        <View style={styles.section}>
-                            <ThemedText type="subtitle" style={styles.sectionTitle}>Budget Breakdown</ThemedText>
-                            <View style={styles.budgetGrid}>
-                                {trip.budgetBreakdown?.map((item, index) => {
-                                    const { icon, color } = getCategoryDetails(item.category);
-                                    return (
-                                        <View key={index} style={[styles.budgetCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
-                                            <View style={[styles.budgetIconContainer, { backgroundColor: color + '20' }]}>
-                                                <IconSymbol name={icon as any} size={18} color={color} />
+                        {/* Budget Breakdown - CONDITIONALLY RENDERED */}
+                        {trip.budgetBreakdown && trip.budgetBreakdown.length > 0 && (
+                            <View style={styles.section}>
+                                <ThemedText type="subtitle" style={styles.sectionTitle}>Budget Breakdown</ThemedText>
+                                <View style={styles.budgetGrid}>
+                                    {trip.budgetBreakdown.map((item, index) => {
+                                        const { icon, color } = getCategoryDetails(item.category);
+                                        return (
+                                            <View key={index} style={[styles.budgetCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
+                                                <View style={[styles.budgetIconContainer, { backgroundColor: color + '20' }]}>
+                                                    <IconSymbol name={icon as any} size={18} color={color} />
+                                                </View>
+                                                <View>
+                                                    <ThemedText style={styles.budgetAmount}>${item.amount}</ThemedText>
+                                                    <ThemedText style={styles.budgetLabel}>{item.category}</ThemedText>
+                                                </View>
                                             </View>
-                                            <View>
-                                                <ThemedText style={styles.budgetAmount}>${item.amount}</ThemedText>
-                                                <ThemedText style={styles.budgetLabel}>{item.category}</ThemedText>
-                                            </View>
-                                        </View>
-                                    );
-                                })}
+                                        );
+                                    })}
+                                </View>
                             </View>
-                        </View>
+                        )}
 
                         {/* Recent Expenses Section */}
                         <View style={styles.section}>
@@ -625,6 +627,8 @@ export default function TripDetailsScreen() {
                     currentUser="u1"
                     onSettle={handleSettleDebt}
                 />
+
+                {/* --- UPDATED: Passing tripStartDate to AddExpenseModal --- */}
                 <AddExpenseModal
                     visible={addExpenseVisible}
                     onClose={() => setAddExpenseVisible(false)}
@@ -632,6 +636,7 @@ export default function TripDetailsScreen() {
                     tripStartDate={trip.startDate}
                     onSave={handleSaveExpense}
                 />
+
                 <AllExpensesModal
                     visible={viewAllExpensesVisible}
                     onClose={() => setViewAllExpensesVisible(false)}
@@ -689,11 +694,18 @@ export default function TripDetailsScreen() {
                             <ThemedText style={styles.paramValue}>${trip.budget}</ThemedText>
                         </View>
                         <View style={styles.paramSeparator} />
-                        <View style={styles.paramRow}>
-                            <ThemedText style={styles.paramLabel}>AI Estimate</ThemedText>
-                            <ThemedText style={styles.paramValue}>~${Math.round(trip.estimatedCost)}</ThemedText>
-                        </View>
-                        <View style={styles.paramSeparator} />
+
+                        {/* Only show AI Estimate if valid */}
+                        {trip.estimatedCost > 0 && (
+                            <>
+                                <View style={styles.paramRow}>
+                                    <ThemedText style={styles.paramLabel}>AI Estimate</ThemedText>
+                                    <ThemedText style={styles.paramValue}>~${Math.round(trip.estimatedCost)}</ThemedText>
+                                </View>
+                                <View style={styles.paramSeparator} />
+                            </>
+                        )}
+
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>Total Spent</ThemedText>
                             <ThemedText style={[styles.paramValue, isOverBudget && { color: '#FF3B30' }]}>
@@ -763,19 +775,5 @@ const styles = StyleSheet.create({
     stepCardTitle: { fontSize: 16, marginBottom: 4, color: '#333' },
     stepCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     grayText: { color: '#808080', fontSize: 13 },
-    // NEW STYLE FOR ACTIVITY MARKERS
-    miniActivityMarker: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 2,
-        borderColor: '#fff',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.2,
-        shadowRadius: 2,
-        elevation: 3,
-    }
+    miniActivityMarker: { width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 3 }
 });
