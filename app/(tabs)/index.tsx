@@ -7,7 +7,7 @@ import {
   Alert,
   Platform,
   ScrollView,
-  Share, // <--- ADDED IMPORT
+  Share,
   StyleSheet,
   TouchableOpacity,
   View,
@@ -79,7 +79,7 @@ const TripCard = ({
   trip,
   router,
   onDelete,
-  onShare // <--- ADDED PROP
+  onShare
 }: {
   trip: any,
   router: any,
@@ -91,12 +91,12 @@ const TripCard = ({
   const renderRightActions = (_progress: any, _dragX: any) => {
     return (
       <View style={styles.actionsContainer}>
-        {/* SHARE BUTTON (Blue) */}
+        {/* SHARE / INVITE BUTTON (Blue) */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: '#007AFF', marginRight: 8 }]}
           onPress={() => onShare(trip)}
         >
-          <IconSymbol name="square.and.arrow.up" size={26} color="#fff" />
+          <IconSymbol name="person.2.fill" size={26} color="#fff" />
           <ThemedText style={styles.actionTitle}>Invite</ThemedText>
         </TouchableOpacity>
 
@@ -131,7 +131,7 @@ const TripCard = ({
     <ReanimatedSwipeable
       friction={2}
       enableTrackpadTwoFingerGesture
-      rightThreshold={80} // Increased threshold to catch swipe earlier for 2 buttons
+      rightThreshold={80}
       renderRightActions={renderRightActions}
       containerStyle={styles.swipeContainer}
     >
@@ -253,17 +253,17 @@ export default function HomeScreen() {
     }
   };
 
-  // --- HANDLE SHARE ---
+  // --- HANDLE SHARE (INVITE MESSAGE) ---
   const handleShareTrip = async (trip: any) => {
     try {
-      // Placeholder scheme - replace with your Expo Linking scheme later
       const deepLink = `budgettrip://trip/${trip.id}`;
-      const message = `Join me on my trip to ${trip.destination}! Dates: ${trip.formattedStartDate} - ${trip.formattedEndDate}. View here: ${deepLink}`;
 
+      // Updated Message Format
+      const message = `Hey! Join me on a trip to ${trip.destination}. Check out the plan here: ${deepLink}`;
       const result = await Share.share({
         message: message,
-        title: `Trip to ${trip.destination}`,
-        url: deepLink, // iOS often uses this for the preview
+        title: `Trip Invitation: ${trip.destination}`,
+        url: deepLink, // iOS uses this for rich preview
       });
 
       if (result.action === Share.sharedAction) {
@@ -413,14 +413,13 @@ const styles = StyleSheet.create({
 
   // SWIPE STYLES
   swipeContainer: {
-    // Transparent background so the gap between buttons and card is visible
     backgroundColor: 'transparent',
     overflow: 'visible',
   },
   actionsContainer: {
     flexDirection: 'row',
-    width: 170, // Width needed for two buttons (75px * 2) + spacing
-    paddingLeft: 10, // Creates the visual gap between the Card and the Action Buttons
+    width: 170, // 2 buttons + spacing
+    paddingLeft: 10,
     height: '100%',
     alignItems: 'center',
   },
@@ -429,7 +428,7 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 24, // Matches the Card Border Radius for round look
+    borderRadius: 24, // Rounded corners
   },
   actionTitle: {
     color: '#fff',
