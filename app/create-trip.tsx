@@ -1,5 +1,5 @@
 import { useHeaderHeight } from '@react-navigation/elements';
-import * as Crypto from 'expo-crypto'; // Need this for manual ID generation
+import * as Crypto from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -25,9 +25,9 @@ import StepFour from '@/components/create-trip/step-four';
 import StepOne from '@/components/create-trip/step-one';
 import StepThree from '@/components/create-trip/step-three';
 import StepTwo from '@/components/create-trip/step-two';
+import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal'; // <--- IMPORT THIS
 import { ProcessingModal } from '@/components/ui/processing-modal';
 
-// --- NEW IMPORTS ---
 import { GeoPoint, ItineraryItem, Trip, TripMember, TripVibe } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { AiPlannerService } from '@/services/ai-planner';
@@ -45,7 +45,11 @@ export default function CreateTripScreen() {
     const totalSteps = 5;
     const [isLoading, setIsLoading] = useState(false);
 
-    // Form State matches UI needs, will be mapped to 'Trip' type on save
+    // --- WARNING STATE ---
+    const [warningVisible, setWarningVisible] = useState(false);
+    const [warningMessage, setWarningMessage] = useState('');
+    const [pendingTripData, setPendingTripData] = useState<{ data: Partial<Trip>, image: string } | null>(null);
+
     const [form, setForm] = useState({
         origin: '',
         originCoordinates: null as GeoPoint | null,
@@ -64,15 +68,14 @@ export default function CreateTripScreen() {
         vibe: 'balanced' as TripVibe,
     });
 
-    // Helper to determine if we are on the last step for the current mode
     const isLastStep = (currentStep: number, mode: string) => {
-        if (mode === 'manual' && currentStep === 2) return true; // Manual ends at Step 2
-        if (currentStep === totalSteps) return true; // AI ends at Step 5
+        if (mode === 'manual' && currentStep === 2) return true;
+        if (currentStep === totalSteps) return true;
         return false;
     };
 
     const handleNext = () => {
-        // --- VALIDATION ---
+        // ... (Keep existing validation logic from Step 1, 2, 4) ...
         if (step === 1) {
             if (!form.origin || !form.destination) {
                 Alert.alert('Incomplete', 'Please select both origin and destination.');
@@ -94,15 +97,15 @@ export default function CreateTripScreen() {
             }
         }
 
-        // --- NAVIGATION LOGIC ---
         if (isLastStep(step, form.mode)) {
-            handleGenerateTrip();
+            initiateTripGeneration(); // <--- CALL NEW FUNCTION
         } else {
             setStep(step + 1);
         }
     };
 
-    const handleGenerateTrip = async () => {
+    // --- PHASE 1: GENERATE PLAN ---
+    const initiateTripGeneration = async () => {
         if (!user) {
             Alert.alert("Error", "You must be logged in to create a trip.");
             return;
@@ -114,7 +117,7 @@ export default function CreateTripScreen() {
             let partialTripData: Partial<Trip> = {};
             let coverImage: string = '';
 
-            // 1. FETCH IMAGE (Try to get a cover image)
+            // Fetch Image
             try {
                 const fetchedImage = await ImageService.getPlaceImage(form.destination);
                 if (fetchedImage) coverImage = fetchedImage;
@@ -122,9 +125,7 @@ export default function CreateTripScreen() {
                 console.log("Could not fetch image, using default");
             }
 
-            // 2. GENERATE PLAN (Manual or AI)
             if (form.mode === 'manual') {
-                // --- MANUAL MODE: Create Skeleton ---
                 const manualItinerary: ItineraryItem[] = Array.from({ length: form.duration }, (_, i) => ({
                     id: Crypto.randomUUID(),
                     order: i,
@@ -136,7 +137,6 @@ export default function CreateTripScreen() {
                     start_city: form.destination,
                     end_city: form.destination,
                     coordinates: form.destinationCoordinates || { lat: 0, lng: 0 },
-                    // Empty options arrays
                     hotel_options: [],
                     food_options: [],
                     activity_options: [],
@@ -148,7 +148,6 @@ export default function CreateTripScreen() {
                     itinerary: manualItinerary,
                 };
             } else {
-                // --- AI MODE: Call Service ---
                 const aiResult = await AiPlannerService.generateTripPlan({
                     origin: form.origin,
                     destination: form.destination,
@@ -162,92 +161,131 @@ export default function CreateTripScreen() {
                     isRoundTrip: form.isRoundTrip
                 });
 
-                // Handle AI Warnings
-                if (aiResult.warning) {
-                    // Note: In a real app, you might want to show a confirmation dialog here
-                    // For now, we attach the warning but proceed unless the itinerary is empty
-                    if (!aiResult.itinerary || aiResult.itinerary.length === 0) {
-                        throw new Error(aiResult.warning);
-                    }
-                    Alert.alert("Trip Planner Note", aiResult.warning);
-                }
-
                 partialTripData = aiResult;
+
+                // --- CHECK FOR WARNINGS ---
+                if (aiResult.warning) {
+                    setIsLoading(false); // Stop spinner
+                    setWarningMessage(aiResult.warning);
+                    setPendingTripData({ data: partialTripData, image: coverImage });
+                    setWarningVisible(true); // SHOW MODAL
+                    return; // STOP HERE
+                }
             }
 
-            // 3. CONSTRUCT FINAL TRIP OBJECT
-            const saveTripToDb = async () => {
-                let endDateObj = null;
-                if (form.startDate) {
-                    endDateObj = new Date(form.startDate);
-                    endDateObj.setDate(endDateObj.getDate() + form.duration);
-                }
-
-                // Create the Owner Member
-                const ownerMember: TripMember = {
-                    uid: user.uid,
-                    name: user.displayName || 'Traveler',
-                    avatar: user.photoURL || undefined,
-                    role: 'owner'
-                };
-
-                const finalTripData: Trip = {
-                    userId: user.uid,
-                    startCity: form.origin,
-                    endCity: form.destination,
-                    destination: form.destination,
-
-                    startDate: form.startDate ? form.startDate.toISOString() : null,
-                    endDate: endDateObj ? endDateObj.toISOString() : null,
-                    duration: form.duration,
-                    people: form.adults + form.children,
-
-                    budget: form.budget,
-                    vibe: form.vibe,
-
-                    // Merged Data from AI/Manual generation
-                    estimatedCost: partialTripData.estimatedCost || 0,
-                    estimatedBreakdown: partialTripData.estimatedBreakdown || [],
-                    itinerary: partialTripData.itinerary || [],
-
-                    image: coverImage,
-                    members: [ownerMember],
-                    createdAt: new Date(), // Service will likely convert this to serverTimestamp
-                };
-
-                // 4. SAVE TO FIREBASE
-                const tripId = await TripService.saveTrip(user.uid, finalTripData);
-
-                setIsLoading(false);
-
-                // Replace ensures the user can't "back" into the form
-                router.replace({
-                    pathname: '/trip-details/[id]',
-                    params: { id: tripId }
-                });
-            };
-
-            await saveTripToDb();
+            // If no warning, proceed directly
+            await finalizeTripCreation(partialTripData, coverImage);
 
         } catch (error: any) {
             setIsLoading(false);
             Alert.alert("Generation Failed", error.message || "Could not create trip plan.");
-            console.error(error);
+        }
+    };
+
+    // --- PHASE 2: SAVE TO DB ---
+    const finalizeTripCreation = async (partialData: Partial<Trip>, image: string) => {
+        if (!user) return;
+
+        // If we are coming from the modal, ensure we show loading again
+        if (!isLoading) setIsLoading(true);
+
+        try {
+            let endDateObj = null;
+            if (form.startDate) {
+                endDateObj = new Date(form.startDate);
+                endDateObj.setDate(endDateObj.getDate() + form.duration);
+            }
+
+            const ownerMember: TripMember = {
+                uid: user.uid,
+                name: user.displayName || 'Traveler',
+                avatar: user.photoURL || undefined,
+                role: 'owner'
+            };
+
+            const finalTripData: Trip = {
+                userId: user.uid,
+                startCity: form.origin,
+                endCity: form.destination,
+                destination: form.destination,
+                startDate: form.startDate ? form.startDate.toISOString() : null,
+                endDate: endDateObj ? endDateObj.toISOString() : null,
+                duration: form.duration,
+                people: form.adults + form.children,
+                budget: form.budget,
+                vibe: form.vibe,
+                estimatedCost: partialData.estimatedCost || 0,
+                estimatedBreakdown: partialData.estimatedBreakdown || [],
+                itinerary: partialData.itinerary || [],
+                image: image,
+                members: [ownerMember],
+                createdAt: new Date(),
+            };
+
+            const tripId = await TripService.saveTrip(user.uid, finalTripData);
+
+            setIsLoading(false);
+            setWarningVisible(false); // Close modal if open
+
+            router.replace({
+                pathname: '/trip-details/[id]',
+                params: { id: tripId }
+            });
+
+        } catch (error: any) {
+            setIsLoading(false);
+            Alert.alert("Save Error", "Could not save your trip.");
         }
     };
 
     const handleBack = () => {
-        if (step === 1) {
-            router.back();
-        } else {
-            setStep(step - 1);
-        }
+        if (step === 1) router.back();
+        else setStep(step - 1);
     };
 
     return (
         <ThemedView style={styles.container}>
             <ProcessingModal visible={isLoading} />
 
+            {/* --- WARNING MODAL --- */}
+            <BottomSheetModal
+                isVisible={warningVisible}
+                onClose={() => setWarningVisible(false)}
+                title="Trip Feasibility Check"
+                height="45%"
+            >
+                <View style={{ padding: 20, flex: 1 }}>
+                    <View style={styles.warningBox}>
+                        <IconSymbol name="exclamationmark.triangle.fill" size={32} color="#FF9500" />
+                        <ThemedText style={styles.warningTitle}>Heads Up!</ThemedText>
+                        <ThemedText style={styles.warningText}>
+                            {warningMessage}
+                        </ThemedText>
+                    </View>
+
+                    <View style={styles.warningActions}>
+                        <TouchableOpacity
+                            style={[styles.modalBtn, { backgroundColor: '#f0f0f0' }]}
+                            onPress={() => setWarningVisible(false)}
+                        >
+                            <ThemedText style={{ color: '#333' }}>Edit Plan</ThemedText>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.modalBtn, { backgroundColor: colors.tint }]}
+                            onPress={() => {
+                                if (pendingTripData) {
+                                    finalizeTripCreation(pendingTripData.data, pendingTripData.image);
+                                }
+                            }}
+                        >
+                            <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Proceed Anyway</ThemedText>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </BottomSheetModal>
+
+            {/* ... (Existing Header, KeyboardAvoidingView, ScrollView code remains same) ... */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={handleBack} style={styles.backButton} disabled={isLoading}>
                     <IconSymbol name="chevron.left" size={24} color={colors.text} />
@@ -255,11 +293,9 @@ export default function CreateTripScreen() {
                         {step === 1 ? 'Cancel' : 'Back'}
                     </ThemedText>
                 </TouchableOpacity>
-
                 <ThemedText type="subtitle" style={styles.headerTitle}>
                     {form.mode === 'manual' && step > 2 ? 'Finishing...' : `Step ${step} of ${form.mode === 'manual' ? 2 : totalSteps}`}
                 </ThemedText>
-
                 <View style={{ width: 80 }} />
             </View>
 
@@ -276,8 +312,6 @@ export default function CreateTripScreen() {
                         <View>
                             {step === 1 && <StepOne form={form} setForm={setForm} />}
                             {step === 2 && <StepTwo form={form} setForm={setForm} />}
-
-                            {/* Only show these if AI Mode */}
                             {form.mode === 'ai' && step === 3 && <StepThree form={form} setForm={setForm} />}
                             {form.mode === 'ai' && step === 4 && <StepFour form={form} setForm={setForm} />}
                             {form.mode === 'ai' && step === 5 && <StepFive form={form} setForm={setForm} />}
@@ -313,6 +347,7 @@ export default function CreateTripScreen() {
 }
 
 const styles = StyleSheet.create({
+    // ... (Keep existing styles) ...
     container: { flex: 1 },
     header: {
         flexDirection: 'row',
@@ -347,5 +382,38 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
+    },
+
+    // --- NEW WARNING MODAL STYLES ---
+    warningBox: {
+        alignItems: 'center',
+        marginBottom: 30,
+        marginTop: 10,
+        padding: 20,
+        backgroundColor: '#FFF8E1', // Light yellow background
+        borderRadius: 16,
+        gap: 10
+    },
+    warningTitle: {
+        fontSize: 20,
+        fontFamily: Fonts.bold,
+        color: '#FF9500',
+    },
+    warningText: {
+        textAlign: 'center',
+        color: '#555',
+        fontSize: 16,
+        lineHeight: 24
+    },
+    warningActions: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    modalBtn: {
+        flex: 1,
+        height: 50,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
     }
 });

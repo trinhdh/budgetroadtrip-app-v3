@@ -10,54 +10,34 @@ import { GoogleGenAI } from '@google/genai';
 import * as Crypto from 'expo-crypto';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { GoogleMapsService } from './google-map-service'; // <--- IMPORT YOUR MAP SERVICE
 
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const genAI = new GoogleGenAI({ apiKey: API_KEY });
 
 // ==========================================
-// 1. FLATTENED ZOD SCHEMAS
+// 1. HYBRID SCHEMA: Ask for SEARCH TERMS, not Places
 // ==========================================
 
-/**
- * We flatten the Place object for the AI. 
- * Instead of asking for `{ geometry: { location: { lat, lng } } }`, 
- * we just ask for `lat` and `lng` at the root. 
- * This reduces token usage and parsing errors.
- */
-const AiPlaceFlatSchema = z.object({
-    name: z.string(),
-    place_id: z.string().default(""), // AI sometimes omits IDs, default to empty to prevent crash
-    vicinity: z.string().optional().default(""),
-    rating: z.number().optional().default(0),
-    user_ratings_total: z.number().optional().default(0),
-    price_level: z.number().optional(),
-
-    // FLATTENED: Ask for coordinates directly at the root
-    lat: z.number(),
-    lng: z.number(),
-
-    photo_ref: z.string().optional().describe("A google photo reference string if available")
-});
-
-const AiDailyPlanFlatSchema = z.object({
+// Instead of asking for a full "Hotel Object", we ask for specific search queries.
+const AiDailyPlanSchema = z.object({
     day: z.number(),
     title: z.string(),
     description: z.string(),
-
     fuel_cost: z.number(),
     drive_time: z.string(),
-
     start_city: z.string(),
     end_city: z.string(),
 
-    // FLATTENED: Coordinates for the destination city
+    // AI estimates the city center coordinates (good enough for map centering)
     dest_lat: z.number(),
     dest_lng: z.number(),
 
-    // Arrays of the flat place objects
-    hotel_options: z.array(AiPlaceFlatSchema).max(3),
-    food_options: z.array(AiPlaceFlatSchema).max(3),
-    activity_options: z.array(AiPlaceFlatSchema).max(3),
+    // THE HYBRID PART: 
+    // Ask for specific search strings that we will feed into Google Places API later.
+    hotel_queries: z.array(z.string()).describe("3 specific search queries for accommodation, e.g. 'Boutique hotel with parking in downtown Savannah'"),
+    food_queries: z.array(z.string()).describe("3 specific search queries for food, e.g. 'Best BBQ near Forsyth Park'"),
+    activity_queries: z.array(z.string()).describe("3 specific search queries for activities, e.g. 'Ghost tour tickets Savannah'"),
 });
 
 const AiResponseSchema = z.object({
@@ -66,75 +46,37 @@ const AiResponseSchema = z.object({
         category: z.enum(['fuel', 'hotel', 'food', 'activities', 'other']),
         amount: z.number(),
     })),
-    itinerary: z.array(AiDailyPlanFlatSchema),
-    warning: z.string().optional(),
+    itinerary: z.array(AiDailyPlanSchema),
+    // THE WARNING FIELD:
+    warning: z.string().optional().describe("If the budget is too low for the duration/travelers, provide a warning explanation here."),
 });
 
-// Types inferred from Zod for internal mapping
-type AiPlaceFlat = z.infer<typeof AiPlaceFlatSchema>;
-type AiDailyPlanFlat = z.infer<typeof AiDailyPlanFlatSchema>;
-
-
 // ==========================================
-// 2. MAPPING HELPERS (The "Hydration" Step)
+// 2. HELPER: HYDRATION (Text -> Real Data)
 // ==========================================
 
 /**
- * Converts the Flat AI representation to your App's GooglePlace type.
- * Re-nests `lat`/`lng` into `geometry.location`.
+ * Takes search queries from AI and gets REAL data from Google.
  */
-const mapToGooglePlace = (flatPlace: AiPlaceFlat): GooglePlace => {
-    return {
-        name: flatPlace.name,
-        place_id: flatPlace.place_id,
-        vicinity: flatPlace.vicinity,
-        rating: flatPlace.rating,
-        user_ratings_total: flatPlace.user_ratings_total,
-        price_level: flatPlace.price_level,
-        formatted_address: flatPlace.vicinity, // Fallback if address isn't separate
-        geometry: {
-            location: {
-                lat: flatPlace.lat,
-                lng: flatPlace.lng
-            }
-        },
-        photos: flatPlace.photo_ref ? [{ photo_reference: flatPlace.photo_ref }] : []
-    };
+const fetchRealPlaces = async (queries: string[], type: "lodging" | "restaurant" | "tourist_attraction"): Promise<GooglePlace[]> => {
+    const results: GooglePlace[] = [];
+
+    // Run all searches in parallel
+    const searchPromises = queries.map(query =>
+        GoogleMapsService.searchPlaces(query, type)
+    );
+
+    const responses = await Promise.all(searchPromises);
+
+    // Flatten: take the best result (index 0) from each query
+    responses.forEach(places => {
+        if (places && places.length > 0) {
+            results.push(places[0]);
+        }
+    });
+
+    return results;
 };
-
-/**
- * Converts the Flat AI Itinerary Item to your App's ItineraryItem type.
- */
-const mapToItineraryItem = (flatItem: AiDailyPlanFlat, index: number): ItineraryItem => {
-    return {
-        id: Crypto.randomUUID(),
-        order: index,
-        day: flatItem.day,
-        title: flatItem.title,
-        description: flatItem.description,
-        fuel_cost: flatItem.fuel_cost,
-        drive_time: flatItem.drive_time,
-        start_city: flatItem.start_city,
-        end_city: flatItem.end_city,
-
-        // Map the flat city coordinates to GeoPoint
-        coordinates: {
-            lat: flatItem.dest_lat,
-            lng: flatItem.dest_lng
-        },
-
-        // Map the arrays using the helper above
-        hotel_options: flatItem.hotel_options.map(mapToGooglePlace),
-        food_options: flatItem.food_options.map(mapToGooglePlace),
-        activity_options: flatItem.activity_options.map(mapToGooglePlace),
-
-        // Initialize user selections as undefined
-        selected_hotel_id: undefined,
-        selected_food_id: undefined,
-        selected_activity_id: undefined
-    };
-};
-
 
 // ==========================================
 // 3. SERVICE
@@ -147,57 +89,90 @@ export const AiPlannerService = {
 
         const { origin, destination, duration, budget, travelers, carName, mpg, gasPrice, vibe, isRoundTrip } = input;
 
+        // --- NEW PROMPT STRATEGY ---
         const prompt = `
             Plan a ${duration}-day road trip from ${origin} to ${destination}.
-            Travelers: ${travelers.adults} adults, ${travelers.children} children.
-            Vehicle: ${carName} (MPG: ${mpg}, Gas: $${gasPrice}/gal). 
-            Total Budget: $${budget}.
-            Trip Type: ${isRoundTrip ? 'ROUND TRIP' : 'ONE WAY'}.
-            Vibe: ${vibe.toUpperCase()}.
+            **CONSTRAINTS:**
+            - Budget: $${budget} Total.
+            - Travelers: ${travelers.adults} adults, ${travelers.children} children.
+            - Vibe: ${vibe.toUpperCase()}.
+            - Car: ${carName} (${mpg} mpg).
+            - Type: ${isRoundTrip ? 'ROUND TRIP' : 'ONE WAY'}.
 
-            **SELECTION CRITERIA:**
-            1. **Search Tool:** You have access to 'googleSearch'. USE IT to find real places.
-            2. **Vibe Check:** - If vibe is 'Explorer', prioritize cabins, glamping, or nature lodges.
-               - If vibe is 'Comfort', prioritize 4-star+ hotels with easy parking.
-               - If vibe is 'Foodie', prioritize highly-rated local non-chain restaurants.
-            3. **Feasibility:** If the budget is impossible for ${duration} days, return a 'warning' string explaining why.
+            **CRITICAL INSTRUCTIONS:**
+            1. **FEASIBILITY CHECK:** If $${budget} is clearly too low for ${duration} days for this many people, you MUST fill the 'warning' field with a specific explanation.
+            2. **SEARCH QUERIES:** Do NOT invent hotel names or prices. Instead, generate highly specific Google Maps search queries for 'hotel_queries', 'food_queries', and 'activity_queries'.
+               - Example: "Budget motel near I-95 Savannah safe area"
+               - Example: "Family friendly diner with parking in Charleston"
+            3. **VIBE TUNING:**
+               - 'Explorer': Search for nature, scenic stops, cabins.
+               - 'Comfort': Search for 4-star+ hotels, minimal walking.
+               - 'Foodie': Search for "best rated local food", "famous dishes".
 
-            **DATA OUTPUT:**
-            - Return a day-by-day plan.
-            - Provide 3 real choices for Hotel, Food, and Activities per day.
-            - For each place, provide the exact 'name' and 'vicinity'. 
-            - Try to find the 'place_id' if available in search results, otherwise leave it empty.
-            - Ensure coordinates are accurate.
-            - Calculate 'fuel_cost' based on the daily distance.
+            Return purely JSON data matching the schema.
         `;
 
         const res = await genAI.models.generateContent({
-            model: "gemini-2.0-flash",
+            model: "gemini-2.0-flash", // Or 1.5-flash
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             config: {
                 responseMimeType: "application/json",
                 responseJsonSchema: zodToJsonSchema(AiResponseSchema),
-                // Ensure googleSearch is enabled so it can find real Place IDs and Lat/Lngs
-                tools: [{ googleSearch: {} }],
             }
         });
 
         const rawText = res.text;
+        console.log("Raw Text:", rawText);
         if (!rawText) throw new Error("AI returned empty response");
 
-        // 1. Validate with Zod (Flat Schema)
         const parsed = AiResponseSchema.parse(JSON.parse(rawText));
 
-        // 2. Map Flat Schema -> Complex Types
-        const itinerary: ItineraryItem[] = parsed.itinerary.map((item, index) =>
-            mapToItineraryItem(item, index)
-        );
+        // --- HYDRATION STEP: FETCH REAL DATA ---
+        // We now iterate over the AI's plan and fill in the blanks with Google Maps data
+        const itineraryPromises = parsed.itinerary.map(async (dayItem, index) => {
+
+            // Fetch real places in parallel based on the AI's "Search Queries"
+            const [hotels, food, activities] = await Promise.all([
+                fetchRealPlaces(dayItem.hotel_queries, 'lodging'),
+                fetchRealPlaces(dayItem.food_queries, 'restaurant'),
+                fetchRealPlaces(dayItem.activity_queries, 'tourist_attraction'),
+            ]);
+
+            const item: ItineraryItem = {
+                id: Crypto.randomUUID(),
+                order: index,
+                day: dayItem.day,
+                title: dayItem.title,
+                description: dayItem.description,
+                fuel_cost: dayItem.fuel_cost,
+                drive_time: dayItem.drive_time,
+                start_city: dayItem.start_city,
+                end_city: dayItem.end_city,
+                coordinates: {
+                    lat: dayItem.dest_lat,
+                    lng: dayItem.dest_lng
+                },
+                // Inject the REAL Google Data here
+                hotel_options: hotels,
+                food_options: food,
+                activity_options: activities,
+
+                selected_hotel_id: undefined,
+                selected_food_id: undefined,
+                selected_activity_id: undefined
+            };
+
+            return item;
+        });
+
+        // Wait for all Google API calls to finish
+        const finalItinerary = await Promise.all(itineraryPromises);
 
         return {
             estimatedCost: parsed.estimatedCost,
-            estimatedBreakdown: parsed.budgetBreakdown as BudgetCategory[], // Cast assumes Enums match
-            itinerary,
-            warning: parsed.warning
+            estimatedBreakdown: parsed.budgetBreakdown as BudgetCategory[],
+            itinerary: finalItinerary,
+            warning: parsed.warning // Pass the warning back to the UI
         };
     }
 };
