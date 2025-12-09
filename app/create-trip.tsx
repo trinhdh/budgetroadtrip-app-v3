@@ -25,10 +25,10 @@ import StepFour from '@/components/create-trip/step-four';
 import StepOne from '@/components/create-trip/step-one';
 import StepThree from '@/components/create-trip/step-three';
 import StepTwo from '@/components/create-trip/step-two';
-import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal'; // <--- IMPORT THIS
+import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { ProcessingModal } from '@/components/ui/processing-modal';
 
-import { GeoPoint, ItineraryItem, Trip, TripMember, TripVibe } from '@/constants/types';
+import { GeoPoint, ItineraryItem, TripMember, TripPayload, TripVibe } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { AiPlannerService } from '@/services/ai-planner';
 import { ImageService } from '@/services/image-service';
@@ -48,7 +48,14 @@ export default function CreateTripScreen() {
     // --- WARNING STATE ---
     const [warningVisible, setWarningVisible] = useState(false);
     const [warningMessage, setWarningMessage] = useState('');
-    const [pendingTripData, setPendingTripData] = useState<{ data: Partial<Trip>, image: string } | null>(null);
+
+    // We store the partial data here waiting for confirmation
+    const [pendingTripData, setPendingTripData] = useState<{
+        itinerary: ItineraryItem[],
+        estimatedCost: number,
+        estimatedBreakdown: any[],
+        image: string
+    } | null>(null);
 
     const [form, setForm] = useState({
         origin: '',
@@ -75,7 +82,7 @@ export default function CreateTripScreen() {
     };
 
     const handleNext = () => {
-        // ... (Keep existing validation logic from Step 1, 2, 4) ...
+        // Validation Logic
         if (step === 1) {
             if (!form.origin || !form.destination) {
                 Alert.alert('Incomplete', 'Please select both origin and destination.');
@@ -98,13 +105,13 @@ export default function CreateTripScreen() {
         }
 
         if (isLastStep(step, form.mode)) {
-            initiateTripGeneration(); // <--- CALL NEW FUNCTION
+            initiateTripGeneration();
         } else {
             setStep(step + 1);
         }
     };
 
-    // --- PHASE 1: GENERATE PLAN ---
+    // --- PHASE 1: GENERATE / PREPARE PLAN ---
     const initiateTripGeneration = async () => {
         if (!user) {
             Alert.alert("Error", "You must be logged in to create a trip.");
@@ -114,10 +121,15 @@ export default function CreateTripScreen() {
         setIsLoading(true);
 
         try {
-            let partialTripData: Partial<Trip> = {};
-            let coverImage: string = '';
+            let generatedData = {
+                itinerary: [] as ItineraryItem[],
+                estimatedCost: 0,
+                estimatedBreakdown: [] as any[],
+                warning: undefined as string | undefined
+            };
+            let coverImage = '';
 
-            // Fetch Image
+            // 1. Fetch Image (Runs for both AI and Manual)
             try {
                 const fetchedImage = await ImageService.getPlaceImage(form.destination);
                 if (fetchedImage) coverImage = fetchedImage;
@@ -126,28 +138,36 @@ export default function CreateTripScreen() {
             }
 
             if (form.mode === 'manual') {
-                const manualItinerary: ItineraryItem[] = Array.from({ length: form.duration }, (_, i) => ({
-                    id: Crypto.randomUUID(),
-                    order: i,
-                    day: i + 1,
-                    title: `Day ${i + 1}: ${form.destination}`,
-                    description: "Free day to explore.",
-                    fuel_cost: 0,
-                    drive_time: "0h",
-                    start_city: form.destination,
-                    end_city: form.destination,
-                    coordinates: form.destinationCoordinates || { lat: 0, lng: 0 },
-                    hotel_options: [],
-                    food_options: [],
-                    activity_options: [],
-                }));
+                // 2a. MANUAL MODE: Create empty placeholder days
+                const manualItinerary: ItineraryItem[] = Array.from({ length: form.duration }, (_, i) => {
+                    // Define coords once to use in both fields
+                    const coords = form.destinationCoordinates || { lat: 0, lng: 0 };
 
-                partialTripData = {
-                    estimatedCost: 0,
-                    estimatedBreakdown: [],
-                    itinerary: manualItinerary,
-                };
+                    return {
+                        id: Crypto.randomUUID(),
+                        order: i,
+                        day: i + 1,
+                        title: `Day ${i + 1}: ${form.destination}`,
+                        description: "Free day to explore.",
+                        fuel_cost: 0,
+                        drive_time: "0h",
+                        start_city: form.destination,
+                        end_city: form.destination,
+
+                        // FIX: Set both coordinates AND stopLocation
+                        coordinates: coords,
+                        stopLocation: coords,
+
+                        hotel_options: [],
+                        food_options: [],
+                        activity_options: [],
+                        timeline: []
+                    };
+                });
+
+                generatedData.itinerary = manualItinerary;
             } else {
+                // 2b. AI MODE: Call Gemini Service
                 const aiResult = await AiPlannerService.generateTripPlan({
                     origin: form.origin,
                     destination: form.destination,
@@ -161,20 +181,33 @@ export default function CreateTripScreen() {
                     isRoundTrip: form.isRoundTrip
                 });
 
-                partialTripData = aiResult;
-
-                // --- CHECK FOR WARNINGS ---
-                if (aiResult.warning) {
-                    setIsLoading(false); // Stop spinner
-                    setWarningMessage(aiResult.warning);
-                    setPendingTripData({ data: partialTripData, image: coverImage });
-                    setWarningVisible(true); // SHOW MODAL
-                    return; // STOP HERE
-                }
+                generatedData.itinerary = aiResult.itinerary || [];
+                generatedData.estimatedCost = aiResult.estimatedCost || 0;
+                generatedData.estimatedBreakdown = aiResult.estimatedBreakdown || [];
+                generatedData.warning = aiResult.warning;
             }
 
-            // If no warning, proceed directly
-            await finalizeTripCreation(partialTripData, coverImage);
+            // 3. Check for AI Warnings
+            if (generatedData.warning) {
+                setIsLoading(false);
+                setWarningMessage(generatedData.warning);
+                setPendingTripData({
+                    itinerary: generatedData.itinerary,
+                    estimatedCost: generatedData.estimatedCost,
+                    estimatedBreakdown: generatedData.estimatedBreakdown,
+                    image: coverImage
+                });
+                setWarningVisible(true); // SHOW MODAL
+                return; // STOP HERE
+            }
+
+            // 4. If no warning, proceed directly to save
+            await finalizeTripCreation({
+                itinerary: generatedData.itinerary,
+                estimatedCost: generatedData.estimatedCost,
+                estimatedBreakdown: generatedData.estimatedBreakdown,
+                image: coverImage
+            });
 
         } catch (error: any) {
             setIsLoading(false);
@@ -183,10 +216,15 @@ export default function CreateTripScreen() {
     };
 
     // --- PHASE 2: SAVE TO DB ---
-    const finalizeTripCreation = async (partialData: Partial<Trip>, image: string) => {
+    const finalizeTripCreation = async (data: {
+        itinerary: ItineraryItem[],
+        estimatedCost: number,
+        estimatedBreakdown: any[],
+        image: string
+    }) => {
         if (!user) return;
 
-        // If we are coming from the modal, ensure we show loading again
+        // Ensure loading spinner is visible (in case we came from the modal)
         if (!isLoading) setIsLoading(true);
 
         try {
@@ -203,23 +241,38 @@ export default function CreateTripScreen() {
                 role: 'owner'
             };
 
-            const finalTripData: Trip = {
-                userId: user.uid,
+            // Construct the final object matching the 'Trip' type
+            const finalTripData: TripPayload = {
                 startCity: form.origin,
                 endCity: form.destination,
                 destination: form.destination,
                 startDate: form.startDate ? form.startDate.toISOString() : null,
                 endDate: endDateObj ? endDateObj.toISOString() : null,
                 duration: form.duration,
-                people: form.adults + form.children,
                 budget: form.budget,
                 vibe: form.vibe,
-                estimatedCost: partialData.estimatedCost || 0,
-                estimatedBreakdown: partialData.estimatedBreakdown || [],
-                itinerary: partialData.itinerary || [],
-                image: image,
+
+                // --- FIX: Added 'people' field ---
+                people: form.adults + form.children,
+
+                estimatedCost: data.estimatedCost,
+                estimatedBreakdown: data.estimatedBreakdown,
+                itinerary: data.itinerary,
+                image: data.image,
                 members: [ownerMember],
-                createdAt: new Date(),
+                originCoordinates: form.originCoordinates || undefined,
+
+                // Nest these objects to match the Typescript Interface
+                travelers: {
+                    adults: form.adults,
+                    children: form.children
+                },
+                // For Manual mode, these might be empty strings, so provide defaults
+                vehicle: {
+                    name: form.carName || 'Personal Vehicle',
+                    mpg: Number(form.mpg) || 0,
+                    gasPrice: Number(form.gasPrice) || 0
+                }
             };
 
             const tripId = await TripService.saveTrip(user.uid, finalTripData);
@@ -275,7 +328,7 @@ export default function CreateTripScreen() {
                             style={[styles.modalBtn, { backgroundColor: colors.tint }]}
                             onPress={() => {
                                 if (pendingTripData) {
-                                    finalizeTripCreation(pendingTripData.data, pendingTripData.image);
+                                    finalizeTripCreation(pendingTripData);
                                 }
                             }}
                         >
@@ -285,7 +338,7 @@ export default function CreateTripScreen() {
                 </View>
             </BottomSheetModal>
 
-            {/* ... (Existing Header, KeyboardAvoidingView, ScrollView code remains same) ... */}
+            {/* HEADER */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={handleBack} style={styles.backButton} disabled={isLoading}>
                     <IconSymbol name="chevron.left" size={24} color={colors.text} />
@@ -299,6 +352,7 @@ export default function CreateTripScreen() {
                 <View style={{ width: 80 }} />
             </View>
 
+            {/* FORM STEPS */}
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
@@ -320,6 +374,7 @@ export default function CreateTripScreen() {
                 </ScrollView>
             </KeyboardAvoidingView>
 
+            {/* FOOTER */}
             <View style={[styles.footer, { borderTopColor: colors.icon }]}>
                 <TouchableOpacity
                     style={[styles.button, { backgroundColor: colors.tint }]}
@@ -347,7 +402,6 @@ export default function CreateTripScreen() {
 }
 
 const styles = StyleSheet.create({
-    // ... (Keep existing styles) ...
     container: { flex: 1 },
     header: {
         flexDirection: 'row',

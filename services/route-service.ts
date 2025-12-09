@@ -1,8 +1,9 @@
 // trinhdh/budgetroadtrip-app-v3/budgetroadtrip-app-v3-develop/services/route-service.ts
 
 import { GeoPoint } from '@/constants/types';
+import { decode } from "@googlemaps/polyline-codec"; // <--- Official Google Library
 
-const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || '';
+const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY || '';
 const ROUTES_API_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 
 export const RouteService = {
@@ -17,13 +18,13 @@ export const RouteService = {
 
         const body = {
             origin: {
-                location: { latLng: { latitude: origin.latitude, longitude: origin.longitude } }
+                location: { latLng: { latitude: origin.lat, longitude: origin.lng } }
             },
             destination: {
-                location: { latLng: { latitude: destination.latitude, longitude: destination.longitude } }
+                location: { latLng: { latitude: destination.lat, longitude: destination.lng } }
             },
             intermediates: waypoints.map(pt => ({
-                location: { latLng: { latitude: pt.latitude, longitude: pt.longitude } }
+                location: { latLng: { latitude: pt.lat, longitude: pt.lng } }
             })),
             travelMode: 'DRIVE',
             routingPreference: 'TRAFFIC_UNAWARE',
@@ -35,7 +36,6 @@ export const RouteService = {
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Goog-Api-Key': GOOGLE_API_KEY,
-                    // FieldMask reduces response size/cost. We only need the polyline.
                     'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
                 },
                 body: JSON.stringify(body)
@@ -44,8 +44,17 @@ export const RouteService = {
             const data = await response.json();
 
             if (data.routes && data.routes.length > 0) {
-                const encodedPolyline = data.routes[0].polyline.encodedPolyline;
-                return this.decodePolyline(encodedPolyline);
+                const encoded = data.routes[0].polyline.encodedPolyline;
+
+                // --- GOOGLE LIBRARY USAGE ---
+                // 1. Decode returns array of arrays: [[lat, lng], [lat, lng]]
+                const points = decode(encoded, 5);
+
+                // 2. Map to your App's GeoPoint structure { lat, lng }
+                return points.map(([lat, lng]) => ({
+                    lat,
+                    lng
+                }));
             }
 
             console.warn("No routes found", data);
@@ -55,41 +64,5 @@ export const RouteService = {
             console.error("Routes API Error:", error);
             return null;
         }
-    },
-
-    /**
-     * Decodes Google's Encoded Polyline Algorithm Format
-     */
-    decodePolyline(encoded: string): GeoPoint[] {
-        const poly: GeoPoint[] = [];
-        let index = 0, len = encoded.length;
-        let lat = 0, lng = 0;
-
-        while (index < len) {
-            let b, shift = 0, result = 0;
-            do {
-                b = encoded.charCodeAt(index++) - 63;
-                result |= (b & 0x1f) << shift;
-                shift += 5;
-            } while (b >= 0x20);
-            const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-            lat += dlat;
-
-            shift = 0;
-            result = 0;
-            do {
-                b = encoded.charCodeAt(index++) - 63;
-                result |= (b & 0x1f) << shift;
-                shift += 5;
-            } while (b >= 0x20);
-            const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-            lng += dlng;
-
-            poly.push({
-                latitude: lat / 1e5,
-                longitude: lng / 1e5
-            });
-        }
-        return poly;
     }
 };

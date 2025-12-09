@@ -17,7 +17,7 @@ export const GoogleMapsService = {
             if (data.routes && data.routes.length > 0) {
                 const leg = data.routes[0].legs[0];
                 return {
-                    distanceMiles: leg.distance.value * 0.000621371, // Meters to Miles
+                    distanceMeters: leg.distance.value,
                     durationText: leg.duration.text,
                     startLocation: leg.start_location,
                     endLocation: leg.end_location,

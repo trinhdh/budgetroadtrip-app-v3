@@ -44,13 +44,22 @@ import { SwipeableExpenseRow } from '@/components/ui/swipeable-expense-row';
 const { width, height } = Dimensions.get('window');
 const PARALLAX_HEADER_HEIGHT = 400;
 
-// Helper to capitalize vibe text
+// --- HELPERS ---
+
+// Convert GeoPoint (lat/lng) to MapView Format (latitude/longitude)
+const toLatLng = (point?: GeoPoint | null) => {
+    if (!point || typeof point.lat !== 'number' || typeof point.lng !== 'number') return null;
+    return {
+        latitude: point.lat,
+        longitude: point.lng,
+    };
+};
+
 const formatVibe = (vibe?: string) => {
     if (!vibe) return 'Standard';
     return vibe.charAt(0).toUpperCase() + vibe.slice(1);
 };
 
-// Helper for Budget Category Icons & Colors
 const getCategoryDetails = (category: string) => {
     switch (category.toLowerCase()) {
         case 'fuel': return { icon: 'speedometer', color: '#FF9F1C' };
@@ -75,6 +84,8 @@ export default function TripDetailsScreen() {
     const [trip, setTrip] = useState<Trip | null>(null);
     const [loading, setLoading] = useState(true);
     const [expenses, setExpenses] = useState<any[]>([]);
+
+    // Store route as GeoPoint (lat/lng) but convert when rendering
     const [routeCoordinates, setRouteCoordinates] = useState<GeoPoint[]>([]);
 
     const [balancesVisible, setBalancesVisible] = useState(false);
@@ -112,12 +123,18 @@ export default function TripDetailsScreen() {
         const fetchRoute = async () => {
             if (!trip || !trip.originCoordinates || !trip.itinerary || trip.itinerary.length === 0) return;
 
-            const stops = trip.itinerary.map(d => d.stopLocation);
+            // Use .stopLocation (which is a GeoPoint {lat, lng})
+            const stops = trip.itinerary
+                .map(d => d.stopLocation)
+                .filter((p): p is GeoPoint => !!p); // Filter out undefined
+
+            if (stops.length === 0) return;
+
             const destination = stops[stops.length - 1];
             const waypoints = stops.slice(0, -1);
 
             const path = await RouteService.getRoute(
-                trip.originCoordinates,
+                trip.originCoordinates!, // We checked this exists above
                 destination,
                 waypoints
             );
@@ -241,10 +258,11 @@ export default function TripDetailsScreen() {
     const toggleMapMaximize = () => setIsMapMaximized(!isMapMaximized);
 
     const focusOnDay = useCallback((day: any) => {
-        if (mapRef.current && day.stopLocation) {
+        const coords = toLatLng(day.stopLocation);
+        if (mapRef.current && coords) {
             mapRef.current.animateToRegion({
-                latitude: day.stopLocation.latitude,
-                longitude: day.stopLocation.longitude,
+                latitude: coords.latitude,
+                longitude: coords.longitude,
                 latitudeDelta: 2,
                 longitudeDelta: 2,
             }, 800);
@@ -278,9 +296,10 @@ export default function TripDetailsScreen() {
         );
     }
 
-    // Determine what to show in the header bubble
-    // If estimated cost is > 0 (AI Trip), show Estimate. 
-    // If estimated cost is 0 (Manual Trip), show Budget Limit.
+    // Determine initial region (Robust fallback)
+    const initialLat = trip.originCoordinates?.lat || trip.itinerary?.[0]?.stopLocation?.lat || trip.itinerary?.[0]?.coordinates?.lat || 37.78825;
+    const initialLng = trip.originCoordinates?.lng || trip.itinerary?.[0]?.stopLocation?.lng || trip.itinerary?.[0]?.coordinates?.lng || -122.4324;
+
     const headerCostDisplay = trip.estimatedCost > 0
         ? `~${Math.round(trip.estimatedCost)}`
         : `$${trip.budget}`;
@@ -304,8 +323,8 @@ export default function TripDetailsScreen() {
                         style={StyleSheet.absoluteFill}
                         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
                         initialRegion={{
-                            latitude: trip.originCoordinates?.latitude || trip.itinerary?.[0]?.stopLocation.latitude || 37.78825,
-                            longitude: trip.originCoordinates?.longitude || trip.itinerary?.[0]?.stopLocation.longitude || -122.4324,
+                            latitude: initialLat,
+                            longitude: initialLng,
                             latitudeDelta: 8.0,
                             longitudeDelta: 8.0,
                         }}
@@ -315,7 +334,7 @@ export default function TripDetailsScreen() {
                         {/* 1. ACTUAL DRIVING ROUTE */}
                         {routeCoordinates.length > 0 ? (
                             <Polyline
-                                coordinates={routeCoordinates}
+                                coordinates={routeCoordinates.map(p => ({ latitude: p.lat, longitude: p.lng }))} // Convert here
                                 strokeColor={colors.tint}
                                 strokeWidth={4}
                             />
@@ -323,8 +342,10 @@ export default function TripDetailsScreen() {
                             trip.itinerary && trip.itinerary.length > 0 && (
                                 <Polyline
                                     coordinates={[
-                                        ...(trip.originCoordinates ? [trip.originCoordinates] : []),
-                                        ...trip.itinerary.map(day => day.stopLocation)
+                                        ...(trip.originCoordinates ? [toLatLng(trip.originCoordinates)!] : []),
+                                        ...trip.itinerary
+                                            .map(day => toLatLng(day.stopLocation))
+                                            .filter((p): p is { latitude: number, longitude: number } => !!p)
                                     ]}
                                     strokeColor={colors.tint}
                                     strokeWidth={2}
@@ -336,8 +357,8 @@ export default function TripDetailsScreen() {
                         {/* 2. START MARKER */}
                         {trip.originCoordinates && (
                             <Marker
-                                coordinate={trip.originCoordinates}
-                                title={`Start: ${trip.origin}`}
+                                coordinate={toLatLng(trip.originCoordinates)!}
+                                title={`Start: ${trip.startCity}`}
                                 zIndex={20}
                             >
                                 <View style={[styles.dayMarkerPill, { backgroundColor: '#333', borderColor: '#fff' }]}>
@@ -348,29 +369,36 @@ export default function TripDetailsScreen() {
                         )}
 
                         {/* 3. DAY MARKERS */}
-                        {trip.itinerary?.map((day, index) => (
-                            <Marker
-                                key={`day-${day.day}`}
-                                coordinate={day.stopLocation}
-                                title={day.title}
-                                zIndex={10}
-                            >
-                                <View style={[styles.dayMarkerPill, { backgroundColor: colors.tint }]}>
-                                    <Text style={styles.dayMarkerText}>Day {index + 1}</Text>
-                                </View>
-                                <View style={[styles.markerArrow, { borderTopColor: colors.tint }]} />
-                            </Marker>
-                        ))}
+                        {trip.itinerary?.map((day, index) => {
+                            const coords = toLatLng(day.stopLocation);
+                            if (!coords) return null;
+                            return (
+                                <Marker
+                                    key={`day-${day.day}`}
+                                    coordinate={coords}
+                                    title={day.title}
+                                    zIndex={10}
+                                >
+                                    <View style={[styles.dayMarkerPill, { backgroundColor: colors.tint }]}>
+                                        <Text style={styles.dayMarkerText}>Day {index + 1}</Text>
+                                    </View>
+                                    <View style={[styles.markerArrow, { borderTopColor: colors.tint }]} />
+                                </Marker>
+                            );
+                        })}
 
                         {/* 4. ACTIVITY MARKERS */}
                         {trip.itinerary?.flatMap((day) =>
                             day.timeline?.map((item, index) => {
                                 if (!['food', 'hotel', 'activities'].includes(item.type.toLowerCase())) return null;
+                                const coords = toLatLng(item.coordinates);
+                                if (!coords) return null;
+
                                 const { icon, color } = getCategoryDetails(item.type);
                                 return (
                                     <Marker
                                         key={`activity-${day.day}-${index}`}
-                                        coordinate={item.coordinates}
+                                        coordinate={coords}
                                         title={item.title}
                                         description={item.type}
                                         anchor={{ x: 0.5, y: 0.5 }}
@@ -422,7 +450,7 @@ export default function TripDetailsScreen() {
                                         >
                                             <View style={{ flex: 1 }}>
                                                 <Text style={styles.mapCardTitle}>Day {index + 1}: {item.title}</Text>
-                                                <Text style={styles.mapCardSubtitle}>{item.distance} driving</Text>
+                                                <Text style={styles.mapCardSubtitle}>{item.distance || "0"} driving</Text>
                                             </View>
                                         </TouchableOpacity>
                                     )}
@@ -455,7 +483,6 @@ export default function TripDetailsScreen() {
                                 onPress={() => setParamsModalVisible(true)}
                                 activeOpacity={0.7}
                             >
-                                <IconSymbol name="dollarsign" size={16} color="#fff" style={{ marginRight: 2 }} />
                                 {/* Updated Header Display */}
                                 <ThemedText style={styles.budgetText}>{headerCostDisplay}</ThemedText>
                             </TouchableOpacity>
@@ -484,7 +511,7 @@ export default function TripDetailsScreen() {
                             <ThemedText style={styles.destinationTitle}>{trip.destination}</ThemedText>
                             <View style={styles.subtitleRow}>
                                 <IconSymbol name="paperplane.fill" size={14} color="#666" />
-                                <ThemedText style={styles.subtitleText}>From {trip.origin}</ThemedText>
+                                <ThemedText style={styles.subtitleText}>From {trip.startCity}</ThemedText>
                                 <View style={styles.dotSeparator} />
                                 <IconSymbol name="calendar" size={14} color="#666" />
                                 <ThemedText style={styles.subtitleText}>
@@ -494,11 +521,12 @@ export default function TripDetailsScreen() {
                         </View>
 
                         {/* Budget Breakdown - CONDITIONALLY RENDERED */}
-                        {trip.budgetBreakdown && trip.budgetBreakdown.length > 0 && (
+                        {/* FIX: Renamed budgetBreakdown -> estimatedBreakdown to match types.ts */}
+                        {trip.estimatedBreakdown && trip.estimatedBreakdown.length > 0 && (
                             <View style={styles.section}>
                                 <ThemedText type="subtitle" style={styles.sectionTitle}>Budget Breakdown</ThemedText>
                                 <View style={styles.budgetGrid}>
-                                    {trip.budgetBreakdown.map((item, index) => {
+                                    {trip.estimatedBreakdown.map((item, index) => {
                                         const { icon, color } = getCategoryDetails(item.category);
                                         return (
                                             <View key={index} style={[styles.budgetCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
@@ -606,7 +634,7 @@ export default function TripDetailsScreen() {
                                                     <ThemedText type="defaultSemiBold" style={styles.stepCardTitle}>{day.title}</ThemedText>
                                                     <View style={styles.stepCardMeta}>
                                                         <IconSymbol name="car" size={14} color="#808080" />
-                                                        <ThemedText style={styles.grayText}>{day.distance} drive</ThemedText>
+                                                        <ThemedText style={styles.grayText}>{day.drive_time || "0h"} drive</ThemedText>
                                                     </View>
                                                 </View>
                                                 <IconSymbol name="chevron.right" size={20} color={colors.icon} />
@@ -658,7 +686,7 @@ export default function TripDetailsScreen() {
                             <View style={{ alignItems: 'flex-end' }}>
                                 <ThemedText style={styles.paramValue}>{getDateRange()}</ThemedText>
                                 <ThemedText style={{ fontSize: 12, color: '#808080' }}>
-                                    {trip.duration} Days • {trip.isRoundTrip ? 'Round Trip' : 'One Way'}
+                                    {trip.duration} Days
                                 </ThemedText>
                             </View>
                         </View>
@@ -675,16 +703,16 @@ export default function TripDetailsScreen() {
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>Travelers</ThemedText>
                             <ThemedText style={styles.paramValue}>
-                                {trip.travelers.adults} Adults, {trip.travelers.children} Children
+                                {trip.travelers?.adults || 1} Adults, {trip.travelers?.children || 0} Children
                             </ThemedText>
                         </View>
                         <View style={styles.paramSeparator} />
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>Vehicle</ThemedText>
                             <View style={{ alignItems: 'flex-end' }}>
-                                <ThemedText style={styles.paramValue}>{trip.vehicle.name}</ThemedText>
+                                <ThemedText style={styles.paramValue}>{trip.vehicle?.name || "N/A"}</ThemedText>
                                 <ThemedText style={{ fontSize: 12, color: '#808080' }}>
-                                    {trip.vehicle.mpg} mpg • ${trip.vehicle.gasPrice}/gal
+                                    {trip.vehicle?.mpg || 0} mpg • ${trip.vehicle?.gasPrice || 0}/gal
                                 </ThemedText>
                             </View>
                         </View>
