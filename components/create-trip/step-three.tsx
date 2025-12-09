@@ -1,16 +1,12 @@
+import { ThemedText } from '@/components/themed-text';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors, Fonts } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
 type Props = {
-    form: {
-        adults: number;
-        children: number;
-    };
+    form: { adults: number; children: number };
     setForm: (data: any) => void;
 };
 
@@ -18,90 +14,47 @@ export default function StepThree({ form, setForm }: Props) {
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
 
-    const updateCount = (type: 'adults' | 'children', increment: boolean) => {
-        const currentValue = form[type];
-        const newValue = increment ? currentValue + 1 : currentValue - 1;
-
-        // Validation: Adults min 1, Children min 0
-        if (type === 'adults' && newValue < 1) return;
-        if (type === 'children' && newValue < 0) return;
-
-        setForm({ ...form, [type]: newValue });
+    const updateCount = (field: 'adults' | 'children', amount: number) => {
+        const current = form[field];
+        const min = field === 'adults' ? 1 : 0;
+        const newVal = Math.max(min, current + amount);
+        setForm({ ...form, [field]: newVal });
     };
 
     return (
         <View style={styles.stepContainer}>
-            <ThemedText type="title" style={styles.headline}>
-                Who is coming?
-            </ThemedText>
-            <ThemedText style={styles.subheadline}>
-                Add guests to your trip.
-            </ThemedText>
+            <ThemedText type="title" style={styles.headline}>Who is coming?</ThemedText>
 
-            {/* 1. Adults Counter */}
-            <View style={styles.inputGroup}>
+            <View style={styles.row}>
                 <View>
-                    <ThemedText type="defaultSemiBold" style={styles.label}>
-                        Adults
-                    </ThemedText>
-                    <ThemedText style={styles.subLabel}>Age 13 or above</ThemedText>
+                    <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>Adults</ThemedText>
+                    <ThemedText style={{ color: '#808080' }}>Age 13+</ThemedText>
                 </View>
-
-                <View style={[styles.counterContainer, { borderColor: colors.icon }]}>
-                    <TouchableOpacity
-                        style={styles.counterButton}
-                        onPress={() => updateCount('adults', false)}
-                        activeOpacity={0.7}
-                    >
-                        <IconSymbol name="minus" size={24} color={form.adults > 1 ? colors.text : '#ccc'} />
+                <View style={styles.counter}>
+                    <TouchableOpacity onPress={() => updateCount('adults', -1)} style={[styles.btn, { backgroundColor: colors.background }]}>
+                        <IconSymbol name="minus" size={24} color={colors.text} />
                     </TouchableOpacity>
-
-                    <View style={[styles.counterValueContainer, { borderLeftColor: colors.icon, borderRightColor: colors.icon }]}>
-                        <ThemedText type="title" style={styles.counterText}>
-                            {form.adults}
-                        </ThemedText>
-                    </View>
-
-                    <TouchableOpacity
-                        style={styles.counterButton}
-                        onPress={() => updateCount('adults', true)}
-                        activeOpacity={0.7}
-                    >
-                        <IconSymbol name="plus" size={24} color={colors.text} />
+                    <ThemedText style={styles.countText}>{form.adults}</ThemedText>
+                    <TouchableOpacity onPress={() => updateCount('adults', 1)} style={[styles.btn, { backgroundColor: colors.tint }]}>
+                        <IconSymbol name="plus" size={24} color="#fff" />
                     </TouchableOpacity>
                 </View>
             </View>
 
-            {/* 2. Children Counter */}
-            <View style={styles.inputGroup}>
+            <View style={styles.divider} />
+
+            <View style={styles.row}>
                 <View>
-                    <ThemedText type="defaultSemiBold" style={styles.label}>
-                        Children
-                    </ThemedText>
-                    <ThemedText style={styles.subLabel}>Under 8</ThemedText>
+                    <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>Children</ThemedText>
+                    <ThemedText style={{ color: '#808080' }}>Age 0-12</ThemedText>
                 </View>
-
-                <View style={[styles.counterContainer, { borderColor: colors.icon }]}>
-                    <TouchableOpacity
-                        style={styles.counterButton}
-                        onPress={() => updateCount('children', false)}
-                        activeOpacity={0.7}
-                    >
-                        <IconSymbol name="minus" size={24} color={form.children > 0 ? colors.text : '#ccc'} />
+                <View style={styles.counter}>
+                    <TouchableOpacity onPress={() => updateCount('children', -1)} style={[styles.btn, { backgroundColor: colors.background }]}>
+                        <IconSymbol name="minus" size={24} color={colors.text} />
                     </TouchableOpacity>
-
-                    <View style={[styles.counterValueContainer, { borderLeftColor: colors.icon, borderRightColor: colors.icon }]}>
-                        <ThemedText type="title" style={styles.counterText}>
-                            {form.children}
-                        </ThemedText>
-                    </View>
-
-                    <TouchableOpacity
-                        style={styles.counterButton}
-                        onPress={() => updateCount('children', true)}
-                        activeOpacity={0.7}
-                    >
-                        <IconSymbol name="plus" size={24} color={colors.text} />
+                    <ThemedText style={styles.countText}>{form.children}</ThemedText>
+                    <TouchableOpacity onPress={() => updateCount('children', 1)} style={[styles.btn, { backgroundColor: colors.tint }]}>
+                        <IconSymbol name="plus" size={24} color="#fff" />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -110,59 +63,11 @@ export default function StepThree({ form, setForm }: Props) {
 }
 
 const styles = StyleSheet.create({
-    stepContainer: {
-        gap: 30,
-    },
-    headline: {
-        textAlign: 'center',
-        marginBottom: 5,
-    },
-    subheadline: {
-        textAlign: 'center',
-        color: '#808080',
-        marginBottom: 10,
-    },
-    inputGroup: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 10,
-    },
-    label: {
-        fontSize: 18,
-    },
-    subLabel: {
-        fontSize: 14,
-        color: '#808080',
-        marginTop: 2,
-    },
-    counterContainer: {
-        flexDirection: 'row',
-        borderWidth: 1,
-        borderRadius: 12,
-        height: 50,
-        width: 140, // Fixed width for the counter
-        alignItems: 'center',
-        overflow: 'hidden',
-    },
-    counterButton: {
-        width: 45,
-        height: '100%',
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'transparent',
-    },
-    counterValueContainer: {
-        flex: 1,
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '60%',
-        borderLeftWidth: 1,
-        borderRightWidth: 1,
-    },
-    counterText: {
-        fontSize: 18,
-        fontFamily: Fonts.bold,
-    },
+    stepContainer: { gap: 24 },
+    headline: { textAlign: 'center', marginBottom: 20 },
+    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    divider: { height: 1, backgroundColor: '#eee' },
+    counter: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+    btn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#eee' },
+    countText: { fontSize: 20, fontWeight: 'bold', width: 20, textAlign: 'center' }
 });

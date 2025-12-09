@@ -17,7 +17,7 @@ type Props = {
 };
 
 // REPLACE WITH YOUR ACTUAL API KEY
-const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 
 export function LocationSearchModal({ visible, onClose, onSelect, placeholder }: Props) {
     const theme = useColorScheme() ?? 'light';

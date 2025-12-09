@@ -1,73 +1,78 @@
-// trinhdh/budgetroadtrip-app-v3/budgetroadtrip-app-v3-develop/services/ai-planner.ts
+// services/ai-planner.ts
 
-import { AiTripInput, AiTripResponse } from '@/constants/types';
+import {
+    AiTripInput,
+    GooglePlace,
+    ItineraryItem,
+    Trip
+} from '@/constants/types';
 import { GoogleGenAI } from '@google/genai';
+import * as Crypto from 'expo-crypto'; // For generating unique IDs
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const genAI = new GoogleGenAI({ apiKey: API_KEY });
 
-const CategoryEnum = z.enum(['fuel', 'hotel', 'food', 'activities', 'other']);
+// --- 1. ZOD SCHEMAS (Optimized & Relaxed) ---
 
-const GeoPointSchema = z.object({
-    latitude: z.number(),
-    longitude: z.number(),
-});
-
-const RecommendationSchema = z.object({
+/**
+ * We map this to the 'GooglePlace' type.
+ * KEY CHANGE: place_id and vicinity are optional/defaulted.
+ * This allows the AI to return a "best guess" location even if it can't find the specific ID.
+ */
+const AiPlaceSchema = z.object({
     name: z.string(),
-    price: z.number(),
-    rating: z.number(),
-    address: z.string(),
-    description: z.string(),
-    image: z.string().optional().default(""),
+    place_id: z.string().optional().default(""),
+    vicinity: z.string().optional().default(""),
+    rating: z.number().optional().default(0),
+    user_ratings_total: z.number().optional().default(0),
+    price_level: z.number().optional(),
+    geometry: z.object({
+        location: z.object({
+            lat: z.number(),
+            lng: z.number()
+        })
+    })
 });
 
-const TimelineItemSchema = z.object({
-    order: z.number().describe("Sequential order of the activity in the day"),
-    title: z.string(),
-    desc: z.string(),
-    address: z.string(),
-    type: CategoryEnum,
-    price: z.number(),
-    coordinates: GeoPointSchema,
-});
-
-const ItineraryDaySchema = z.object({
+const AiDailyPlanSchema = z.object({
     day: z.number(),
-    title: z.string(),
-    distance: z.string(),
-    stopLocation: GeoPointSchema,
-    timeline: z.array(TimelineItemSchema),
-    hotelRecommendations: z.array(RecommendationSchema).optional().default([]),
-    foodRecommendations: z.array(RecommendationSchema).optional().default([]),
-    activityRecommendations: z.array(RecommendationSchema).optional().default([]),
+    title: z.string().describe("Short title, e.g. 'Drive to Nashville'"),
+    description: z.string().describe("A 2-3 sentence summary of the day's agenda."),
+
+    fuel_cost: z.number().describe("Estimated gas cost for this leg"),
+    drive_time: z.string().describe("e.g. '3h 15m'"),
+
+    start_city: z.string(),
+    end_city: z.string(),
+    coordinates: z.object({ lat: z.number(), lng: z.number() }).describe("Coordinates of the destination city"),
+
+    hotel_options: z.array(AiPlaceSchema).max(3),
+    food_options: z.array(AiPlaceSchema).max(3),
+    activity_options: z.array(AiPlaceSchema).max(3),
 });
 
-// The Main Response Schema
-const TripResponseSchema = z.object({
-    tripName: z.string(),
+const AiResponseSchema = z.object({
     estimatedCost: z.number(),
     budgetBreakdown: z.array(z.object({
-        category: CategoryEnum,
+        category: z.enum(['fuel', 'hotel', 'food', 'activities', 'other']),
         amount: z.number(),
     })),
-    itinerary: z.array(ItineraryDaySchema),
+    itinerary: z.array(AiDailyPlanSchema),
     warning: z.string().optional(),
 });
 
+// --- 2. SERVICE ---
+
 export const AiPlannerService = {
 
-    async generateTripPlan(input: AiTripInput): Promise<AiTripResponse> {
-        if (!API_KEY) {
-            throw new Error("Missing Gemini API Key");
-        }
+    async generateTripPlan(input: AiTripInput): Promise<Partial<Trip> & { warning?: string }> {
+        if (!API_KEY) throw new Error("Missing Gemini API Key");
 
-        // Destructure isRoundTrip
         const { origin, destination, duration, budget, travelers, carName, mpg, gasPrice, vibe, isRoundTrip } = input;
 
-        // --- 1. DYNAMIC BUDGET ALLOCATION BASED ON VIBE ---
+        // Dynamic Vibe Logic: Adjust budget ratios based on user personality
         let hotelRatio = 0.4;
         let foodRatio = 0.2;
 
@@ -80,74 +85,87 @@ export const AiPlannerService = {
                 hotelRatio = 0.25;
                 foodRatio = 0.45;
                 break;
-            case 'explorer': // Cheap Hotel, expensive activities
+            case 'explorer': // Cheap Hotel, expensive activities/gas
                 hotelRatio = 0.20;
                 foodRatio = 0.20;
                 break;
-            case 'balanced':
-            default:
+            default: // Balanced
                 hotelRatio = 0.40;
                 foodRatio = 0.20;
                 break;
         }
 
         const nightlyBudget = (budget * hotelRatio / duration).toFixed(0);
-        const foodBudget = (budget * foodRatio / duration / 2).toFixed(0);
+        const mealBudget = (budget * foodRatio / duration / 2).toFixed(0); // Per meal approx
 
         const prompt = `
             Plan a ${duration}-day road trip from ${origin} to ${destination}.
             Travelers: ${travelers.adults} adults, ${travelers.children} children.
-            Vehicle: ${carName} (MPG: ${mpg}, Gas: $${gasPrice}). 
+            Vehicle: ${carName} (MPG: ${mpg}, Gas: $${gasPrice}/gal). 
             Total Budget: $${budget}.
-            Trip Type: ${isRoundTrip ? 'ROUND TRIP (Must return to ' + origin + ' on the last day)' : 'ONE WAY'}.
+            Trip Type: ${isRoundTrip ? 'ROUND TRIP' : 'ONE WAY'}.
+            Vibe: ${vibe.toUpperCase()}.
 
-            **TRIP VIBE: ${vibe ? vibe.toUpperCase() : 'BALANCED'}**
-            - Prioritize spending based on this vibe.
-            - Target Hotel Price: ~$${nightlyBudget} per night.
-            - Target Food Price: ~$${foodBudget} per person/meal.
+            **SELECTION CRITERIA:**
+            1. **Search Tool:** You have access to 'googleSearch'. USE IT to find real places.
+            2. **Vibe Check:** - If vibe is 'Explorer', prioritize cabins, glamping, or nature lodges.
+               - If vibe is 'Comfort', prioritize 4-star+ hotels with easy parking.
+               - If vibe is 'Foodie', prioritize highly-rated local non-chain restaurants.
+            3. **Feasibility:** If the budget is impossible for ${duration} days, return a 'warning' string explaining why.
 
-            **FEASIBILITY CHECK:**
-            - Check if a road trip between these locations is possible (e.g. crossing oceans without ferries).
-            - Check if the budget is realistically sufficient for ${duration} days (Gas + Hotels + Food).
-            
-            **IF IMPOSSIBLE OR UNREALISTIC:**
-            - Return a JSON with a 'warning' field explaining EXACTLY why (e.g. "Budget of $200 is too low for 5 days" or "Cannot drive from New York to London").
-            - You can leave 'itinerary' as an empty array in this case.
-
-            **IF FEASIBLE, ITINERARY REQUIREMENTS:**
-            - Create a day-by-day itinerary.
-            - For **EACH DAY**, provide a 'timeline' array with at least 3 items.
-            - Assign a sequential 'order' number (1, 2, 3...) to each timeline item.
-            - If ROUND TRIP, ensure the route loops back towards ${origin} by the final day.
-            
-            **RECOMMENDATIONS:**
-            - Find 3 hotels (~$${nightlyBudget}/night) near each day's stop.
-            - Find 3 food spots (~$${foodBudget}/person) and 3 activities.
-            
-            **SEARCH TASK:** - Use Google Search to find real places, prices, and coordinates.
-            - Calculate fuel cost based on the vehicle details provided.
+            **DATA OUTPUT:**
+            - Return a day-by-day plan.
+            - Provide 3 real choices for Hotel, Food, and Activities per day.
+            - For each place, provide the exact 'name' and 'vicinity'. 
+            - Try to find the 'place_id' if available in search results, otherwise leave it empty.
+            - Ensure coordinates are accurate.
+            - Calculate 'fuel_cost' based on the daily distance.
         `;
 
         try {
             const response = await genAI.models.generateContent({
                 model: "gemini-2.0-flash",
-                contents: [
-                    { role: 'user', parts: [{ text: prompt }] }
-                ],
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
                 config: {
                     responseMimeType: "application/json",
-                    responseJsonSchema: zodToJsonSchema(TripResponseSchema),
+                    responseJsonSchema: zodToJsonSchema(AiResponseSchema),
                     tools: [{ googleSearch: {} }],
                 }
             });
 
             const responseText = response.text;
-            if (!responseText) throw new Error("No response received from AI");
+            if (!responseText) throw new Error("No response from AI");
 
             const rawData = JSON.parse(responseText);
-            const parsedData = TripResponseSchema.parse(rawData);
-            console.log("Parsed Data:", parsedData);
-            return parsedData as AiTripResponse;
+
+            // Validate with Zod
+            const parsedData = AiResponseSchema.parse(rawData);
+
+            // --- 3. POST-PROCESSING (Hydrate types) ---
+            const enrichedItinerary: ItineraryItem[] = parsedData.itinerary.map((dayPlan, index) => {
+                return {
+                    ...dayPlan,
+                    id: Crypto.randomUUID(), // Generate ID client-side
+                    order: index,            // Generate Order client-side
+
+                    // Cast to GooglePlace[] - schema matches compatible fields
+                    hotel_options: dayPlan.hotel_options as GooglePlace[],
+                    food_options: dayPlan.food_options as GooglePlace[],
+                    activity_options: dayPlan.activity_options as GooglePlace[],
+
+                    // Initialize selections
+                    selected_hotel_id: undefined,
+                    selected_food_id: undefined,
+                    selected_activity_id: undefined,
+                };
+            });
+
+            return {
+                estimatedCost: parsedData.estimatedCost,
+                estimatedBreakdown: parsedData.budgetBreakdown,
+                itinerary: enrichedItinerary,
+                warning: parsedData.warning
+            };
 
         } catch (error) {
             console.error("AI Generation Error:", error);

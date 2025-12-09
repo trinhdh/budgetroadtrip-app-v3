@@ -1,4 +1,5 @@
 import { useHeaderHeight } from '@react-navigation/elements';
+import * as Crypto from 'expo-crypto'; // Need this for manual ID generation
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -26,14 +27,12 @@ import StepThree from '@/components/create-trip/step-three';
 import StepTwo from '@/components/create-trip/step-two';
 import { ProcessingModal } from '@/components/ui/processing-modal';
 
-import { TripVibe } from '@/constants/types';
+// --- NEW IMPORTS ---
+import { GeoPoint, ItineraryItem, Trip, TripMember, TripVibe } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { AiPlannerService } from '@/services/ai-planner';
 import { ImageService } from '@/services/image-service';
 import { TripService } from '@/services/trip-service';
-
-// Define coordinate type locally
-type Coords = { latitude: number; longitude: number } | null;
 
 export default function CreateTripScreen() {
     const router = useRouter();
@@ -46,11 +45,12 @@ export default function CreateTripScreen() {
     const totalSteps = 5;
     const [isLoading, setIsLoading] = useState(false);
 
+    // Form State matches UI needs, will be mapped to 'Trip' type on save
     const [form, setForm] = useState({
         origin: '',
-        originCoordinates: null as Coords,
+        originCoordinates: null as GeoPoint | null,
         destination: '',
-        destinationCoordinates: null as Coords,
+        destinationCoordinates: null as GeoPoint | null,
         mode: 'ai' as 'ai' | 'manual',
         startDate: null as Date | null,
         duration: 5,
@@ -66,7 +66,7 @@ export default function CreateTripScreen() {
 
     // Helper to determine if we are on the last step for the current mode
     const isLastStep = (currentStep: number, mode: string) => {
-        if (mode === 'manual' && currentStep === 2) return true; // Manual ends at Step 2 (Dates)
+        if (mode === 'manual' && currentStep === 2) return true; // Manual ends at Step 2
         if (currentStep === totalSteps) return true; // AI ends at Step 5
         return false;
     };
@@ -88,7 +88,6 @@ export default function CreateTripScreen() {
                 return;
             }
         } else if (step === 4 && form.mode === 'ai') {
-            // Step 4 validation is only needed for AI mode
             if (!form.mpg || !form.gasPrice) {
                 Alert.alert('Incomplete', 'Please select a vehicle or enter MPG/Gas Price.');
                 return;
@@ -112,38 +111,45 @@ export default function CreateTripScreen() {
         setIsLoading(true);
 
         try {
-            let aiPlan: any;
-            let coverImage: string | null = null;
+            let partialTripData: Partial<Trip> = {};
+            let coverImage: string = '';
 
             // 1. FETCH IMAGE (Try to get a cover image)
             try {
-                coverImage = await ImageService.getPlaceImage(form.destination);
+                const fetchedImage = await ImageService.getPlaceImage(form.destination);
+                if (fetchedImage) coverImage = fetchedImage;
             } catch (ignored) {
                 console.log("Could not fetch image, using default");
             }
 
-            // 2. GENERATE PLAN
+            // 2. GENERATE PLAN (Manual or AI)
             if (form.mode === 'manual') {
                 // --- MANUAL MODE: Create Skeleton ---
-                // We generate empty days based on the Duration from Step 2
-                const manualItinerary = Array.from({ length: form.duration }, (_, i) => ({
+                const manualItinerary: ItineraryItem[] = Array.from({ length: form.duration }, (_, i) => ({
+                    id: Crypto.randomUUID(),
+                    order: i,
                     day: i + 1,
                     title: `Day ${i + 1}: ${form.destination}`,
-                    distance: '0 mi',
-                    stopLocation: form.destinationCoordinates || form.originCoordinates || { latitude: 0, longitude: 0 },
-                    timeline: [],
+                    description: "Free day to explore.",
+                    fuel_cost: 0,
+                    drive_time: "0h",
+                    start_city: form.destination,
+                    end_city: form.destination,
+                    coordinates: form.destinationCoordinates || { lat: 0, lng: 0 },
+                    // Empty options arrays
+                    hotel_options: [],
+                    food_options: [],
+                    activity_options: [],
                 }));
 
-                aiPlan = {
-                    tripName: `${form.destination} Trip`,
+                partialTripData = {
                     estimatedCost: 0,
-                    originCoordinates: form.originCoordinates,
-                    budgetBreakdown: [],
+                    estimatedBreakdown: [],
                     itinerary: manualItinerary,
                 };
             } else {
                 // --- AI MODE: Call Service ---
-                aiPlan = await AiPlannerService.generateTripPlan({
+                const aiResult = await AiPlannerService.generateTripPlan({
                     origin: form.origin,
                     destination: form.destination,
                     duration: form.duration,
@@ -155,83 +161,77 @@ export default function CreateTripScreen() {
                     vibe: form.vibe,
                     isRoundTrip: form.isRoundTrip
                 });
+
+                // Handle AI Warnings
+                if (aiResult.warning) {
+                    // Note: In a real app, you might want to show a confirmation dialog here
+                    // For now, we attach the warning but proceed unless the itinerary is empty
+                    if (!aiResult.itinerary || aiResult.itinerary.length === 0) {
+                        throw new Error(aiResult.warning);
+                    }
+                    Alert.alert("Trip Planner Note", aiResult.warning);
+                }
+
+                partialTripData = aiResult;
             }
 
-            // 3. SAVE TO FIREBASE
-            const proceedWithSave = async () => {
-                try {
-                    let endDateObj = null;
-                    if (form.startDate) {
-                        endDateObj = new Date(form.startDate);
-                        endDateObj.setDate(endDateObj.getDate() + form.duration);
-                    }
-
-                    const finalTripData = {
-                        origin: form.origin,
-                        originCoordinates: form.originCoordinates || aiPlan.originCoordinates,
-                        destination: form.destination,
-                        destinationCoordinates: form.destinationCoordinates || undefined,
-                        startDate: form.startDate ? form.startDate.toISOString() : null,
-                        endDate: endDateObj ? endDateObj.toISOString() : null,
-                        duration: form.duration,
-                        isRoundTrip: form.isRoundTrip,
-
-                        // Use form values (or defaults if skipped)
-                        travelers: { adults: form.adults, children: form.children },
-                        vehicle: {
-                            name: form.carName || 'Unknown Vehicle',
-                            mpg: Number(form.mpg) || 0,
-                            gasPrice: Number(form.gasPrice) || 0
-                        },
-                        budget: form.budget,
-                        vibe: form.vibe,
-
-                        title: aiPlan.tripName,
-                        estimatedCost: aiPlan.estimatedCost,
-                        budgetBreakdown: aiPlan.budgetBreakdown,
-                        itinerary: aiPlan.itinerary,
-                        image: coverImage || undefined,
-                        spent: 0,
-                    };
-
-                    const tripId = await TripService.saveTrip(user.uid, finalTripData);
-
-                    setIsLoading(false);
-                    router.replace({
-                        pathname: '/trip-details/[id]',
-                        params: { id: tripId }
-                    });
-                } catch (error) {
-                    setIsLoading(false);
-                    Alert.alert("Error", "Failed to save the trip.");
-                    console.error(error);
+            // 3. CONSTRUCT FINAL TRIP OBJECT
+            const saveTripToDb = async () => {
+                let endDateObj = null;
+                if (form.startDate) {
+                    endDateObj = new Date(form.startDate);
+                    endDateObj.setDate(endDateObj.getDate() + form.duration);
                 }
+
+                // Create the Owner Member
+                const ownerMember: TripMember = {
+                    uid: user.uid,
+                    name: user.displayName || 'Traveler',
+                    avatar: user.photoURL || undefined,
+                    role: 'owner'
+                };
+
+                const finalTripData: Trip = {
+                    userId: user.uid,
+                    startCity: form.origin,
+                    endCity: form.destination,
+                    destination: form.destination,
+
+                    startDate: form.startDate ? form.startDate.toISOString() : null,
+                    endDate: endDateObj ? endDateObj.toISOString() : null,
+                    duration: form.duration,
+                    people: form.adults + form.children,
+
+                    budget: form.budget,
+                    vibe: form.vibe,
+
+                    // Merged Data from AI/Manual generation
+                    estimatedCost: partialTripData.estimatedCost || 0,
+                    estimatedBreakdown: partialTripData.estimatedBreakdown || [],
+                    itinerary: partialTripData.itinerary || [],
+
+                    image: coverImage,
+                    members: [ownerMember],
+                    createdAt: new Date(), // Service will likely convert this to serverTimestamp
+                };
+
+                // 4. SAVE TO FIREBASE
+                const tripId = await TripService.saveTrip(user.uid, finalTripData);
+
+                setIsLoading(false);
+
+                // Replace ensures the user can't "back" into the form
+                router.replace({
+                    pathname: '/trip-details/[id]',
+                    params: { id: tripId }
+                });
             };
 
-            if (form.mode === 'ai' && (!aiPlan.itinerary || aiPlan.itinerary.length === 0)) {
-                setIsLoading(false);
-                Alert.alert("Unable to Plan Trip", aiPlan.warning || "Error generating plan.", [{ text: "OK" }]);
-                return;
-            }
-
-            if (aiPlan.warning && form.mode === 'ai') {
-                setIsLoading(false);
-                Alert.alert(
-                    "Trip Planner Note",
-                    aiPlan.warning + "\n\nDo you still want to proceed?",
-                    [
-                        { text: "Cancel", style: "cancel" },
-                        { text: "Proceed", onPress: () => { setIsLoading(true); proceedWithSave(); } }
-                    ]
-                );
-                return;
-            }
-
-            await proceedWithSave();
+            await saveTripToDb();
 
         } catch (error: any) {
             setIsLoading(false);
-            Alert.alert("Generation Failed", "Could not create trip plan.");
+            Alert.alert("Generation Failed", error.message || "Could not create trip plan.");
             console.error(error);
         }
     };

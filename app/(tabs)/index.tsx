@@ -13,14 +13,9 @@ import {
   View,
 } from 'react-native';
 
-// --- GESTURE HANDLER IMPORTS ---
-import {
-  GestureHandlerRootView,
-} from 'react-native-gesture-handler';
-
-// Import ReanimatedSwipeable from its specific path as a default import
+// --- GESTURE HANDLER ---
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-
 import Animated, {
   FadeInDown,
   useAnimatedStyle,
@@ -29,6 +24,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 // --- INTERNAL IMPORTS ---
+import { Trip } from '@/constants/types'; // <--- USING YOUR NEW TYPES
 import { useAuth } from '@/context/AuthContext';
 import { TripService } from '@/services/trip-service';
 
@@ -37,6 +33,15 @@ import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+
+// --- TYPES FOR UI ---
+// We extend the DB 'Trip' type to include formatted strings needed for rendering
+interface UiTrip extends Trip {
+  formattedStartDate: string;
+  formattedEndDate: string;
+  start: Date;
+  end: Date;
+}
 
 const HERO_IMAGES = [
   require('@/assets/images/empty1.jpg'),
@@ -78,25 +83,24 @@ const HeroImageCard = ({
 const TripCard = ({
   trip,
   router,
-  currentUserId, // <--- ADDED PROP
+  currentUserId,
   onDelete,
   onShare
 }: {
-  trip: any,
+  trip: UiTrip,
   router: any,
   currentUserId?: string,
   onDelete: (id: string) => void,
-  onShare: (trip: any) => void
+  onShare: (trip: UiTrip) => void
 }) => {
 
   // Check if I am the owner
   const isOwner = trip.userId === currentUserId;
 
-  // Render TWO buttons side-by-side with rounded corners
   const renderRightActions = (_progress: any, _dragX: any) => {
     return (
       <View style={styles.actionsContainer}>
-        {/* SHARE BUTTON (Blue) */}
+        {/* SHARE BUTTON */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: '#007AFF', marginRight: 8 }]}
           onPress={() => onShare(trip)}
@@ -105,20 +109,23 @@ const TripCard = ({
           <ThemedText style={styles.actionTitle}>Invite</ThemedText>
         </TouchableOpacity>
 
-        {/* DELETE BUTTON (Red) */}
-        {/* Only allow delete if owner, otherwise maybe show "Leave"? For now we keep delete as "remove from my list" */}
+        {/* DELETE BUTTON */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: '#FF3B30' }]}
-          onPress={() => confirmDelete()}
+          onPress={confirmDelete}
         >
           <IconSymbol name="trash.fill" size={26} color="#fff" />
-          <ThemedText style={styles.actionTitle}>Delete</ThemedText>
+          <ThemedText style={styles.actionTitle}>
+            {isOwner ? "Delete" : "Leave"}
+          </ThemedText>
         </TouchableOpacity>
       </View>
     );
   };
 
   const confirmDelete = () => {
+    if (!trip.id) return;
+
     const title = isOwner ? "Delete Trip?" : "Leave Trip?";
     const message = isOwner
       ? "This action cannot be undone. All data will be lost."
@@ -132,11 +139,16 @@ const TripCard = ({
         {
           text: isOwner ? "Delete" : "Leave",
           style: "destructive",
-          onPress: () => onDelete(trip.id)
+          onPress: () => onDelete(trip.id!)
         }
       ]
     );
   };
+
+  // Fallback image logic if the trip doesn't have one
+  const imageUrl = trip.image && trip.image.length > 0
+    ? trip.image
+    : `https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1000&auto=format&fit=crop`;
 
   return (
     <ReanimatedSwipeable
@@ -154,14 +166,19 @@ const TripCard = ({
           params: { id: trip.id }
         })}
       >
-        <Image source={{ uri: trip.image }} style={StyleSheet.absoluteFill} contentFit="cover" transition={500} />
+        <Image
+          source={{ uri: imageUrl }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          transition={500}
+        />
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.8)']}
           style={styles.cardOverlay}
         />
 
         <View style={styles.cardTopRow}>
-          {/* LEFT SIDE: JOINED BADGE */}
+          {/* JOINED BADGE */}
           {!isOwner ? (
             <View style={styles.joinedBadge}>
               <IconSymbol name="person.2.fill" size={14} color="#fff" />
@@ -171,10 +188,10 @@ const TripCard = ({
             <View />
           )}
 
-          {/* RIGHT SIDE: BUDGET BADGE */}
+          {/* BUDGET BADGE */}
           <View style={styles.budgetBadge}>
             <ThemedText style={styles.budgetText}>
-              ~${Math.round(trip.estimatedCost || trip.budget || 0)}
+              ~${Math.round(trip.estimatedCost > 0 ? trip.estimatedCost : trip.budget)}
             </ThemedText>
           </View>
         </View>
@@ -206,49 +223,50 @@ export default function HomeScreen() {
   const colors = Colors[theme];
 
   const [activeTab, setActiveTab] = useState<'Active' | 'Upcoming' | 'Past'>('Upcoming');
-  const [userTrips, setUserTrips] = useState<any[]>([]);
+  const [userTrips, setUserTrips] = useState<UiTrip[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
-  // --- FETCH TRIPS VIA SERVICE ---
+  // --- FETCH TRIPS ---
   useEffect(() => {
     if (!user) return;
 
-    const unsubscribe = TripService.subscribeToUserTrips(user.uid, (trips) => {
+    // Assuming TripService.subscribeToUserTrips returns Unsubscribe function
+    const unsubscribe = TripService.subscribeToUserTrips(user.uid, (trips: Trip[]) => {
 
-      const formatDate = (date: Date | string | null) => {
-        if (!date) return 'TBD';
-        const d = new Date(date);
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const formatDate = (date: Date) => {
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       };
 
-      const formattedTrips = trips.map((trip, index) => {
+      const formattedTrips: UiTrip[] = trips.map((trip) => {
+        // Handle potentially null start dates or string dates
         const startDateObj = trip.startDate ? new Date(trip.startDate) : new Date();
-        let endDateObj = trip.endDate ? new Date(trip.endDate) : null;
 
-        if (!endDateObj && trip.duration) {
+        let endDateObj: Date;
+        if (trip.endDate) {
+          endDateObj = new Date(trip.endDate);
+        } else {
+          // If no end date, calculate based on duration
           endDateObj = new Date(startDateObj);
           endDateObj.setDate(startDateObj.getDate() + (trip.duration - 1));
         }
 
         return {
           ...trip,
-          formattedStartDate: formatDate(startDateObj),
-          formattedEndDate: endDateObj ? formatDate(endDateObj) : 'TBD',
-          image: trip.image || `https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1000&auto=format&fit=crop&sig=${trip.id}`,
           start: startDateObj,
-          end: endDateObj || new Date(new Date().setDate(new Date().getDate() + 5))
+          end: endDateObj,
+          formattedStartDate: formatDate(startDateObj),
+          formattedEndDate: formatDate(endDateObj),
         };
       });
 
       setUserTrips(formattedTrips);
 
+      // Auto-switch tab if an active trip exists
       const now = new Date();
       const hasActive = formattedTrips.some(t => t.start <= now && t.end >= now);
       if (hasActive) {
         setActiveTab('Active');
-      } else {
-        setActiveTab('Upcoming');
       }
 
       setLoading(false);
@@ -265,7 +283,7 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // --- HANDLE DELETE ---
+  // --- ACTIONS ---
   const handleDeleteTrip = async (tripId: string) => {
     try {
       await TripService.deleteTrip(tripId);
@@ -274,8 +292,7 @@ export default function HomeScreen() {
     }
   };
 
-  // --- HANDLE SHARE ---
-  const handleShareTrip = async (trip: any) => {
+  const handleShareTrip = async (trip: UiTrip) => {
     try {
       const deepLink = `budgettrip://trip/${trip.id}`;
       const message = `👋 You've been invited to join a trip to ${trip.destination}! 🌍\n\n📅 Dates: ${trip.formattedStartDate} - ${trip.formattedEndDate}\n\nTap the link below to view the itinerary and collaborate:\n${deepLink}`;
@@ -287,16 +304,17 @@ export default function HomeScreen() {
       });
 
       if (result.action === Share.sharedAction) {
-        // Shared successfully
+        // Shared
       }
     } catch (error: any) {
       Alert.alert("Share Error", error.message);
     }
   };
 
-  // --- FILTER TRIPS ---
+  // --- FILTERING LOGIC ---
   const filteredTrips = userTrips.filter(trip => {
     const now = new Date();
+    // Normalize times to compare dates only
     now.setHours(0, 0, 0, 0);
     const start = new Date(trip.start);
     start.setHours(0, 0, 0, 0);
@@ -308,6 +326,7 @@ export default function HomeScreen() {
     } else if (activeTab === 'Upcoming') {
       return start > now;
     } else {
+      // Past
       return end < now;
     }
   });
@@ -315,29 +334,20 @@ export default function HomeScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemedView style={styles.container}>
+
+        {/* TABS */}
         <View style={styles.header}>
           <View style={styles.toggleContainer}>
-            <TouchableOpacity
-              style={[styles.toggleButton, activeTab === 'Active' && styles.activeToggleButton]}
-              onPress={() => setActiveTab('Active')}>
-              <ThemedText style={[styles.toggleText, activeTab === 'Active' && styles.activeToggleText]}>
-                Active
-              </ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleButton, activeTab === 'Upcoming' && styles.activeToggleButton]}
-              onPress={() => setActiveTab('Upcoming')}>
-              <ThemedText style={[styles.toggleText, activeTab === 'Upcoming' && styles.activeToggleText]}>
-                Upcoming
-              </ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleButton, activeTab === 'Past' && styles.activeToggleButton]}
-              onPress={() => setActiveTab('Past')}>
-              <ThemedText style={[styles.toggleText, activeTab === 'Past' && styles.activeToggleText]}>
-                Past
-              </ThemedText>
-            </TouchableOpacity>
+            {(['Active', 'Upcoming', 'Past'] as const).map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.toggleButton, activeTab === tab && styles.activeToggleButton]}
+                onPress={() => setActiveTab(tab)}>
+                <ThemedText style={[styles.toggleText, activeTab === tab && styles.activeToggleText]}>
+                  {tab}
+                </ThemedText>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -390,7 +400,7 @@ export default function HomeScreen() {
                     <TripCard
                       trip={trip}
                       router={router}
-                      currentUserId={user?.uid} // <--- PASSING CURRENT USER ID
+                      currentUserId={user?.uid}
                       onDelete={handleDeleteTrip}
                       onShare={handleShareTrip}
                     />
@@ -406,6 +416,7 @@ export default function HomeScreen() {
   );
 }
 
+// --- STYLES ---
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -463,11 +474,10 @@ const styles = StyleSheet.create({
   cardOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '60%' },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
 
-  // BUDGET BADGE
+  // BADGES
   budgetBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#fff' },
   budgetText: { color: '#000', fontSize: 13, fontWeight: 'bold' },
 
-  // JOINED BADGE (NEW)
   joinedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -475,7 +485,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: '#5856D6' // Purple color for "Joined"
+    backgroundColor: '#5856D6'
   },
   joinedText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
 
@@ -484,7 +494,4 @@ const styles = StyleSheet.create({
   dateText: { color: 'rgba(255,255,255,0.9)', fontSize: 14, marginBottom: 4, fontWeight: '500' },
   destinationTitle: { color: '#fff', fontSize: 24, fontFamily: Fonts.bold, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   arrowButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
-
-  activeBadge: { backgroundColor: '#4CD964', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  activeBadgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' }
 });

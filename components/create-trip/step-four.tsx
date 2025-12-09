@@ -1,13 +1,11 @@
-import React from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
-
+import { ExternalLink } from '@/components/external-link';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import React from 'react';
+import { StyleSheet, TextInput, View } from 'react-native';
 import { VehicleSelector } from './vehicle-selector';
-// 1. Import ExternalLink
-import { ExternalLink } from '@/components/external-link';
 
 type Props = {
     form: {
@@ -40,8 +38,8 @@ export default function StepFour({ form, setForm }: Props) {
             </ThemedText>
 
             {/* 1. Quick Select Grid */}
-            <View>
-                <ThemedText type="defaultSemiBold" style={styles.sectionLabel}>
+            <View style={styles.section}>
+                <ThemedText type="defaultSemiBold" style={styles.label}>
                     What are you driving?
                 </ThemedText>
                 <VehicleSelector
@@ -52,18 +50,17 @@ export default function StepFour({ form, setForm }: Props) {
 
             <View style={styles.divider} />
 
-            {/* 2. Fine Tuning (Auto-filled) */}
+            {/* 2. Car Details Row */}
             <View style={styles.row}>
-
-                {/* Car Name (Optional) */}
-                <View style={[styles.inputGroup, { flex: 1 }]}>
+                {/* Car Name */}
+                <View style={{ flex: 1, gap: 8 }}>
                     <ThemedText type="defaultSemiBold" style={styles.label}>
                         Car Name
                     </ThemedText>
-                    <View style={[styles.inputContainer, { borderColor: colors.icon }]}>
+                    <View style={[styles.inputContainer, { borderColor: colors.icon, backgroundColor: colors.background }]}>
                         <TextInput
                             style={[styles.input, { color: colors.text }]}
-                            placeholder="Sedan"
+                            placeholder="e.g. Sedan"
                             placeholderTextColor="#999"
                             value={form.carName}
                             onChangeText={(text) => setForm({ ...form, carName: text })}
@@ -72,14 +69,14 @@ export default function StepFour({ form, setForm }: Props) {
                 </View>
 
                 {/* MPG */}
-                <View style={[styles.inputGroup, { width: 100 }]}>
+                <View style={{ width: 100, gap: 8 }}>
                     <ThemedText type="defaultSemiBold" style={styles.label}>
                         MPG
                     </ThemedText>
-                    <View style={[styles.inputContainer, { borderColor: colors.icon }]}>
+                    <View style={[styles.inputContainer, { borderColor: colors.icon, backgroundColor: colors.background }]}>
                         <TextInput
                             style={[styles.input, { color: colors.text, textAlign: 'center' }]}
-                            placeholder="0"
+                            placeholder="25"
                             placeholderTextColor="#999"
                             keyboardType="numeric"
                             value={form.mpg}
@@ -90,12 +87,13 @@ export default function StepFour({ form, setForm }: Props) {
             </View>
 
             {/* 3. Gas Price */}
-            <View style={styles.inputGroup}>
+            <View style={styles.section}>
                 <ThemedText type="defaultSemiBold" style={styles.label}>
-                    Gas Price ($)
+                    Gas Price ($/gal)
                 </ThemedText>
-                <View style={[styles.inputContainer, { borderColor: colors.icon }]}>
-                    <IconSymbol name="dollarsign" size={20} color={colors.icon} style={styles.inputIcon} />
+
+                <View style={[styles.inputContainer, { borderColor: colors.icon, backgroundColor: colors.background }]}>
+                    <IconSymbol name="dollarsign" size={20} color={colors.icon} style={{ marginRight: 12 }} />
                     <TextInput
                         style={[styles.input, { color: colors.text }]}
                         placeholder="2.90"
@@ -105,81 +103,58 @@ export default function StepFour({ form, setForm }: Props) {
                         onChangeText={(text) => setForm({ ...form, gasPrice: text })}
                     />
                 </View>
-                <ThemedText style={styles.helperText}>
-                    Based on national average. You can edit this.
-                </ThemedText>
 
-                {/* 2. Added External Link for Reference */}
-                <ExternalLink href="https://gasprices.aaa.com/">
-                    <ThemedText style={[styles.linkText, { color: colors.tint }]}>
-                        Check current gas prices (AAA)
-                    </ThemedText>
-                </ExternalLink>
+                {/* Helper + External Link */}
+                <View style={styles.helperContainer}>
+                    <ThemedText style={styles.helperText}>Based on national avg.</ThemedText>
+                    <ExternalLink href="https://gasprices.aaa.com/">
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <ThemedText style={[styles.linkText, { color: colors.tint }]}>
+                                Check AAA Prices
+                            </ThemedText>
+                            <IconSymbol name="arrow.up.right" size={12} color={colors.tint} style={{ marginLeft: 2 }} />
+                        </View>
+                    </ExternalLink>
+                </View>
             </View>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    stepContainer: {
-        gap: 20,
-    },
-    headline: {
-        textAlign: 'center',
-        marginBottom: 5,
-    },
-    subheadline: {
-        textAlign: 'center',
-        color: '#808080',
-        marginBottom: 10,
-    },
-    sectionLabel: {
-        fontSize: 16,
-        marginBottom: 5,
-    },
-    label: {
-        fontSize: 14,
-        marginBottom: 6,
-        color: '#808080',
-    },
-    row: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    inputGroup: {
-        gap: 0,
-    },
+    stepContainer: { gap: 24 },
+    headline: { textAlign: 'center', marginBottom: 5 },
+    subheadline: { textAlign: 'center', color: '#808080', marginBottom: 10 },
+
+    section: { gap: 8 },
+    label: { fontSize: 16 },
+
+    // Consistent Input Styles (Height 56 matches Step 1 & 2)
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         borderWidth: 1,
         borderRadius: 12,
-        paddingHorizontal: 12,
-        height: 50,
-    },
-    inputIcon: {
-        marginRight: 8,
+        paddingHorizontal: 16,
+        height: 56
     },
     input: {
         flex: 1,
         fontSize: 16,
         fontFamily: Fonts.regular,
-        height: '100%',
+        height: '100%'
     },
-    helperText: {
-        fontSize: 12,
-        color: '#808080',
-        marginTop: 6,
-    },
-    linkText: {
-        fontSize: 12,
+
+    row: { flexDirection: 'row', gap: 12 },
+    divider: { height: 1, backgroundColor: '#eee', marginVertical: 4 },
+
+    helperContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginTop: 4,
-        textDecorationLine: 'underline',
+        paddingHorizontal: 4
     },
-    divider: {
-        height: 1,
-        backgroundColor: '#E0E0E0',
-        marginVertical: 10,
-        opacity: 0.5,
-    },
+    helperText: { fontSize: 12, color: '#808080' },
+    linkText: { fontSize: 12, fontWeight: '600' }
 });

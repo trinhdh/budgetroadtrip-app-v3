@@ -1,7 +1,8 @@
 import { ThemedText } from '@/components/themed-text';
-import { IconSymbol } from '@/components/ui/icon-symbol'; // Ensure this is imported
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { LocationSearchModal } from '@/components/ui/location-search-modal';
 import { Colors, Fonts } from '@/constants/theme';
+import { GeoPoint } from '@/constants/types';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import React, { useState } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -10,9 +11,9 @@ type Props = {
     form: {
         origin: string;
         destination: string;
-        originCoordinates?: { latitude: number; longitude: number } | null;
-        destinationCoordinates?: { latitude: number; longitude: number } | null;
-        mode: 'ai' | 'manual'; // <--- NEW FIELD
+        originCoordinates?: GeoPoint | null;
+        destinationCoordinates?: GeoPoint | null;
+        mode: 'ai' | 'manual';
     };
     setForm: (data: any) => void;
 };
@@ -23,14 +24,19 @@ export default function StepOne({ form, setForm }: Props) {
     const [activeField, setActiveField] = useState<'origin' | 'destination' | null>(null);
 
     const handleSelectLocation = (data: any, details: any) => {
+        // 1. Get the display name
         const locationName = data.description;
-        const coords = details?.geometry?.location
+
+        // 2. Extract Lat/Lng safely to match 'GeoPoint' type
+        // Note: Your LocationSearchModal MUST have 'fetchDetails={true}' for details to be populated.
+        const coords: GeoPoint | null = details?.geometry?.location
             ? {
-                latitude: details.geometry.location.lat,
-                longitude: details.geometry.location.lng,
+                lat: details.geometry.location.lat,
+                lng: details.geometry.location.lng,
             }
             : null;
 
+        // 3. Update the specific field
         if (activeField === 'origin') {
             setForm({
                 ...form,
@@ -41,7 +47,7 @@ export default function StepOne({ form, setForm }: Props) {
             setForm({
                 ...form,
                 destination: locationName,
-                destinationCoordinates: coords // <--- CAPTURE THIS
+                destinationCoordinates: coords
             });
         }
     };

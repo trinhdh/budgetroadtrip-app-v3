@@ -12,7 +12,7 @@ type Props = {
     placeholder?: string;
 };
 
-const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 
 export function AddressSearchModal({ onSelect, onClose, placeholder }: Props) {
     const theme = useColorScheme() ?? 'light';
