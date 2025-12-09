@@ -78,29 +78,35 @@ const HeroImageCard = ({
 const TripCard = ({
   trip,
   router,
+  currentUserId, // <--- ADDED PROP
   onDelete,
   onShare
 }: {
   trip: any,
   router: any,
+  currentUserId?: string,
   onDelete: (id: string) => void,
   onShare: (trip: any) => void
 }) => {
+
+  // Check if I am the owner
+  const isOwner = trip.userId === currentUserId;
 
   // Render TWO buttons side-by-side with rounded corners
   const renderRightActions = (_progress: any, _dragX: any) => {
     return (
       <View style={styles.actionsContainer}>
-        {/* SHARE / INVITE BUTTON (Blue) */}
+        {/* SHARE BUTTON (Blue) */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: '#007AFF', marginRight: 8 }]}
           onPress={() => onShare(trip)}
         >
-          <IconSymbol name="person.2.fill" size={26} color="#fff" />
+          <IconSymbol name="square.and.arrow.up" size={26} color="#fff" />
           <ThemedText style={styles.actionTitle}>Invite</ThemedText>
         </TouchableOpacity>
 
         {/* DELETE BUTTON (Red) */}
+        {/* Only allow delete if owner, otherwise maybe show "Leave"? For now we keep delete as "remove from my list" */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: '#FF3B30' }]}
           onPress={() => confirmDelete()}
@@ -113,13 +119,18 @@ const TripCard = ({
   };
 
   const confirmDelete = () => {
+    const title = isOwner ? "Delete Trip?" : "Leave Trip?";
+    const message = isOwner
+      ? "This action cannot be undone. All data will be lost."
+      : "You will be removed from this trip.";
+
     Alert.alert(
-      "Delete Trip?",
-      "This action cannot be undone. All data and expenses will be lost.",
+      title,
+      message,
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Delete",
+          text: isOwner ? "Delete" : "Leave",
           style: "destructive",
           onPress: () => onDelete(trip.id)
         }
@@ -150,7 +161,17 @@ const TripCard = ({
         />
 
         <View style={styles.cardTopRow}>
-          <View></View>
+          {/* LEFT SIDE: JOINED BADGE */}
+          {!isOwner ? (
+            <View style={styles.joinedBadge}>
+              <IconSymbol name="person.2.fill" size={14} color="#fff" />
+              <ThemedText style={styles.joinedText}>Joined</ThemedText>
+            </View>
+          ) : (
+            <View />
+          )}
+
+          {/* RIGHT SIDE: BUDGET BADGE */}
           <View style={styles.budgetBadge}>
             <ThemedText style={styles.budgetText}>
               ~${Math.round(trip.estimatedCost || trip.budget || 0)}
@@ -253,17 +274,16 @@ export default function HomeScreen() {
     }
   };
 
-  // --- HANDLE SHARE (INVITE MESSAGE) ---
+  // --- HANDLE SHARE ---
   const handleShareTrip = async (trip: any) => {
     try {
       const deepLink = `budgettrip://trip/${trip.id}`;
+      const message = `👋 You've been invited to join a trip to ${trip.destination}! 🌍\n\n📅 Dates: ${trip.formattedStartDate} - ${trip.formattedEndDate}\n\nTap the link below to view the itinerary and collaborate:\n${deepLink}`;
 
-      // Updated Message Format
-      const message = `Hey! Join me on a trip to ${trip.destination}. Check out the plan here: ${deepLink}`;
       const result = await Share.share({
         message: message,
         title: `Trip Invitation: ${trip.destination}`,
-        url: deepLink, // iOS uses this for rich preview
+        url: deepLink,
       });
 
       if (result.action === Share.sharedAction) {
@@ -370,6 +390,7 @@ export default function HomeScreen() {
                     <TripCard
                       trip={trip}
                       router={router}
+                      currentUserId={user?.uid} // <--- PASSING CURRENT USER ID
                       onDelete={handleDeleteTrip}
                       onShare={handleShareTrip}
                     />
@@ -418,7 +439,7 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     flexDirection: 'row',
-    width: 170, // 2 buttons + spacing
+    width: 170,
     paddingLeft: 10,
     height: '100%',
     alignItems: 'center',
@@ -428,7 +449,7 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 24, // Rounded corners
+    borderRadius: 24,
   },
   actionTitle: {
     color: '#fff',
@@ -441,12 +462,25 @@ const styles = StyleSheet.create({
   immersiveCard: { height: 220, borderRadius: 24, overflow: 'hidden', justifyContent: 'space-between', padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 8, backgroundColor: '#333' },
   cardOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '60%' },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+
+  // BUDGET BADGE
   budgetBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#fff' },
   budgetText: { color: '#000', fontSize: 13, fontWeight: 'bold' },
+
+  // JOINED BADGE (NEW)
+  joinedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#5856D6' // Purple color for "Joined"
+  },
+  joinedText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+
   cardBottomContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-
   cardTextContainer: { flex: 1, paddingRight: 12 },
-
   dateText: { color: 'rgba(255,255,255,0.9)', fontSize: 14, marginBottom: 4, fontWeight: '500' },
   destinationTitle: { color: '#fff', fontSize: 24, fontFamily: Fonts.bold, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   arrowButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },

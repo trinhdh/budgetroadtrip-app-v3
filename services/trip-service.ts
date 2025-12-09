@@ -1,6 +1,7 @@
 import { db } from '@/firebaseConfig';
 import {
     addDoc,
+    arrayUnion,
     collection,
     deleteDoc,
     doc,
@@ -55,6 +56,24 @@ export const TripService = {
             return docRef.id;
         } catch (error) {
             console.error("Error adding trip: ", error);
+            throw error;
+        }
+    },
+    /**
+     * Adds a user to the trip's members list automatically.
+     */
+    async joinTrip(tripId: string, userId: string): Promise<void> {
+        try {
+            const tripRef = doc(db, 'trips', tripId);
+
+            // Atomically add the user to the "members" array
+            await updateDoc(tripRef, {
+                members: arrayUnion(userId)
+            });
+
+            console.log(`User ${userId} joined trip ${tripId}`);
+        } catch (error) {
+            console.error("Error joining trip:", error);
             throw error;
         }
     },
