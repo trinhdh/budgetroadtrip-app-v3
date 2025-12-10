@@ -7,6 +7,7 @@ import {
     Animated,
     Dimensions,
     FlatList,
+    Image,
     Platform,
     ScrollView,
     Share,
@@ -17,6 +18,7 @@ import {
     ViewToken
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -35,18 +37,14 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // --- MODALS ---
 import { AddExpenseModal } from '@/components/ui/add-expense-modal';
-import { AllExpensesModal } from '@/components/ui/all-expense-modal';
-import { BalancesModal } from '@/components/ui/balances-modal';
 import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { ExpenseDetailModal } from '@/components/ui/expense-detail-modal';
-import { SwipeableExpenseRow } from '@/components/ui/swipeable-expense-row';
 
 const { width, height } = Dimensions.get('window');
 const PARALLAX_HEADER_HEIGHT = 400;
 
 // --- HELPERS ---
 
-// Convert GeoPoint (lat/lng) to MapView Format (latitude/longitude)
 const toLatLng = (point?: GeoPoint | null) => {
     if (!point || typeof point.lat !== 'number' || typeof point.lng !== 'number') return null;
     return {
@@ -65,7 +63,7 @@ const getCategoryDetails = (category: string) => {
         case 'fuel': return { icon: 'speedometer', color: '#FF9F1C' };
         case 'food': return { icon: 'leaf', color: '#E71D36' };
         case 'hotel': return { icon: 'bed.double.fill', color: '#2EC4B6' };
-        case 'activities': return { icon: 'wand.and.stars', color: '#7209B7' };
+        case 'activities': return { icon: 'camera.fill', color: '#7209B7' };
         default: return { icon: 'circle.grid.2x2.fill', color: '#808080' };
     }
 };
@@ -99,14 +97,19 @@ export default function TripDetailsScreen() {
     const [loading, setLoading] = useState(true);
     const [expenses, setExpenses] = useState<any[]>([]);
 
-    // Store route as GeoPoint (lat/lng) but convert when rendering
     const [routeCoordinates, setRouteCoordinates] = useState<GeoPoint[]>([]);
 
-    const [balancesVisible, setBalancesVisible] = useState(false);
     const [paramsModalVisible, setParamsModalVisible] = useState(false);
     const [addExpenseVisible, setAddExpenseVisible] = useState(false);
-    const [viewAllExpensesVisible, setViewAllExpensesVisible] = useState(false);
+
     const [selectedExpense, setSelectedExpense] = useState<any>(null);
+    const [editingExpense, setEditingExpense] = useState<any>(null);
+
+    const swipeableRows = useRef(new Map());
+    const closeRow = (id: string) => {
+        const row = swipeableRows.current.get(id);
+        if (row) row.close();
+    };
 
     // --- 1. FETCH TRIP ---
     useEffect(() => {
@@ -132,23 +135,48 @@ export default function TripDetailsScreen() {
         return () => unsubscribeExpenses();
     }, [tripId]);
 
-    // --- 3. FETCH ROUTE ---
+    // --- 3. FETCH ROUTE (UPDATED) ---
     useEffect(() => {
         const fetchRoute = async () => {
             if (!trip || !trip.originCoordinates || !trip.itinerary || trip.itinerary.length === 0) return;
 
-            // Use .stopLocation (which is a GeoPoint {lat, lng})
-            const stops = trip.itinerary
-                .map(d => d.stopLocation)
-                .filter((p): p is GeoPoint => !!p); // Filter out undefined
+            const allWaypoints: GeoPoint[] = [];
 
-            if (stops.length === 0) return;
+            // Iterate through every day to collect activities and stop locations
+            trip.itinerary.forEach((day: any) => {
+                // 1. Add all timeline activities for this day
+                if (day.timeline && day.timeline.length > 0) {
+                    // Sort by order to ensure correct path
+                    const sortedActivities = [...day.timeline].sort((a: any, b: any) => a.order - b.order);
+                    sortedActivities.forEach((act: any) => {
+                        if (act.coordinates && typeof act.coordinates.lat === 'number' && typeof act.coordinates.lng === 'number') {
+                            allWaypoints.push({
+                                lat: act.coordinates.lat,
+                                lng: act.coordinates.lng
+                            });
+                        }
+                    });
+                }
 
-            const destination = stops[stops.length - 1];
-            const waypoints = stops.slice(0, -1);
+                // 2. Add the day's main stop location (e.g., hotel/city center)
+                // This usually acts as the end point for the day
+                if (day.stopLocation && typeof day.stopLocation.lat === 'number' && typeof day.stopLocation.lng === 'number') {
+                    allWaypoints.push({
+                        lat: day.stopLocation.lat,
+                        lng: day.stopLocation.lng
+                    });
+                }
+            });
+
+            if (allWaypoints.length === 0) return;
+
+            // The last point in our list is the final destination
+            const destination = allWaypoints[allWaypoints.length - 1];
+            // All other points are intermediates
+            const waypoints = allWaypoints.slice(0, -1);
 
             const path = await RouteService.getRoute(
-                trip.originCoordinates!, // We checked this exists above
+                trip.originCoordinates!,
                 destination,
                 waypoints
             );
@@ -186,14 +214,13 @@ export default function TripDetailsScreen() {
     // --- ACTIONS ---
     const handleShare = async () => {
         try {
-            // Updated Share Logic with Deep Link
             const deepLink = `budgettrip://trip/${tripId}`;
             const message = `Join my road trip to ${trip?.destination}! 🚗💨\n\nTap here to collaborate: ${deepLink}`;
 
             await Share.share({
                 message: message,
                 title: `Join Trip: ${trip?.destination}`,
-                url: deepLink, // iOS often uses this field
+                url: deepLink,
             });
         } catch (error: any) {
             Alert.alert("Share failed", error.message);
@@ -203,25 +230,40 @@ export default function TripDetailsScreen() {
     const handleSaveExpense = async (data: any) => {
         if (!tripId || !user) return;
         try {
-            const newExpense = {
-                ...data,
+            // FIX: Destructure 'id' out so we can check if it exists for update logic
+            const { id, ...cleanData } = data;
+
+            const expensePayload = {
+                ...cleanData,
                 amount: parseFloat(data.amount),
-                createdAt: new Date(),
-                addedBy: {
+                createdAt: data.createdAt || new Date(),
+                addedBy: data.addedBy || {
                     uid: user.uid,
                     name: user.displayName || user.email?.split('@')[0] || 'Traveler',
                     avatar: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'Traveler'}&background=random`
                 },
                 hasReceipt: !!data.receiptImage
             };
-            await TripService.addExpense(tripId, newExpense);
-            Alert.alert("Success", "Expense added!");
+
+            if (id) {
+                // UPDATE EXISTING
+                await TripService.updateExpense(tripId, id, expensePayload);
+                Alert.alert("Success", "Expense updated!");
+            } else {
+                // CREATE NEW
+                await TripService.addExpense(tripId, expensePayload);
+                Alert.alert("Success", "Expense added!");
+            }
+
         } catch (error) {
-            Alert.alert("Error", "Failed to add expense.");
+            Alert.alert("Error", "Failed to save expense.");
+        } finally {
+            setEditingExpense(null);
         }
     };
 
     const handleDeleteExpense = async (expenseId: string) => {
+        closeRow(expenseId);
         if (!tripId) return;
         try {
             const expenseToDelete = expenses.find(e => e.id === expenseId);
@@ -232,32 +274,10 @@ export default function TripDetailsScreen() {
         }
     };
 
-    const handleSettleDebt = async (debt: any) => {
-        if (!tripId || !user) return;
-        try {
-            const settlementExpense = {
-                title: 'Settlement',
-                category: 'Other',
-                date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
-                amount: debt.amount,
-                paidBy: debt.from.id,
-                splitBy: [debt.to.id],
-                addedBy: { uid: user.uid, name: user.displayName || 'Traveler', avatar: user.photoURL || '' },
-                isSettlement: true,
-                hasReceipt: false,
-                day: 0,
-                receiptImage: undefined,
-                createdAt: new Date()
-            };
-            await TripService.addExpense(tripId, settlementExpense);
-            Alert.alert("Success", "Payment recorded!");
-        } catch (error) {
-            Alert.alert("Error", "Could not settle debt.");
-        }
-    };
-
-    const handleEditTrip = () => {
-        Alert.alert("Coming Soon", "Edit functionality will be available in the next update!");
+    const handleEditExpensePress = (item: any) => {
+        closeRow(item.id);
+        setEditingExpense(item);
+        setAddExpenseVisible(true);
     };
 
     // --- MAP LOGIC ---
@@ -300,6 +320,65 @@ export default function TripDetailsScreen() {
 
     const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
+    // --- RENDER EXPENSE ITEM ---
+    const renderExpenseItem = (item: any, index: number) => {
+        const { icon, color } = getCategoryDetails(item.category);
+
+        const renderRightActions = () => (
+            <View style={styles.rightActionContainer}>
+                <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#F5A623' }]}
+                    onPress={() => handleEditExpensePress(item)}
+                >
+                    <IconSymbol name="pencil" size={20} color="#fff" />
+                    <ThemedText style={styles.actionText}>Edit</ThemedText>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#FF3B30' }]}
+                    onPress={() => handleDeleteExpense(item.id)}
+                >
+                    <IconSymbol name="trash.fill" size={20} color="#fff" />
+                    <ThemedText style={styles.actionText}>Delete</ThemedText>
+                </TouchableOpacity>
+            </View>
+        );
+
+        return (
+            <View key={`${item.id}-${index}`} style={{ marginBottom: 12 }}>
+                <Swipeable
+                    ref={(ref) => { if (ref && item.id) swipeableRows.current.set(item.id, ref); }}
+                    renderRightActions={renderRightActions}
+                    containerStyle={{ overflow: 'visible' }}
+                >
+                    <TouchableOpacity
+                        style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
+                        activeOpacity={0.7}
+                        onPress={() => setSelectedExpense(item)}
+                    >
+                        <View style={styles.cardContent}>
+                            <View style={[styles.cardIconBox, { backgroundColor: color + '15' }]}>
+                                <IconSymbol name={icon as any} size={20} color={color} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ fontSize: 16 }}>{item.title}</ThemedText>
+                                <ThemedText style={styles.addressText}>{item.category}</ThemedText>
+                            </View>
+                            <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                                <ThemedText style={[styles.priceText, { color: '#FF3B30' }]}>-${item.amount}</ThemedText>
+                                {item.addedBy?.avatar ? (
+                                    <Image source={{ uri: item.addedBy.avatar }} style={styles.avatar} />
+                                ) : (
+                                    <View style={[styles.avatar, { backgroundColor: '#ccc' }]} />
+                                )}
+                            </View>
+                        </View>
+                    </TouchableOpacity>
+                </Swipeable>
+            </View>
+        );
+    };
+
     if (loading) {
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -319,7 +398,6 @@ export default function TripDetailsScreen() {
         );
     }
 
-    // Determine initial region (Robust fallback)
     const initialLat = trip.originCoordinates?.lat || trip.itinerary?.[0]?.stopLocation?.lat || trip.itinerary?.[0]?.coordinates?.lat || 37.78825;
     const initialLng = trip.originCoordinates?.lng || trip.itinerary?.[0]?.stopLocation?.lng || trip.itinerary?.[0]?.coordinates?.lng || -122.4324;
 
@@ -357,7 +435,7 @@ export default function TripDetailsScreen() {
                         {/* 1. ACTUAL DRIVING ROUTE */}
                         {routeCoordinates.length > 0 ? (
                             <Polyline
-                                coordinates={routeCoordinates.map(p => ({ latitude: p.lat, longitude: p.lng }))} // Convert here
+                                coordinates={routeCoordinates.map(p => ({ latitude: p.lat, longitude: p.lng }))}
                                 strokeColor={colors.tint}
                                 strokeWidth={4}
                             />
@@ -444,7 +522,6 @@ export default function TripDetailsScreen() {
                         />
                     )}
 
-                    {/* MAXIMIZED UI */}
                     {isMapMaximized && (
                         <>
                             <TouchableOpacity
@@ -542,8 +619,7 @@ export default function TripDetailsScreen() {
                             </View>
                         </View>
 
-                        {/* Budget Breakdown - CONDITIONALLY RENDERED */}
-                        {/* FIX: Renamed budgetBreakdown -> estimatedBreakdown to match types.ts */}
+                        {/* Budget Breakdown */}
                         {trip.estimatedBreakdown && trip.estimatedBreakdown.length > 0 && (
                             <View style={styles.section}>
                                 <ThemedText type="subtitle" style={styles.sectionTitle}>Budget Breakdown</ThemedText>
@@ -566,20 +642,18 @@ export default function TripDetailsScreen() {
                             </View>
                         )}
 
-                        {/* Recent Expenses Section */}
+                        {/* Expenses Section */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeaderRow}>
                                 <ThemedText type="subtitle" style={[styles.sectionTitle, { marginBottom: 0 }]}>
-                                    Recent Expenses
+                                    Expenses
                                 </ThemedText>
 
-                                <View style={{ flexDirection: 'row', gap: 15 }}>
-                                    <TouchableOpacity onPress={() => setBalancesVisible(true)}>
-                                        <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>Settle Up</ThemedText>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity onPress={() => setViewAllExpensesVisible(true)}>
-                                        <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium, fontSize: 14 }}>View All</ThemedText>
-                                    </TouchableOpacity>
+                                {/* TOTAL EXPENSE DISPLAY */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
+                                    <ThemedText style={{ color: '#FF3B30', fontFamily: Fonts.bold, fontSize: 16 }}>
+                                        -${totalSpent.toFixed(2)}
+                                    </ThemedText>
                                 </View>
                             </View>
 
@@ -595,20 +669,10 @@ export default function TripDetailsScreen() {
                                 </View>
                             )}
 
+                            {/* DISPLAY ALL EXPENSES */}
                             {expenses.length > 0 && (
-                                <View style={[styles.expensesContainer, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
-                                    {expenses.slice(0, 3).map((item, index) => (
-                                        <View key={item.id}>
-                                            <SwipeableExpenseRow
-                                                item={item}
-                                                onPress={setSelectedExpense}
-                                                onDelete={handleDeleteExpense}
-                                            />
-                                            {index < Math.min(expenses.length, 3) - 1 && (
-                                                <View style={{ height: 1, backgroundColor: colors.icon + '10' }} />
-                                            )}
-                                        </View>
-                                    ))}
+                                <View style={{ gap: 0 }}>
+                                    {expenses.map((item, index) => renderExpenseItem(item, index))}
                                 </View>
                             )}
 
@@ -670,30 +734,15 @@ export default function TripDetailsScreen() {
                 </Animated.ScrollView>
 
                 {/* --- MODALS --- */}
-                <BalancesModal
-                    visible={balancesVisible}
-                    onClose={() => setBalancesVisible(false)}
-                    debts={[]}
-                    currentUser="u1"
-                    onSettle={handleSettleDebt}
-                />
-
-                {/* --- UPDATED: Passing tripStartDate to AddExpenseModal --- */}
                 <AddExpenseModal
                     visible={addExpenseVisible}
-                    onClose={() => setAddExpenseVisible(false)}
+                    onClose={() => { setAddExpenseVisible(false); setEditingExpense(null); }}
+                    onSave={handleSaveExpense}
                     itineraryDays={trip.itinerary || []}
                     tripStartDate={trip.startDate}
-                    onSave={handleSaveExpense}
+                    initialData={editingExpense}
                 />
 
-                <AllExpensesModal
-                    visible={viewAllExpensesVisible}
-                    onClose={() => setViewAllExpensesVisible(false)}
-                    expenses={expenses}
-                    onSelectExpense={setSelectedExpense}
-                    onDeleteExpense={handleDeleteExpense}
-                />
                 <ExpenseDetailModal
                     visible={!!selectedExpense}
                     onClose={() => setSelectedExpense(null)}
@@ -743,7 +792,6 @@ export default function TripDetailsScreen() {
                         </View>
                         <View style={styles.paramSeparator} />
 
-                        {/* Only show AI Estimate if valid */}
                         {trip.estimatedCost > 0 && (
                             <>
                                 <View style={styles.paramRow}>
@@ -761,7 +809,6 @@ export default function TripDetailsScreen() {
                             </ThemedText>
                         </View>
 
-                        {/* ADDED: Budget Progress Bar */}
                         <BudgetProgressBar current={totalSpent} total={trip.budget} />
 
                     </ScrollView>
@@ -772,7 +819,6 @@ export default function TripDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-    // ... (Keep existing styles, no changes needed here)
     container: { flex: 1, backgroundColor: '#F9FAFB' },
     scrollView: { flex: 1 },
     parallaxHeader: { position: 'absolute', top: 0, left: 0, right: 0, width: '100%', zIndex: 0, overflow: 'hidden' },
@@ -812,7 +858,7 @@ const styles = StyleSheet.create({
     budgetAmount: { fontSize: 16, fontFamily: Fonts.bold },
     budgetLabel: { fontSize: 12, color: '#808080', textTransform: 'capitalize' },
     sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-    expensesContainer: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+    expensesListContainer: { gap: 10 },
     modalSubtitle: { fontSize: 14, color: '#808080', marginBottom: 24 },
     paramRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
     paramLabel: { fontSize: 16, color: '#666', fontFamily: Fonts.medium },
@@ -828,5 +874,16 @@ const styles = StyleSheet.create({
     stepCardTitle: { fontSize: 16, marginBottom: 4, color: '#333' },
     stepCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     grayText: { color: '#808080', fontSize: 13 },
-    miniActivityMarker: { width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 3 }
+    miniActivityMarker: { width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 3 },
+
+    // --- CARD STYLES ---
+    card: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
+    cardContent: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+    cardIconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    addressText: { fontSize: 12, color: '#888', flex: 1 },
+    priceText: { fontSize: 14, fontFamily: Fonts.bold },
+    avatar: { width: 24, height: 24, borderRadius: 12, marginLeft: 6 },
+    rightActionContainer: { flexDirection: 'row', height: '100%', paddingLeft: 8 },
+    actionButton: { width: 70, height: '100%', justifyContent: 'center', alignItems: 'center', borderRadius: 16, marginLeft: 8 },
+    actionText: { color: '#fff', fontSize: 12, fontWeight: 'bold', marginTop: 4 },
 });

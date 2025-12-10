@@ -1,28 +1,46 @@
 import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors, Fonts } from '@/constants/theme';
+import { Fonts } from '@/constants/theme';
 import { Image } from 'expo-image';
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 type Props = {
     visible: boolean;
     onClose: () => void;
     expense: any;
-    onAddReceipt?: (expenseId: string) => void; // Optional prop for future logic
 };
 
-export function ExpenseDetailModal({ visible, onClose, expense, onAddReceipt }: Props) {
+export function ExpenseDetailModal({ visible, onClose, expense }: Props) {
     if (!expense) return null;
 
-    const handleAddReceipt = () => {
-        if (onAddReceipt) {
-            onAddReceipt(expense.id);
+    // Helper to format date with time
+    const formatDateTime = (timestamp: any, fallbackDate: string) => {
+        if (!timestamp) return fallbackDate;
+
+        let dateObj;
+        // Handle Firestore Timestamp
+        if (typeof timestamp.toDate === 'function') {
+            dateObj = timestamp.toDate();
+        } else if (timestamp.seconds) {
+            dateObj = new Date(timestamp.seconds * 1000);
         } else {
-            // Placeholder action
-            Alert.alert("Add Receipt", "This feature is not connected yet.");
+            dateObj = new Date(timestamp);
         }
+
+        if (isNaN(dateObj.getTime())) return fallbackDate;
+
+        return dateObj.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        });
     };
+
+    const dateDisplay = formatDateTime(expense.createdAt, expense.date);
 
     return (
         <BottomSheetModal
@@ -40,6 +58,13 @@ export function ExpenseDetailModal({ visible, onClose, expense, onAddReceipt }: 
                     </View>
                     <Text style={styles.amount}>-${parseFloat(expense.amount).toFixed(2)}</Text>
                     <Text style={styles.title}>{expense.title}</Text>
+
+                    {/* --- ADDED DAY BADGE --- */}
+                    {expense.day > 0 && (
+                        <View style={styles.dayBadge}>
+                            <Text style={styles.dayBadgeText}>Day {expense.day}</Text>
+                        </View>
+                    )}
                 </View>
 
                 <View style={styles.divider} />
@@ -51,8 +76,8 @@ export function ExpenseDetailModal({ visible, onClose, expense, onAddReceipt }: 
                         <Text style={styles.value}>{expense.category}</Text>
                     </View>
                     <View style={styles.metaItem}>
-                        <Text style={styles.label}>Date</Text>
-                        <Text style={styles.value}>{expense.date}</Text>
+                        <Text style={styles.label}>Date Added</Text>
+                        <Text style={styles.value}>{dateDisplay}</Text>
                     </View>
                 </View>
 
@@ -65,10 +90,10 @@ export function ExpenseDetailModal({ visible, onClose, expense, onAddReceipt }: 
                     </View>
                 </View>
 
-                {/* Receipt Section */}
-                <View style={styles.receiptSection}>
-                    <Text style={styles.label}>Receipt</Text>
-                    {expense.hasReceipt || expense.receiptImage ? (
+                {/* Receipt Section - Only show if receipt exists */}
+                {(expense.hasReceipt || expense.receiptImage) && (
+                    <View style={styles.receiptSection}>
+                        <Text style={styles.label}>Receipt</Text>
                         <View style={styles.receiptContainer}>
                             <Image
                                 source={{ uri: expense.receiptImage || 'https://templates.invoicehome.com/receipt-template-us-neat-750px.png' }}
@@ -76,18 +101,8 @@ export function ExpenseDetailModal({ visible, onClose, expense, onAddReceipt }: 
                                 contentFit="contain"
                             />
                         </View>
-                    ) : (
-                        // CHANGED: Replaced static view with a button
-                        <TouchableOpacity
-                            style={styles.addReceiptButton}
-                            onPress={handleAddReceipt}
-                            activeOpacity={0.7}
-                        >
-                            <IconSymbol name="plus" size={24} color={Colors.light.tint} />
-                            <Text style={styles.addReceiptText}>Add Receipt</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
+                    </View>
+                )}
 
             </ScrollView>
         </BottomSheetModal>
@@ -109,7 +124,7 @@ const getCategoryIcon = (cat: string) => {
     switch (cat) {
         case 'Fuel': return 'speedometer';
         case 'Food': return 'leaf';
-        case 'Hotel': return 'bed.double.fill'; // Changed to match mapping if needed, or keep 'house.fill'
+        case 'Hotel': return 'bed.double.fill';
         case 'Activities': return 'wand.and.stars';
         default: return 'circle.grid.2x2.fill';
     }
@@ -121,6 +136,23 @@ const styles = StyleSheet.create({
     iconCircle: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
     amount: { fontSize: 36, fontWeight: 'bold', color: '#333', marginBottom: 5 },
     title: { fontSize: 20, color: '#666', fontFamily: Fonts.medium },
+
+    // --- DAY BADGE STYLES ---
+    dayBadge: {
+        marginTop: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        backgroundColor: '#F3F4F6',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+    },
+    dayBadgeText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#6B7280',
+    },
+
     divider: { height: 1, backgroundColor: '#eee', marginVertical: 20 },
     grid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
     metaItem: { flex: 1 },
@@ -136,23 +168,4 @@ const styles = StyleSheet.create({
         borderWidth: 1, borderColor: '#eee', marginTop: 5
     },
     receiptImage: { flex: 1, width: '100%', backgroundColor: '#fff' },
-
-    // NEW STYLES for the button
-    addReceiptButton: {
-        height: 100,
-        backgroundColor: Colors.light.tint + '10', // 10% opacity tint background
-        borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: 5,
-        borderStyle: 'dashed',
-        borderWidth: 1.5,
-        borderColor: Colors.light.tint
-    },
-    addReceiptText: {
-        color: Colors.light.tint,
-        marginTop: 8,
-        fontFamily: Fonts.medium,
-        fontSize: 16
-    }
 });

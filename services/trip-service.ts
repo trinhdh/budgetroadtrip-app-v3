@@ -187,6 +187,34 @@ export const TripService = {
         }
     },
 
+    // --- NEW METHOD: Update Expense ---
+    async updateExpense(tripId: string, expenseId: string, updatedData: any) {
+        try {
+            const expenseRef = doc(db, 'trips', tripId, 'expenses', expenseId);
+
+            // 1. Get old amount to calculate difference
+            const expenseSnap = await getDoc(expenseRef);
+            if (!expenseSnap.exists()) throw new Error("Expense not found");
+
+            const oldAmount = expenseSnap.data().amount || 0;
+            const newAmount = updatedData.amount || 0;
+            const difference = newAmount - oldAmount;
+
+            // 2. Update the expense document
+            await updateDoc(expenseRef, updatedData);
+
+            // 3. Update the total spent on the trip
+            if (difference !== 0) {
+                await updateDoc(doc(db, 'trips', tripId), {
+                    spent: increment(difference)
+                });
+            }
+        } catch (error) {
+            console.error("Error updating expense:", error);
+            throw error;
+        }
+    },
+
     async deleteExpense(tripId: string, expenseId: string, amount: number) {
         try {
             await deleteDoc(doc(db, 'trips', tripId, 'expenses', expenseId));

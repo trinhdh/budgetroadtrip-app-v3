@@ -24,7 +24,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 // --- INTERNAL IMPORTS ---
-import { Trip } from '@/constants/types'; // <--- USING YOUR NEW TYPES
+import { Trip } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { TripService } from '@/services/trip-service';
 
@@ -35,7 +35,6 @@ import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // --- TYPES FOR UI ---
-// We extend the DB 'Trip' type to include formatted strings needed for rendering
 interface UiTrip extends Trip {
   formattedStartDate: string;
   formattedEndDate: string;
@@ -94,13 +93,11 @@ const TripCard = ({
   onShare: (trip: UiTrip) => void
 }) => {
 
-  // Check if I am the owner
   const isOwner = trip.userId === currentUserId;
 
   const renderRightActions = (_progress: any, _dragX: any) => {
     return (
       <View style={styles.actionsContainer}>
-        {/* SHARE BUTTON */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: '#007AFF', marginRight: 8 }]}
           onPress={() => onShare(trip)}
@@ -109,7 +106,6 @@ const TripCard = ({
           <ThemedText style={styles.actionTitle}>Invite</ThemedText>
         </TouchableOpacity>
 
-        {/* DELETE BUTTON */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: '#FF3B30' }]}
           onPress={confirmDelete}
@@ -145,7 +141,6 @@ const TripCard = ({
     );
   };
 
-  // Fallback image logic if the trip doesn't have one
   const imageUrl = trip.image && trip.image.length > 0
     ? trip.image
     : `https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1000&auto=format&fit=crop`;
@@ -178,7 +173,6 @@ const TripCard = ({
         />
 
         <View style={styles.cardTopRow}>
-          {/* JOINED BADGE */}
           {!isOwner ? (
             <View style={styles.joinedBadge}>
               <IconSymbol name="person.2.fill" size={14} color="#fff" />
@@ -188,7 +182,6 @@ const TripCard = ({
             <View />
           )}
 
-          {/* BUDGET BADGE */}
           <View style={styles.budgetBadge}>
             <ThemedText style={styles.budgetText}>
               ~${Math.round(trip.estimatedCost > 0 ? trip.estimatedCost : trip.budget)}
@@ -231,7 +224,6 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!user) return;
 
-    // Assuming TripService.subscribeToUserTrips returns Unsubscribe function
     const unsubscribe = TripService.subscribeToUserTrips(user.uid, (trips: Trip[]) => {
 
       const formatDate = (date: Date) => {
@@ -239,14 +231,12 @@ export default function HomeScreen() {
       };
 
       const formattedTrips: UiTrip[] = trips.map((trip) => {
-        // Handle potentially null start dates or string dates
         const startDateObj = trip.startDate ? new Date(trip.startDate) : new Date();
 
         let endDateObj: Date;
         if (trip.endDate) {
           endDateObj = new Date(trip.endDate);
         } else {
-          // If no end date, calculate based on duration
           endDateObj = new Date(startDateObj);
           endDateObj.setDate(startDateObj.getDate() + (trip.duration - 1));
         }
@@ -262,12 +252,24 @@ export default function HomeScreen() {
 
       setUserTrips(formattedTrips);
 
-      // Auto-switch tab if an active trip exists
+      // --- AUTO SWITCH TO ACTIVE TAB (FIXED) ---
       const now = new Date();
-      const hasActive = formattedTrips.some(t => t.start <= now && t.end >= now);
+      now.setHours(0, 0, 0, 0); // Normalize 'now' to start of day
+
+      const hasActive = formattedTrips.some(t => {
+        const start = new Date(t.start);
+        start.setHours(0, 0, 0, 0);
+
+        const end = new Date(t.end);
+        end.setHours(23, 59, 59, 999); // Normalize 'end' to end of day
+
+        return start <= now && end >= now;
+      });
+
       if (hasActive) {
         setActiveTab('Active');
       }
+      // ----------------------------------------
 
       setLoading(false);
     });
@@ -283,7 +285,6 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // --- ACTIONS ---
   const handleDeleteTrip = async (tripId: string) => {
     try {
       await TripService.deleteTrip(tripId);
@@ -297,15 +298,11 @@ export default function HomeScreen() {
       const deepLink = `budgettrip://trip/${trip.id}`;
       const message = `👋 You've been invited to join a trip to ${trip.destination}! 🌍\n\n📅 Dates: ${trip.formattedStartDate} - ${trip.formattedEndDate}\n\nTap the link below to view the itinerary and collaborate:\n${deepLink}`;
 
-      const result = await Share.share({
+      await Share.share({
         message: message,
         title: `Trip Invitation: ${trip.destination}`,
         url: deepLink,
       });
-
-      if (result.action === Share.sharedAction) {
-        // Shared
-      }
     } catch (error: any) {
       Alert.alert("Share Error", error.message);
     }
@@ -314,7 +311,6 @@ export default function HomeScreen() {
   // --- FILTERING LOGIC ---
   const filteredTrips = userTrips.filter(trip => {
     const now = new Date();
-    // Normalize times to compare dates only
     now.setHours(0, 0, 0, 0);
     const start = new Date(trip.start);
     start.setHours(0, 0, 0, 0);
@@ -326,7 +322,6 @@ export default function HomeScreen() {
     } else if (activeTab === 'Upcoming') {
       return start > now;
     } else {
-      // Past
       return end < now;
     }
   });
@@ -416,7 +411,6 @@ export default function HomeScreen() {
   );
 }
 
-// --- STYLES ---
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -430,7 +424,6 @@ const styles = StyleSheet.create({
 
   scrollContent: { flexGrow: 1 },
 
-  // Empty State
   emptyStateContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 30, paddingBottom: 100 },
   heroContainer: { width: 250, height: 320, marginBottom: 10, position: 'relative', alignItems: 'center', justifyContent: 'center' },
   heroImageWrapper: { position: 'absolute', width: 240, height: 280, borderRadius: 24, overflow: 'hidden', borderWidth: 6, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 10, elevation: 8 },
@@ -440,10 +433,8 @@ const styles = StyleSheet.create({
   ctaButton: { width: '100%', height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 },
   ctaButtonText: { color: '#fff', fontSize: 18, fontFamily: Fonts.bold },
 
-  // List State
   listContainer: { paddingHorizontal: 20, gap: 20 },
 
-  // SWIPE STYLES
   swipeContainer: {
     backgroundColor: 'transparent',
     overflow: 'visible',
@@ -469,12 +460,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold'
   },
 
-  // Card Styles
   immersiveCard: { height: 220, borderRadius: 24, overflow: 'hidden', justifyContent: 'space-between', padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 8, backgroundColor: '#333' },
   cardOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '60%' },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
 
-  // BADGES
   budgetBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#fff' },
   budgetText: { color: '#000', fontSize: 13, fontWeight: 'bold' },
 

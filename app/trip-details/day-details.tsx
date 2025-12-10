@@ -1,7 +1,7 @@
 import { db } from '@/firebaseConfig';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore'; // Removed updateDoc import as it's moved to Service
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -249,21 +249,31 @@ export default function DayDetailsScreen() {
     const handleSaveExpense = async (itemData: any) => {
         if (!tripId || !user) return;
 
+        // FIX: Ensure ID isn't saved in payload to avoid duplication on read
+        const { id, ...cleanData } = itemData;
+
         const expensePayload = {
             title: itemData.title,
-            amount: itemData.price || itemData.amount,
+            amount: parseFloat(itemData.price || itemData.amount),
             category: itemData.type || itemData.category || 'expense',
             day: dayIndex + 1,
             date: editingExpense ? editingExpense.date : new Date().toISOString(),
             addedBy: editingExpense ? editingExpense.addedBy : { uid: user.uid, name: user.displayName || 'User', avatar: user.photoURL || '' },
             createdAt: editingExpense ? editingExpense.createdAt : new Date(),
+            hasReceipt: !!itemData.receiptImage,
         };
+
+        // Add receipt if present
+        if (itemData.receiptImage) {
+            (expensePayload as any).receiptImage = itemData.receiptImage;
+        }
 
         try {
             if (editingExpense) {
-                const expenseRef = doc(db, 'trips', tripId, 'expenses', editingExpense.id);
-                await updateDoc(expenseRef, expensePayload);
+                // UPDATE
+                await TripService.updateExpense(tripId, editingExpense.id, expensePayload);
             } else {
+                // ADD
                 await TripService.addExpense(tripId, expensePayload);
             }
         } catch (error) {
@@ -276,15 +286,17 @@ export default function DayDetailsScreen() {
 
     const handleDeleteExpense = async (expenseId: string) => {
         Alert.alert("Delete Expense", "Are you sure you want to delete this expense?", [
-            { text: "Cancel", style: "cancel", onPress: () => closeRow(expenseId) }, // Close on cancel too
+            { text: "Cancel", style: "cancel", onPress: () => closeRow(expenseId) },
             {
                 text: "Delete",
                 style: "destructive",
                 onPress: async () => {
-                    closeRow(expenseId); // Close immediately
+                    closeRow(expenseId);
                     if (!tripId) return;
                     try {
-                        await deleteDoc(doc(db, 'trips', tripId, 'expenses', expenseId));
+                        const expenseToDelete = expenses.find(e => e.id === expenseId);
+                        const amount = expenseToDelete ? Number(expenseToDelete.amount) : 0;
+                        await TripService.deleteExpense(tripId, expenseId, amount);
                     } catch (error) {
                         Alert.alert("Error", "Failed to delete expense.");
                     }
@@ -294,7 +306,7 @@ export default function DayDetailsScreen() {
     };
 
     const handleDeleteActivity = async (itemIndex: number, itemId: string) => {
-        closeRow(itemId); // Close immediately
+        closeRow(itemId);
         if (!trip || !tripId) return;
         const currentTimeline = trip.itinerary[dayIndex].timeline || [];
         const newTimeline = currentTimeline.filter((_: any, index: number) => index !== itemIndex);
@@ -307,13 +319,13 @@ export default function DayDetailsScreen() {
     };
 
     const handleEditActivityPress = (item: any) => {
-        closeRow(item.id); // Close immediately
+        closeRow(item.id);
         setEditingActivity(item);
         setAddActivityVisible(true);
     };
 
     const handleEditExpensePress = (item: any) => {
-        closeRow(item.id); // Close immediately
+        closeRow(item.id);
         setEditingExpense(item);
         setAddExpenseVisible(true);
     };
@@ -389,7 +401,7 @@ export default function DayDetailsScreen() {
     };
 
     // --- RENDER EXPENSE ---
-    const renderExpenseItem = ({ item }: { item: any }) => {
+    const renderExpenseItem = ({ item, index }: { item: any, index: number }) => {
         const { icon, color } = getCategoryDetails(item.category);
 
         const renderRightActions = () => (
@@ -412,8 +424,9 @@ export default function DayDetailsScreen() {
             </View>
         );
 
+        // FIX: Composite key to prevent duplicates
         return (
-            <View style={{ marginBottom: 12 }}>
+            <View key={`${item.id}-${index}`} style={{ marginBottom: 12 }}>
                 <Swipeable
                     // SAVE REF TO MAP
                     ref={(ref) => { if (ref && item.id) swipeableRows.current.set(item.id, ref); }}
@@ -578,9 +591,9 @@ export default function DayDetailsScreen() {
                                                 </ThemedText>
                                             </View>
 
-                                            {expenses.map((expense) => (
-                                                <View key={expense.id}>
-                                                    {renderExpenseItem({ item: expense })}
+                                            {expenses.map((expense, index) => (
+                                                <View key={`${expense.id}-${index}`}>
+                                                    {renderExpenseItem({ item: expense, index })}
                                                 </View>
                                             ))}
                                         </View>
