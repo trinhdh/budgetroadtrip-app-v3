@@ -173,6 +173,7 @@ export type Trip = {
     };
     // --------------------------------------------------
 
+    mode: 'ai' | 'manual'; // <--- ADDED: Trip mode
     vibe: string | null;
     notes?: string;
 

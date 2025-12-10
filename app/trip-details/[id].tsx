@@ -404,7 +404,6 @@ export default function TripDetailsScreen() {
     const isOverBudget = trip && totalSpent > trip.budget;
     const isNearBudget = !isOverBudget && budgetPercent >= 90;
 
-    // A trip is manual if the vibe is explicitly saved as null (from create-trip.tsx fix)
     const isManualTrip = trip && trip.mode === 'manual';
 
     const getDateRange = () => {

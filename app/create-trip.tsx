@@ -277,7 +277,7 @@ export default function CreateTripScreen() {
                 endDate: endDateObj ? endDateObj.toISOString() : null,
                 duration: form.duration,
                 budget: form.budget,
-
+                mode: form.mode,
                 // Omitted/Defaulted fields for Manual mode
                 vibe: isManual ? null : form.vibe, // FIX: Use null instead of undefined for Firestore
                 people: isManual ? 1 : (form.adults + form.children),
