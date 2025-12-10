@@ -49,24 +49,27 @@ type Props = {
     form: {
         budget: number;
         vibe: TripVibe; // Ensure your parent form state includes this
+        mode: 'ai' | 'manual'; // <--- ADDED: mode prop
     };
     setForm: (data: any) => void;
 };
 
+// Renamed locally to FinalStepContent for better semantic clarity
 export default function StepFive({ form, setForm }: Props) {
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
 
     // Default to 'balanced' if not set
     const currentVibe = form.vibe || 'balanced';
+    const isAIMode = form.mode === 'ai'; // <--- NEW check
 
     return (
         <View style={styles.stepContainer}>
             <ThemedText type="title" style={styles.headline}>
-                Budget & Vibe
+                Budget {isAIMode ? '& Vibe' : 'Planning'}
             </ThemedText>
             <ThemedText style={styles.subheadline}>
-                How much to spend and what matters most?
+                {isAIMode ? 'How much to spend and what matters most?' : 'Set your maximum budget.'}
             </ThemedText>
 
             {/* 1. Big Budget Display */}
@@ -96,54 +99,58 @@ export default function StepFive({ form, setForm }: Props) {
                 />
             </View>
 
-            <View style={styles.divider} />
+            {isAIMode && ( // <--- CONDITIONAL RENDERING: Vibe section only for AI mode
+                <>
+                    <View style={styles.divider} />
 
-            {/* 3. Vibe Priority Selector */}
-            <View>
-                <ThemedText type="defaultSemiBold" style={styles.sectionLabel}>
-                    Trip Priority
-                </ThemedText>
+                    {/* 3. Vibe Priority Selector */}
+                    <View>
+                        <ThemedText type="defaultSemiBold" style={styles.sectionLabel}>
+                            Trip Priority
+                        </ThemedText>
 
-                <View style={styles.vibeGrid}>
-                    {VIBE_OPTIONS.map((item) => {
-                        const isSelected = currentVibe === item.id;
-                        return (
-                            <TouchableOpacity
-                                key={item.id}
-                                style={[
-                                    styles.vibeCard,
-                                    isSelected && {
-                                        borderColor: colors.tint,
-                                        backgroundColor: colors.tint + '10' // 10% opacity
-                                    }
-                                ]}
-                                onPress={() => setForm({ ...form, vibe: item.id })}
-                                activeOpacity={0.7}
-                            >
-                                {/* Card Header */}
-                                <View style={styles.cardHeader}>
-                                    <IconSymbol
-                                        name={item.icon as any}
-                                        size={20}
-                                        color={isSelected ? colors.tint : '#808080'}
-                                    />
-                                    <ThemedText style={[
-                                        styles.cardTitle,
-                                        isSelected && { color: colors.tint, fontFamily: Fonts.bold }
-                                    ]}>
-                                        {item.label}
-                                    </ThemedText>
-                                </View>
+                        <View style={styles.vibeGrid}>
+                            {VIBE_OPTIONS.map((item) => {
+                                const isSelected = currentVibe === item.id;
+                                return (
+                                    <TouchableOpacity
+                                        key={item.id}
+                                        style={[
+                                            styles.vibeCard,
+                                            isSelected && {
+                                                borderColor: colors.tint,
+                                                backgroundColor: colors.tint + '10' // 10% opacity
+                                            }
+                                        ]}
+                                        onPress={() => setForm({ ...form, vibe: item.id })}
+                                        activeOpacity={0.7}
+                                    >
+                                        {/* Card Header */}
+                                        <View style={styles.cardHeader}>
+                                            <IconSymbol
+                                                name={item.icon as any}
+                                                size={20}
+                                                color={isSelected ? colors.tint : '#808080'}
+                                            />
+                                            <ThemedText style={[
+                                                styles.cardTitle,
+                                                isSelected && { color: colors.tint, fontFamily: Fonts.bold }
+                                            ]}>
+                                                {item.label}
+                                            </ThemedText>
+                                        </View>
 
-                                {/* Card Description */}
-                                <ThemedText style={styles.cardDesc}>
-                                    {item.description}
-                                </ThemedText>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </View>
-            </View>
+                                        {/* Card Description */}
+                                        <ThemedText style={styles.cardDesc}>
+                                            {item.description}
+                                        </ThemedText>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    </View>
+                </>
+            )}
         </View>
     );
 }

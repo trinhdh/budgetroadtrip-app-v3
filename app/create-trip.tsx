@@ -42,7 +42,7 @@ export default function CreateTripScreen() {
     const headerHeight = useHeaderHeight();
 
     const [step, setStep] = useState(1);
-    const totalSteps = 5;
+    // Total steps is dynamic: 5 for AI, 3 for Manual
     const [isLoading, setIsLoading] = useState(false);
 
     // --- WARNING STATE ---
@@ -74,10 +74,11 @@ export default function CreateTripScreen() {
         budget: 500,
         vibe: 'balanced' as TripVibe,
     });
+    const totalSteps = form.mode === 'manual' ? 3 : 5;
 
-    const isLastStep = (currentStep: number, mode: string) => {
-        if (mode === 'manual' && currentStep === 2) return true;
-        if (currentStep === totalSteps) return true;
+    const isLastStep = (currentStep: number, mode: 'ai' | 'manual') => {
+        if (mode === 'manual' && currentStep === 3) return true;
+        if (mode === 'ai' && currentStep === 5) return true;
         return false;
     };
 
@@ -97,11 +98,22 @@ export default function CreateTripScreen() {
                 Alert.alert('Incomplete', 'Please fill in all date details.');
                 return;
             }
-        } else if (step === 4 && form.mode === 'ai') {
+        } else if (form.mode === 'ai' && step === 4) {
             if (!form.mpg || !form.gasPrice) {
                 Alert.alert('Incomplete', 'Please select a vehicle or enter MPG/Gas Price.');
                 return;
             }
+        } else if (form.mode === 'manual' && step === 3) {
+            if (form.budget < 200) {
+                Alert.alert('Invalid Budget', 'Please set a budget of at least $200.');
+                return;
+            }
+        }
+
+        // --- NEW LOGIC: Skip steps 3 and 4 in manual mode and jump to the final step (Step 3) ---
+        if (form.mode === 'manual' && step === 2) {
+            setStep(3); // Jump to the new final step (Budget)
+            return;
         }
 
         if (isLastStep(step, form.mode)) {
@@ -118,7 +130,7 @@ export default function CreateTripScreen() {
             return;
         }
 
-        setIsLoading(true);
+        if (form.mode === 'ai') setIsLoading(true); // Only show spinner for AI mode
 
         try {
             let generatedData = {
@@ -166,6 +178,17 @@ export default function CreateTripScreen() {
                 });
 
                 generatedData.itinerary = manualItinerary;
+                generatedData.estimatedCost = 0; // Manual mode has no AI estimate
+                generatedData.estimatedBreakdown = []; // Manual mode has no breakdown
+
+                // Since there is no warning from AI, proceed directly to save for manual
+                await finalizeTripCreation({
+                    itinerary: generatedData.itinerary,
+                    estimatedCost: generatedData.estimatedCost,
+                    estimatedBreakdown: generatedData.estimatedBreakdown,
+                    image: coverImage
+                });
+
             } else {
                 // 2b. AI MODE: Call Gemini Service
                 const aiResult = await AiPlannerService.generateTripPlan({
@@ -185,33 +208,35 @@ export default function CreateTripScreen() {
                 generatedData.estimatedCost = aiResult.estimatedCost || 0;
                 generatedData.estimatedBreakdown = aiResult.estimatedBreakdown || [];
                 generatedData.warning = aiResult.warning;
-            }
 
-            // 3. Check for AI Warnings
-            if (generatedData.warning) {
-                setIsLoading(false);
-                setWarningMessage(generatedData.warning);
-                setPendingTripData({
+                // 3. Check for AI Warnings
+                if (generatedData.warning) {
+                    setIsLoading(false);
+                    setWarningMessage(generatedData.warning);
+                    setPendingTripData({
+                        itinerary: generatedData.itinerary,
+                        estimatedCost: generatedData.estimatedCost,
+                        estimatedBreakdown: generatedData.estimatedBreakdown,
+                        image: coverImage
+                    });
+                    setWarningVisible(true); // SHOW MODAL
+                    return; // STOP HERE
+                }
+
+                // 4. If no warning, proceed directly to save
+                await finalizeTripCreation({
                     itinerary: generatedData.itinerary,
                     estimatedCost: generatedData.estimatedCost,
                     estimatedBreakdown: generatedData.estimatedBreakdown,
                     image: coverImage
                 });
-                setWarningVisible(true); // SHOW MODAL
-                return; // STOP HERE
             }
 
-            // 4. If no warning, proceed directly to save
-            await finalizeTripCreation({
-                itinerary: generatedData.itinerary,
-                estimatedCost: generatedData.estimatedCost,
-                estimatedBreakdown: generatedData.estimatedBreakdown,
-                image: coverImage
-            });
 
         } catch (error: any) {
             setIsLoading(false);
             Alert.alert("Generation Failed", error.message || "Could not create trip plan.");
+            console.error("Error adding trip: ", error);
         }
     };
 
@@ -225,13 +250,13 @@ export default function CreateTripScreen() {
         if (!user) return;
 
         // Ensure loading spinner is visible (in case we came from the modal)
-        if (!isLoading) setIsLoading(true);
+        if (!isLoading && form.mode === 'ai') setIsLoading(true); // Only show for AI generation confirmation
 
         try {
             let endDateObj = null;
             if (form.startDate) {
                 endDateObj = new Date(form.startDate);
-                endDateObj.setDate(endDateObj.getDate() + form.duration);
+                endDateObj.setDate(endDateObj.getDate() + form.duration - 1);
             }
 
             const ownerMember: TripMember = {
@@ -241,7 +266,9 @@ export default function CreateTripScreen() {
                 role: 'owner'
             };
 
-            // Construct the final object matching the 'Trip' type
+            // Conditionally set values based on mode
+            const isManual = form.mode === 'manual';
+
             const finalTripData: TripPayload = {
                 startCity: form.origin,
                 endCity: form.destination,
@@ -250,25 +277,25 @@ export default function CreateTripScreen() {
                 endDate: endDateObj ? endDateObj.toISOString() : null,
                 duration: form.duration,
                 budget: form.budget,
-                vibe: form.vibe,
 
-                // --- FIX: Added 'people' field ---
-                people: form.adults + form.children,
+                // Omitted/Defaulted fields for Manual mode
+                vibe: isManual ? null : form.vibe, // FIX: Use null instead of undefined for Firestore
+                people: isManual ? 1 : (form.adults + form.children),
+                estimatedCost: isManual ? 0 : data.estimatedCost, // Set to 0 for manual
+                estimatedBreakdown: isManual ? [] : data.estimatedBreakdown, // Set to empty for manual
 
-                estimatedCost: data.estimatedCost,
-                estimatedBreakdown: data.estimatedBreakdown,
                 itinerary: data.itinerary,
                 image: data.image,
                 members: [ownerMember],
                 originCoordinates: form.originCoordinates || undefined,
 
-                // Nest these objects to match the Typescript Interface
-                travelers: {
+                // Nested objects
+                // For manual mode, set to safe default/empty values that Firestore accepts (0, '', or null)
+                travelers: isManual ? { adults: 1, children: 0 } : {
                     adults: form.adults,
                     children: form.children
                 },
-                // For Manual mode, these might be empty strings, so provide defaults
-                vehicle: {
+                vehicle: isManual ? { name: '', mpg: 0, gasPrice: 0 } : {
                     name: form.carName || 'Personal Vehicle',
                     mpg: Number(form.mpg) || 0,
                     gasPrice: Number(form.gasPrice) || 0
@@ -288,11 +315,14 @@ export default function CreateTripScreen() {
         } catch (error: any) {
             setIsLoading(false);
             Alert.alert("Save Error", "Could not save your trip.");
+            console.error("Error adding trip: ", error); // Log the error for better debugging
         }
     };
 
     const handleBack = () => {
         if (step === 1) router.back();
+        // New logic: If in manual mode and on step 3, going back should go to step 2.
+        else if (form.mode === 'manual' && step === 3) setStep(2);
         else setStep(step - 1);
     };
 
@@ -332,7 +362,7 @@ export default function CreateTripScreen() {
                                 }
                             }}
                         >
-                            <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Proceed Anyway</ThemedText>
+                            <ThemedText style={styles.buttonText}>Proceed Anyway</ThemedText>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -347,7 +377,7 @@ export default function CreateTripScreen() {
                     </ThemedText>
                 </TouchableOpacity>
                 <ThemedText type="subtitle" style={styles.headerTitle}>
-                    {form.mode === 'manual' && step > 2 ? 'Finishing...' : `Step ${step} of ${form.mode === 'manual' ? 2 : totalSteps}`}
+                    {`Step ${step} of ${totalSteps}`}
                 </ThemedText>
                 <View style={{ width: 80 }} />
             </View>
@@ -365,10 +395,17 @@ export default function CreateTripScreen() {
                     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                         <View>
                             {step === 1 && <StepOne form={form} setForm={setForm} />}
+
+                            {/* Step 2 is for both */}
                             {step === 2 && <StepTwo form={form} setForm={setForm} />}
+
+                            {/* AI MODE STEPS (3, 4, 5) */}
                             {form.mode === 'ai' && step === 3 && <StepThree form={form} setForm={setForm} />}
                             {form.mode === 'ai' && step === 4 && <StepFour form={form} setForm={setForm} />}
                             {form.mode === 'ai' && step === 5 && <StepFive form={form} setForm={setForm} />}
+
+                            {/* MANUAL MODE FINAL STEP (Step 3) - Uses StepFive content, passing mode for conditional rendering */}
+                            {form.mode === 'manual' && step === 3 && <StepFive form={{ ...form, mode: 'manual' }} setForm={setForm} />}
                         </View>
                     </TouchableWithoutFeedback>
                 </ScrollView>

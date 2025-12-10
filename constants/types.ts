@@ -173,7 +173,7 @@ export type Trip = {
     };
     // --------------------------------------------------
 
-    vibe?: string;
+    vibe: string | null;
 
     budget: number;
     estimatedCost: number;

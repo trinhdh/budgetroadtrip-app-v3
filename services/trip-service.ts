@@ -65,6 +65,42 @@ export const TripService = {
         }
     },
 
+    /**
+     * Updates the title and description of a single day in the itinerary array.
+     */
+    async updateDayDetails(tripId: string, dayIndex: number, updatedDetails: { title: string, description: string }): Promise<void> {
+        try {
+            const tripRef = doc(db, 'trips', tripId);
+            const tripSnap = await getDoc(tripRef);
+
+            if (tripSnap.exists()) {
+                const tripData = tripSnap.data();
+                const itinerary = tripData.itinerary || [];
+
+                if (itinerary[dayIndex]) {
+                    // Update only the necessary fields
+                    const updatedDay = {
+                        ...itinerary[dayIndex],
+                        title: updatedDetails.title,
+                        description: updatedDetails.description,
+                    };
+
+                    // Create a new itinerary array with the updated day item
+                    const newItinerary = [
+                        ...itinerary.slice(0, dayIndex),
+                        updatedDay,
+                        ...itinerary.slice(dayIndex + 1),
+                    ];
+
+                    await updateDoc(tripRef, { itinerary: newItinerary });
+                }
+            }
+        } catch (error) {
+            console.error("Error updating day details:", error);
+            throw error;
+        }
+    },
+
     // ... (Rest of the service remains the same) ...
     async joinTrip(tripId: string, userId: string): Promise<void> {
         try {

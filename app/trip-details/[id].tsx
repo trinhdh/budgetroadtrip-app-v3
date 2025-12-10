@@ -14,6 +14,7 @@ import {
     Share,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
     ViewToken
@@ -90,6 +91,62 @@ const BudgetProgressBar = ({ current, total }: { current: number, total: number 
     );
 };
 
+// --- NEW COMPONENT: Edit Day Modal ---
+type EditDayModalProps = {
+    visible: boolean;
+    onClose: () => void;
+    day: any; // The ItineraryItem to edit
+    onSave: (dayIndex: number, newTitle: string) => void;
+};
+
+const EditDayModal = ({ visible, onClose, day, onSave }: EditDayModalProps) => {
+    const [title, setTitle] = useState(day?.title || '');
+    const tintColor = Colors.light.tint;
+
+    useEffect(() => {
+        if (visible && day) {
+            setTitle(day.title);
+        }
+    }, [visible, day]);
+
+    const handleSave = () => {
+        if (!day || !title.trim()) {
+            Alert.alert("Invalid Input", "Title cannot be empty.");
+            return;
+        }
+        onSave(day.dayIndex, title.trim());
+    };
+
+    return (
+        <BottomSheetModal
+            isVisible={visible}
+            onClose={onClose}
+            title={`Edit Day ${day?.day}`}
+            height="35%" // <--- UPDATED HEIGHT AS REQUESTED
+        >
+            <View style={{ padding: 20, flex: 1, justifyContent: 'space-between' }}>
+                <View style={{ gap: 15 }}>
+                    <ThemedText style={styles.paramLabel}>Day Title</ThemedText>
+                    <TextInput
+                        style={[styles.input, { borderColor: Colors.light.icon, color: Colors.light.text }]}
+                        value={title}
+                        onChangeText={setTitle}
+                        placeholder={`Day ${day?.day} Title...`}
+                    />
+                </View>
+
+                <TouchableOpacity
+                    style={[styles.saveButton, { backgroundColor: tintColor }]}
+                    onPress={handleSave}
+                >
+                    <ThemedText style={styles.saveButtonText}>Save Changes</ThemedText>
+                </TouchableOpacity>
+            </View>
+        </BottomSheetModal>
+    );
+};
+// --- END NEW COMPONENT ---
+
 export default function TripDetailsScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
@@ -115,6 +172,10 @@ export default function TripDetailsScreen() {
     const [editingExpense, setEditingExpense] = useState<any>(null);
     const [balancesVisible, setBalancesVisible] = useState(false);
 
+    // --- NEW STATE FOR EDITING DAY ---
+    const [editingDay, setEditingDay] = useState<any>(null);
+    // ---------------------------------
+
     const swipeableRows = useRef(new Map());
     const scrollViewRef = useRef<ScrollView>(null);
 
@@ -122,6 +183,31 @@ export default function TripDetailsScreen() {
         const row = swipeableRows.current.get(id);
         if (row) row.close();
     };
+
+    // --- NEW: Handle Day Edit Press ---
+    const handleEditDayPress = (day: any) => {
+        closeRow(day.id || `day-${day.day}`);
+        setEditingDay(day);
+    };
+
+    // --- NEW: Handle Day Save ---
+    const handleSaveDayDetails = async (dayIndex: number, newTitle: string) => {
+        if (!tripId) return;
+
+        try {
+            await TripService.updateDayDetails(tripId, dayIndex, {
+                title: newTitle,
+                description: trip?.itinerary[dayIndex].description || '' // Keep old description
+            });
+            Alert.alert("Success", `Day ${dayIndex + 1} updated!`);
+        } catch (error) {
+            Alert.alert("Error", "Failed to update day details.");
+        } finally {
+            setEditingDay(null);
+        }
+    };
+    // ---------------------------------
+
 
     // --- NEW: Handle Day Deletion ---
     const handleDeleteDay = (dayId: string, dayIndex: number) => {
@@ -302,6 +388,10 @@ export default function TripDetailsScreen() {
     const budgetPercent = trip ? (totalSpent / trip.budget) * 100 : 0;
     const isOverBudget = trip && totalSpent > trip.budget;
     const isNearBudget = !isOverBudget && budgetPercent >= 90;
+
+    // --- NEW: Check if the trip is a Manual type ---
+    // We check if the 'vibe' is explicitly missing/undefined, which is how we save manual trips
+    const isManualTrip = trip && trip.vibe === undefined;
 
     const getDateRange = () => {
         if (!trip?.startDate) return 'TBD';
@@ -494,6 +584,15 @@ export default function TripDetailsScreen() {
         // Right Actions (Swipe Left)
         const renderRightActions = () => (
             <View style={[styles.rightActionContainer, { height: '100%' }]}>
+                {/* NEW: Edit Button */}
+                <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#F5A623', width: 70, marginLeft: 8 }]}
+                    onPress={() => handleEditDayPress({ ...day, dayIndex: index })}
+                >
+                    <IconSymbol name="pencil" size={20} color="#fff" />
+                    <ThemedText style={styles.actionText}>Edit</ThemedText>
+                </TouchableOpacity>
+
                 <TouchableOpacity
                     style={[styles.actionButton, { backgroundColor: '#FF3B30', width: 80, marginLeft: 8 }]}
                     onPress={() => handleDeleteDay(dayId, index)}
@@ -830,7 +929,20 @@ export default function TripDetailsScreen() {
                     initialData={editingExpense}
                 />
                 <ExpenseDetailModal visible={!!selectedExpense} onClose={() => setSelectedExpense(null)} expense={selectedExpense} />
-                <BottomSheetModal isVisible={paramsModalVisible} onClose={() => setParamsModalVisible(false)} title="Trip Details" height="65%">
+                <EditDayModal
+                    visible={!!editingDay}
+                    onClose={() => setEditingDay(null)}
+                    day={editingDay}
+                    onSave={(dayIndex, newTitle) => {
+                        handleSaveDayDetails(dayIndex, newTitle);
+                    }}
+                />
+                <BottomSheetModal
+                    isVisible={paramsModalVisible}
+                    onClose={() => setParamsModalVisible(false)}
+                    title="Trip Details"
+                    height="65%"
+                >
                     <ScrollView>
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>Dates</ThemedText>
@@ -840,32 +952,48 @@ export default function TripDetailsScreen() {
                             </View>
                         </View>
                         <View style={styles.paramSeparator} />
-                        <View style={styles.paramRow}>
-                            <ThemedText style={styles.paramLabel}>Trip Vibe</ThemedText>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                <IconSymbol name="star.fill" size={16} color={colors.tint} />
-                                <ThemedText style={styles.paramValue}>{formatVibe(trip.vibe)}</ThemedText>
-                            </View>
-                        </View>
-                        <View style={styles.paramRow}>
-                            <ThemedText style={styles.paramLabel}>Travelers</ThemedText>
-                            <ThemedText style={styles.paramValue}>{trip.travelers?.adults || 1} Adults, {trip.travelers?.children || 0} Children</ThemedText>
-                        </View>
-                        <View style={styles.paramSeparator} />
-                        <View style={styles.paramRow}>
-                            <ThemedText style={styles.paramLabel}>Vehicle</ThemedText>
-                            <View style={{ alignItems: 'flex-end' }}>
-                                <ThemedText style={styles.paramValue}>{trip.vehicle?.name || "N/A"}</ThemedText>
-                                <ThemedText style={{ fontSize: 12, color: '#808080' }}>{trip.vehicle?.mpg || 0} mpg • ${trip.vehicle?.gasPrice || 0}/gal</ThemedText>
-                            </View>
-                        </View>
-                        <View style={styles.paramSeparator} />
+
+                        {/* CONDITIONAL RENDERING: AI-related fields are hidden for manual trips */}
+                        {/* A trip is manual if trip.vibe is undefined, as set in create-trip.tsx */}
+                        {!isManualTrip && (
+                            <>
+                                {/* Trip Vibe */}
+                                <View style={styles.paramRow}>
+                                    <ThemedText style={styles.paramLabel}>Trip Vibe</ThemedText>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        <IconSymbol name="star.fill" size={16} color={colors.tint} />
+                                        <ThemedText style={styles.paramValue}>{formatVibe(trip.vibe!)}</ThemedText>
+                                    </View>
+                                </View>
+                                <View style={styles.paramSeparator} />
+
+                                {/* Travelers */}
+                                <View style={styles.paramRow}>
+                                    <ThemedText style={styles.paramLabel}>Travelers</ThemedText>
+                                    <ThemedText style={styles.paramValue}>{trip.travelers?.adults || 1} Adults, {trip.travelers?.children || 0} Children</ThemedText>
+                                </View>
+                                <View style={styles.paramSeparator} />
+
+                                {/* Vehicle */}
+                                <View style={styles.paramRow}>
+                                    <ThemedText style={styles.paramLabel}>Vehicle</ThemedText>
+                                    <View style={{ alignItems: 'flex-end' }}>
+                                        <ThemedText style={styles.paramValue}>{trip.vehicle?.name || "N/A"}</ThemedText>
+                                        <ThemedText style={{ fontSize: 12, color: '#808080' }}>{trip.vehicle?.mpg || 0} mpg • ${trip.vehicle?.gasPrice || 0}/gal</ThemedText>
+                                    </View>
+                                </View>
+                                <View style={styles.paramSeparator} />
+                            </>
+                        )}
+
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>My Budget</ThemedText>
                             <ThemedText style={styles.paramValue}>${trip.budget}</ThemedText>
                         </View>
                         <View style={styles.paramSeparator} />
-                        {trip.estimatedCost > 0 && (
+
+                        {/* AI Estimate only for AI trips */}
+                        {trip.estimatedCost > 0 && !isManualTrip && (
                             <>
                                 <View style={styles.paramRow}>
                                     <ThemedText style={styles.paramLabel}>AI Estimate</ThemedText>
@@ -929,7 +1057,6 @@ const styles = StyleSheet.create({
     expensesListContainer: { gap: 10 },
     modalSubtitle: { fontSize: 14, color: '#808080', marginBottom: 24 },
     paramRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
-    paramLabel: { fontSize: 16, color: '#666', fontFamily: Fonts.medium },
     paramValue: { fontSize: 16, fontFamily: Fonts.bold },
     paramSeparator: { height: 1, backgroundColor: '#F0F0F0' },
     timelineList: { paddingLeft: 0 },
@@ -954,4 +1081,21 @@ const styles = StyleSheet.create({
     rightActionContainer: { flexDirection: 'row', height: '100%', paddingLeft: 8 },
     actionButton: { width: 70, height: '100%', justifyContent: 'center', alignItems: 'center', borderRadius: 16, marginLeft: 8 },
     actionText: { color: '#fff', fontSize: 12, fontWeight: 'bold', marginTop: 4 },
+
+    // --- NEW MODAL STYLES ---
+    input: {
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 14,
+        fontSize: 16,
+        fontFamily: Fonts.regular
+    },
+    saveButton: {
+        height: 50,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    saveButtonText: { color: '#fff', fontSize: 16, fontFamily: Fonts.bold },
+    paramLabel: { fontSize: 14, color: '#666', fontFamily: Fonts.medium },
 });
