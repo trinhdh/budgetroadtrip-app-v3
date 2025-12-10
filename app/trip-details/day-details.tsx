@@ -1,4 +1,5 @@
 import { db } from '@/firebaseConfig';
+import { decode } from "@googlemaps/polyline-codec";
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
@@ -157,6 +158,7 @@ export default function DayDetailsScreen() {
     }, [tripId, dayIndex]);
 
     // --- 3. ROUTE LOGIC (Updated to extract stats) ---
+    // --- 3. ROUTE LOGIC (With Caching) ---
     useEffect(() => {
         const fetchDayRoute = async () => {
             if (!trip || !trip.itinerary || !trip.itinerary[dayIndex]) return;
@@ -164,6 +166,7 @@ export default function DayDetailsScreen() {
             const currentDay = trip.itinerary[dayIndex];
             const timeline = (currentDay.timeline || []).sort((a: any, b: any) => a.order - b.order);
 
+            // --- A. Determine Start Point ---
             let startPoint = null;
             if (dayIndex === 0) {
                 startPoint = toGeoPoint(trip.originCoordinates);
@@ -180,6 +183,7 @@ export default function DayDetailsScreen() {
 
             const mapItems = timeline.filter((t: any) => toGeoPoint(t.coordinates));
 
+            // --- B. Fit Map to Markers (UI Only) ---
             if (mapRef.current) {
                 const pointsToFit = mapItems.map((t: any) => toLatLng(t.coordinates));
                 if (startPoint) {
@@ -195,6 +199,29 @@ export default function DayDetailsScreen() {
                 }
             }
 
+            // --- C. Check Cache First ---
+            // If we have a saved polyline, use it immediately and skip the API call.
+            if (currentDay.routePolyline) {
+                console.log("📍 Using cached route for Day", currentDay.day);
+                try {
+                    // Decode the polyline string back into coordinates
+                    const points = decode(currentDay.routePolyline, 5).map(([lat, lng]) => ({
+                        lat,
+                        lng
+                    }));
+                    setDayRouteCoordinates(points);
+
+                    // Note: If you also want to cache stats (miles/time), you should save them 
+                    // to Firestore alongside the polyline and read them here.
+                    // For now, we return early to save the API hit.
+                    return;
+                } catch (e) {
+                    console.error("Failed to decode cached polyline:", e);
+                    // If decode fails, fall through to API call
+                }
+            }
+
+            // --- D. API Call (Fallback if no cache) ---
             if (!startPoint || mapItems.length === 0) {
                 setDayRouteCoordinates([]);
                 setDayStats({ miles: '0', time: '0h 0m' });
@@ -205,22 +232,28 @@ export default function DayDetailsScreen() {
             const destination = stops[stops.length - 1];
             const waypoints = stops.slice(0, -1);
 
-            // Fetch Route & Stats
+            console.log("🌐 Fetching new route from Google API...");
             const result = await RouteService.getRoute(startPoint, destination, waypoints);
 
             if (result && result.points) {
                 setDayRouteCoordinates(result.points);
 
-                // Calculate Stats
-                const miles = (result.totalDistanceMeters * 0.000621371).toFixed(1); // Meters to Miles
+                // 1. Calculate Stats
+                const miles = (result.totalDistanceMeters * 0.000621371).toFixed(1);
                 const totalSeconds = result.totalDurationSeconds;
                 const hours = Math.floor(totalSeconds / 3600);
                 const minutes = Math.floor((totalSeconds % 3600) / 60);
                 const timeStr = `${hours}h ${minutes}m`;
 
                 setDayStats({ miles, time: timeStr });
+
+                // 2. Save to Cache (Firestore)
+                if (result.encodedPolyline) {
+                    await TripService.saveDayRoute(tripId, dayIndex, result.encodedPolyline);
+                }
             }
         };
+
         fetchDayRoute();
     }, [trip, dayIndex]);
 

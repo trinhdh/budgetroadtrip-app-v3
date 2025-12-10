@@ -66,7 +66,8 @@ const MAPPING = createMapping({
   'lock.fill': 'lock',
   'exclamationmark.triangle.fill': 'warning',
   'circle.grid.2x2.fill': 'grid-view',
-  'mappin.and.ellipse': 'add-location', // Updated: Better match for "Add Activity"
+  'mappin.and.ellipse': 'add-location',
+
 });
 
 export type IconSymbolName = keyof typeof MAPPING;

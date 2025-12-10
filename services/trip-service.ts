@@ -140,6 +140,27 @@ export const TripService = {
         }
     },
 
+
+    async saveDayRoute(tripId: string, dayIndex: number, encodedPolyline: string) {
+        try {
+            const tripRef = doc(db, 'trips', tripId);
+            const tripSnap = await getDoc(tripRef);
+
+            if (tripSnap.exists()) {
+                const tripData = tripSnap.data();
+                const itinerary = tripData.itinerary || [];
+
+                if (itinerary[dayIndex]) {
+                    itinerary[dayIndex].routePolyline = encodedPolyline; // Save the string
+                    await updateDoc(tripRef, { itinerary });
+                }
+            }
+        } catch (error) {
+            console.error("Error saving route cache:", error);
+        }
+    },
+
+    // [MODIFY THIS EXISTING METHOD] to clear cache when timeline changes
     async updateDayTimeline(tripId: string, dayIndex: number, newTimeline: any[]) {
         try {
             const tripRef = doc(db, 'trips', tripId);
@@ -151,6 +172,10 @@ export const TripService = {
 
                 if (itinerary[dayIndex]) {
                     itinerary[dayIndex].timeline = newTimeline;
+
+                    // [ADD THIS] Invalidate cache because stops changed
+                    delete itinerary[dayIndex].routePolyline;
+
                     await updateDoc(tripRef, { itinerary });
                 }
             }

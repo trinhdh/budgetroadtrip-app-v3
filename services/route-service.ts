@@ -9,6 +9,7 @@ const ROUTES_API_URL = 'https://routes.googleapis.com/directions/v2:computeRoute
 // Define the return type structure
 export interface RouteResult {
     points: GeoPoint[];
+    encodedPolyline: string;
     legs: {
         distanceMeters: number;
         duration: string; // Format like "3600s"
@@ -72,7 +73,8 @@ export const RouteService = {
 
                 return {
                     points,
-                    legs: route.legs || [], // Array of legs corresponding to waypoints
+                    legs: route.legs || [],
+                    encodedPolyline: encoded,
                     totalDistanceMeters: totalDistance,
                     totalDurationSeconds: totalDuration
                 };
