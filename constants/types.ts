@@ -108,6 +108,10 @@ export type ItineraryItem = {
     order: number;
     day: number;
     routePolyline?: string;
+    routeStats?: {
+        distance: string;
+        duration: string;
+    };
     title: string;
     description: string;
     fuel_cost: number;

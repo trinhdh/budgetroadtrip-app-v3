@@ -9,6 +9,7 @@ import {
     Alert,
     Dimensions,
     Image,
+    Linking,
     Platform,
     StyleSheet,
     TouchableOpacity,
@@ -96,7 +97,7 @@ export default function DayDetailsScreen() {
 
     const [dayRouteCoordinates, setDayRouteCoordinates] = useState<GeoPoint[]>([]);
 
-    // NEW: State for Day Stats
+    // State for Day Stats
     const [dayStats, setDayStats] = useState({ miles: '0', time: '0h 0m' });
 
     const translateY = useSharedValue(-SCREEN_HEIGHT * 0.55);
@@ -157,7 +158,6 @@ export default function DayDetailsScreen() {
         return () => unsubscribe();
     }, [tripId, dayIndex]);
 
-    // --- 3. ROUTE LOGIC (Updated to extract stats) ---
     // --- 3. ROUTE LOGIC (With Caching) ---
     useEffect(() => {
         const fetchDayRoute = async () => {
@@ -199,25 +199,21 @@ export default function DayDetailsScreen() {
                 }
             }
 
-            // --- C. Check Cache First ---
-            // If we have a saved polyline, use it immediately and skip the API call.
-            if (currentDay.routePolyline) {
-                console.log("📍 Using cached route for Day", currentDay.day);
+            // --- C. Check Cache First (Route & Stats) ---
+            if (currentDay.routePolyline && currentDay.routeStats) {
                 try {
-                    // Decode the polyline string back into coordinates
                     const points = decode(currentDay.routePolyline, 5).map(([lat, lng]) => ({
                         lat,
                         lng
                     }));
                     setDayRouteCoordinates(points);
-
-                    // Note: If you also want to cache stats (miles/time), you should save them 
-                    // to Firestore alongside the polyline and read them here.
-                    // For now, we return early to save the API hit.
-                    return;
+                    setDayStats({
+                        miles: currentDay.routeStats.distance,
+                        time: currentDay.routeStats.duration
+                    });
+                    return; // EXIT EARLY - NO API CALL
                 } catch (e) {
-                    console.error("Failed to decode cached polyline:", e);
-                    // If decode fails, fall through to API call
+                    console.error("Failed to decode cache:", e);
                 }
             }
 
@@ -232,7 +228,6 @@ export default function DayDetailsScreen() {
             const destination = stops[stops.length - 1];
             const waypoints = stops.slice(0, -1);
 
-            console.log("🌐 Fetching new route from Google API...");
             const result = await RouteService.getRoute(startPoint, destination, waypoints);
 
             if (result && result.points) {
@@ -247,9 +242,14 @@ export default function DayDetailsScreen() {
 
                 setDayStats({ miles, time: timeStr });
 
-                // 2. Save to Cache (Firestore)
+                // 2. Save to Cache (WITH STATS)
                 if (result.encodedPolyline) {
-                    await TripService.saveDayRoute(tripId, dayIndex, result.encodedPolyline);
+                    await TripService.saveDayRoute(
+                        tripId,
+                        dayIndex,
+                        result.encodedPolyline,
+                        { distance: miles, duration: timeStr }
+                    );
                 }
             }
         };
@@ -257,7 +257,32 @@ export default function DayDetailsScreen() {
         fetchDayRoute();
     }, [trip, dayIndex]);
 
-    // --- HANDLERS (Unchanged) ---
+    // --- HANDLERS ---
+
+    const handleNavigateToItem = (item: any) => {
+        const coords = toLatLng(item.coordinates);
+        if (!coords) {
+            Alert.alert("Error", "Location coordinates not found.");
+            return;
+        }
+
+        const destStr = `${coords.latitude},${coords.longitude}`;
+        let url = "";
+
+        if (Platform.OS === 'ios') {
+            // Apple Maps: daddr=Destination
+            url = `http://maps.apple.com/?daddr=${destStr}`;
+        } else {
+            // Google Maps Universal Link
+            url = `https://www.google.com/maps/dir/?api=1&destination=${destStr}`;
+        }
+
+        Linking.openURL(url).catch(err => {
+            console.error("Failed to open map:", err);
+            Alert.alert("Error", "Could not open map application.");
+        });
+    };
+
     const handleSaveActivity = async (itemData: any, createExpense: boolean) => {
         if (!tripId || !user || !trip) return;
 
@@ -382,6 +407,24 @@ export default function DayDetailsScreen() {
         const index = getIndex();
         if (index === undefined) return null;
         const { icon, color } = getCategoryDetails(item.type);
+
+        // --- LEFT ACTION: Swipe RIGHT to Reveal (Navigate) ---
+        const renderLeftActions = () => (
+            <View style={styles.leftActionContainer}>
+                <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#10B981' }]} // Green
+                    onPress={() => {
+                        closeRow(item.id);
+                        handleNavigateToItem(item);
+                    }}
+                >
+                    <IconSymbol name="map.fill" size={20} color="#fff" />
+                    <ThemedText style={styles.actionText}>Go</ThemedText>
+                </TouchableOpacity>
+            </View>
+        );
+
+        // --- RIGHT ACTIONS: Swipe LEFT to Reveal (Edit/Delete) ---
         const renderRightActions = () => (
             <View style={styles.rightActionContainer}>
                 <TouchableOpacity
@@ -396,15 +439,17 @@ export default function DayDetailsScreen() {
                     onPress={() => handleDeleteActivity(index, item.id)}
                 >
                     <IconSymbol name="trash.fill" size={20} color="#fff" />
-                    <ThemedText style={styles.actionText}>Delete</ThemedText>
+                    <ThemedText style={styles.actionText}>Del</ThemedText>
                 </TouchableOpacity>
             </View>
         );
+
         return (
             <ScaleDecorator>
                 <View style={styles.timelineWrapper}>
                     <Swipeable
                         ref={(ref) => { if (ref && item.id) swipeableRows.current.set(item.id, ref); }}
+                        renderLeftActions={renderLeftActions}  // <--- Added Left Action
                         renderRightActions={renderRightActions}
                         containerStyle={{ overflow: 'visible' }}
                     >
@@ -422,6 +467,14 @@ export default function DayDetailsScreen() {
                                     <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ fontSize: 16 }}>{item.title}</ThemedText>
                                     <ThemedText style={styles.addressText} numberOfLines={1}>{item.address || item.desc || item.type}</ThemedText>
                                 </View>
+
+                                {/* ADDED: Cost Display */}
+                                {item.price > 0 && (
+                                    <ThemedText style={{ fontSize: 14, fontWeight: '600', color: '#333', marginRight: 8 }}>
+                                        ${item.price}
+                                    </ThemedText>
+                                )}
+
                                 <View style={styles.dragHandle}>
                                     <IconSymbol name="line.3.horizontal" size={16} color={colors.icon + '40'} />
                                 </View>
@@ -449,7 +502,7 @@ export default function DayDetailsScreen() {
                     onPress={() => handleDeleteExpense(item.id)}
                 >
                     <IconSymbol name="trash.fill" size={20} color="#fff" />
-                    <ThemedText style={styles.actionText}>Delete</ThemedText>
+                    <ThemedText style={styles.actionText}>Del</ThemedText>
                 </TouchableOpacity>
             </View>
         );
@@ -463,7 +516,7 @@ export default function DayDetailsScreen() {
                     <TouchableOpacity
                         style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
                         activeOpacity={0.7}
-                        onPress={() => { /* setSelectedExpense(item); // Needs Modal implementation */ }}
+                        onPress={() => { /* setSelectedExpense(item); */ }}
                     >
                         <View style={styles.cardContent}>
                             <View style={[styles.cardIconBox, { backgroundColor: color + '15' }]}>
@@ -568,7 +621,7 @@ export default function DayDetailsScreen() {
                         <IconSymbol name="chevron.left" size={24} color="#fff" />
                     </TouchableOpacity>
 
-                    {/* UPDATED HEADER TITLE BOX WITH STATS */}
+                    {/* TITLE BOX */}
                     <View style={styles.headerTitleBox}>
                         <ThemedText style={styles.headerDayText}>Day {currentDay.day}</ThemedText>
                         <ThemedText style={styles.headerTitleText} numberOfLines={1}>{currentDay.title}</ThemedText>
@@ -586,6 +639,7 @@ export default function DayDetailsScreen() {
                         </View>
                     </View>
 
+                    {/* Spacer to keep title centered since right button is gone */}
                     <View style={{ width: 40 }} />
                 </View>
 
@@ -698,9 +752,13 @@ const styles = StyleSheet.create({
     priceText: { fontSize: 14, fontFamily: Fonts.bold },
     avatar: { width: 24, height: 24, borderRadius: 12, marginLeft: 6 },
     dragHandle: { marginTop: 0 },
+
+    // --- ACTIONS ---
+    leftActionContainer: { flexDirection: 'row', height: '100%', paddingRight: 8 },
     rightActionContainer: { flexDirection: 'row', height: '100%', paddingLeft: 8 },
     actionButton: { width: 70, height: '100%', justifyContent: 'center', alignItems: 'center', borderRadius: 16, marginLeft: 8 },
     actionText: { color: '#fff', fontSize: 12, fontWeight: 'bold', marginTop: 4 },
+
     emptyState: { alignItems: 'center', padding: 30 },
     footerContainer: { gap: 12, marginTop: 10, paddingBottom: 100 },
     expensesSection: { marginTop: 10, marginBottom: 20 },

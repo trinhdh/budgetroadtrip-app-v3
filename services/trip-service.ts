@@ -141,7 +141,7 @@ export const TripService = {
     },
 
 
-    async saveDayRoute(tripId: string, dayIndex: number, encodedPolyline: string) {
+    async saveDayRoute(tripId: string, dayIndex: number, encodedPolyline: string, stats: { distance: string, duration: string }) {
         try {
             const tripRef = doc(db, 'trips', tripId);
             const tripSnap = await getDoc(tripRef);
@@ -151,7 +151,8 @@ export const TripService = {
                 const itinerary = tripData.itinerary || [];
 
                 if (itinerary[dayIndex]) {
-                    itinerary[dayIndex].routePolyline = encodedPolyline; // Save the string
+                    itinerary[dayIndex].routePolyline = encodedPolyline;
+                    itinerary[dayIndex].routeStats = stats; // <--- Save Stats
                     await updateDoc(tripRef, { itinerary });
                 }
             }
@@ -160,7 +161,7 @@ export const TripService = {
         }
     },
 
-    // [MODIFY THIS EXISTING METHOD] to clear cache when timeline changes
+    // [UPDATE THIS METHOD] to clear cache when items change
     async updateDayTimeline(tripId: string, dayIndex: number, newTimeline: any[]) {
         try {
             const tripRef = doc(db, 'trips', tripId);
@@ -173,8 +174,9 @@ export const TripService = {
                 if (itinerary[dayIndex]) {
                     itinerary[dayIndex].timeline = newTimeline;
 
-                    // [ADD THIS] Invalidate cache because stops changed
+                    // Clear BOTH caches so they regenerate together
                     delete itinerary[dayIndex].routePolyline;
+                    delete itinerary[dayIndex].routeStats; // <--- Clear Stats
 
                     await updateDoc(tripRef, { itinerary });
                 }
