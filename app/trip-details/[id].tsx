@@ -1,3 +1,4 @@
+import { decode } from "@googlemaps/polyline-codec"; // <--- Ensure this is installed
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -105,8 +106,8 @@ export default function TripDetailsScreen() {
 
     const [routeCoordinates, setRouteCoordinates] = useState<GeoPoint[]>([]);
 
-    // STATS
-    const [dayStats, setDayStats] = useState<Record<number, { distance: string, duration: string }>>({});
+    // STATS from Overview Route (Fallback)
+    const [overviewStats, setOverviewStats] = useState<Record<string, { distance: string, duration: string }>>({});
 
     const [paramsModalVisible, setParamsModalVisible] = useState(false);
     const [addExpenseVisible, setAddExpenseVisible] = useState(false);
@@ -127,6 +128,10 @@ export default function TripDetailsScreen() {
             setLoading(false);
             if (data) {
                 setTrip(data);
+                // Load cached stats immediately if available
+                if (data.overviewStats) {
+                    setOverviewStats(data.overviewStats);
+                }
             } else {
                 Alert.alert("Error", "Trip not found");
                 router.back();
@@ -144,23 +149,34 @@ export default function TripDetailsScreen() {
         return () => unsubscribeExpenses();
     }, [tripId]);
 
-    // --- 3. FETCH ROUTE ---
+    // --- 3. FETCH / CACHE ROUTE ---
     useEffect(() => {
         const fetchRoute = async () => {
             if (!trip || !trip.itinerary || trip.itinerary.length === 0) return;
 
+            // A. CHECK CACHE FIRST
+            if (trip.overviewPolyline) {
+                console.log("📍 Using cached overview route");
+                try {
+                    const points = decode(trip.overviewPolyline, 5).map(([lat, lng]) => ({ lat, lng }));
+                    setRouteCoordinates(points);
+                    // Stats are loaded in the subscription above, so we are done!
+                    return;
+                } catch (e) {
+                    console.error("Error decoding overview cache, falling back to API", e);
+                }
+            }
+
+            // B. PREPARE API CALL
             const dayEndPoints: { lat: number, lng: number }[] = [];
 
             // COLLECT WAYPOINTS: Origin -> Day 1 End -> Day 2 End -> ...
             trip.itinerary.forEach((day: any) => {
                 let endPoint: { lat: number, lng: number } | null = null;
-
-                // Priority 1: Explicit Stop Location
                 const stopLoc = getNormalizedPoint(day.stopLocation);
                 if (stopLoc) {
                     endPoint = stopLoc;
                 }
-                // Priority 2: Fallback to Last Valid Activity
                 else if (day.timeline && day.timeline.length > 0) {
                     const sortedActivities = [...day.timeline].sort((a: any, b: any) => a.order - b.order);
                     for (let i = sortedActivities.length - 1; i >= 0; i--) {
@@ -171,7 +187,6 @@ export default function TripDetailsScreen() {
                         }
                     }
                 }
-
                 if (endPoint) {
                     dayEndPoints.push(endPoint);
                 }
@@ -184,6 +199,7 @@ export default function TripDetailsScreen() {
             const intermediateWaypoints = dayEndPoints.slice(0, -1); // Stops in between
 
             if (startLocation && endLocation) {
+                console.log("🌐 Fetching overview route from API...");
                 try {
                     const result = await RouteService.getRoute(
                         startLocation,
@@ -194,8 +210,8 @@ export default function TripDetailsScreen() {
                     if (result && result.points) {
                         setRouteCoordinates(result.points);
 
-                        // PER DAY STATS (MAPPING LEGS TO DAYS)
-                        const newDayStats: Record<number, { distance: string, duration: string }> = {};
+                        // C. CALCULATE STATS
+                        const newOverviewStats: Record<number, { distance: string, duration: string }> = {};
 
                         // legs[0] = Origin -> Day 1 End
                         // legs[1] = Day 1 End -> Day 2 End
@@ -205,12 +221,18 @@ export default function TripDetailsScreen() {
                             const lHours = Math.floor(legSec / 3600);
                             const lMins = Math.floor((legSec % 3600) / 60);
 
-                            newDayStats[index] = {
+                            newOverviewStats[index] = {
                                 distance: `${legMiles} mi`,
                                 duration: `${lHours}h ${lMins}m`
                             };
                         });
-                        setDayStats(newDayStats);
+
+                        setOverviewStats(newOverviewStats); // Update local state for immediate UI feedback
+
+                        // D. SAVE TO CACHE
+                        if (result.encodedPolyline) {
+                            await TripService.saveOverviewData(trip.id!, result.encodedPolyline, newOverviewStats);
+                        }
                     }
                 } catch (e) {
                     console.error("Failed to fetch route", e);
@@ -531,18 +553,22 @@ export default function TripDetailsScreen() {
                                     keyExtractor={(item) => item.day.toString()}
                                     onViewableItemsChanged={onViewableItemsChanged}
                                     viewabilityConfig={viewabilityConfig}
-                                    renderItem={({ item, index }) => (
-                                        <TouchableOpacity style={styles.mapCard} onPress={() => setIsMapMaximized(false)} activeOpacity={0.9}>
-                                            <View style={{ flex: 1 }}>
-                                                <Text style={styles.mapCardTitle}>Day {index + 1}: {item.title}</Text>
-                                                <Text style={styles.mapCardSubtitle}>
-                                                    {dayStats[index]
-                                                        ? `${dayStats[index].distance} • ${dayStats[index].duration}`
-                                                        : "Loading..."}
-                                                </Text>
-                                            </View>
-                                        </TouchableOpacity>
-                                    )}
+                                    renderItem={({ item, index }) => {
+                                        // PRIORITIZE DAY CACHE STATS
+                                        const stats = item.routeStats || overviewStats[index];
+                                        return (
+                                            <TouchableOpacity style={styles.mapCard} onPress={() => setIsMapMaximized(false)} activeOpacity={0.9}>
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={styles.mapCardTitle}>Day {index + 1}: {item.title}</Text>
+                                                    <Text style={styles.mapCardSubtitle}>
+                                                        {stats
+                                                            ? `${stats.distance} • ${stats.duration}`
+                                                            : "Tap to view route"}
+                                                    </Text>
+                                                </View>
+                                            </TouchableOpacity>
+                                        );
+                                    }}
                                 />
                             </View>
                         </>
@@ -660,6 +686,11 @@ export default function TripDetailsScreen() {
                                     const dayNum = index + 1;
                                     const paddedDay = dayNum < 10 ? `0${dayNum}` : dayNum;
 
+                                    // --- UPDATED STATS DISPLAY LOGIC ---
+                                    // 1. Try to get stats from the day itself (calculated in DayDetails)
+                                    // 2. Fallback to overview stats (calculated in this file)
+                                    const stats = day.routeStats || overviewStats[index];
+
                                     return (
                                         <View key={day.day} style={styles.stepItem}>
                                             <View style={styles.stepLeft}>
@@ -676,11 +707,10 @@ export default function TripDetailsScreen() {
                                                     <ThemedText type="defaultSemiBold" style={styles.stepCardTitle}>{day.title}</ThemedText>
                                                     <View style={styles.stepCardMeta}>
                                                         <IconSymbol name="car" size={14} color="#808080" />
-                                                        {/* DISPLAY SPECIFIC DAY STATS HERE */}
                                                         <ThemedText style={styles.grayText}>
-                                                            {dayStats[index]
-                                                                ? `${dayStats[index].distance} • ${dayStats[index].duration} drive`
-                                                                : "Computing drive..."}
+                                                            {stats
+                                                                ? `${stats.distance} • ${stats.duration} drive`
+                                                                : "Tap to view route"}
                                                         </ThemedText>
                                                     </View>
                                                 </View>

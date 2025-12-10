@@ -187,6 +187,17 @@ export const TripService = {
         }
     },
 
+    async saveOverviewData(tripId: string, encodedPolyline: string, stats: Record<number, { distance: string, duration: string }>) {
+        try {
+            await updateDoc(doc(db, 'trips', tripId), {
+                overviewPolyline: encodedPolyline,
+                overviewStats: stats
+            });
+        } catch (error) {
+            console.error("Error saving overview cache:", error);
+        }
+    },
+
     subscribeToExpenses(tripId: string, onUpdate: (expenses: any[]) => void): Unsubscribe {
         const expensesRef = collection(db, 'trips', tripId, 'expenses');
         const q = query(expensesRef, orderBy('createdAt', 'desc'));

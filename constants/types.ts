@@ -159,6 +159,8 @@ export type Trip = {
     endCity: string;
     destination: string;
 
+    overviewPolyline?: string;
+    overviewStats?: Record<string, { distance: string; duration: string }>;
     // --- NESTED OBJECTS (Refactored for Consistency) ---
     travelers: {
         adults: number;
