@@ -1,7 +1,7 @@
 import { db } from '@/firebaseConfig';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore'; // Removed updateDoc import as it's moved to Service
+import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -81,7 +81,6 @@ export default function DayDetailsScreen() {
     const insets = useSafeAreaInsets();
     const mapRef = useRef<MapView>(null);
 
-    // NEW: Store refs to swipeable rows to close them programmatically
     const swipeableRows = useRef(new Map());
 
     const [trip, setTrip] = useState<Trip | null>(null);
@@ -95,6 +94,9 @@ export default function DayDetailsScreen() {
     const [editingExpense, setEditingExpense] = useState<any>(null);
 
     const [dayRouteCoordinates, setDayRouteCoordinates] = useState<GeoPoint[]>([]);
+
+    // NEW: State for Day Stats
+    const [dayStats, setDayStats] = useState({ miles: '0', time: '0h 0m' });
 
     const translateY = useSharedValue(-SCREEN_HEIGHT * 0.55);
     const context = useSharedValue({ y: 0 });
@@ -120,7 +122,6 @@ export default function DayDetailsScreen() {
         transform: [{ translateY: translateY.value }],
     }));
 
-    // --- HELPER TO CLOSE ROWS ---
     const closeRow = (id: string) => {
         const row = swipeableRows.current.get(id);
         if (row) row.close();
@@ -155,7 +156,7 @@ export default function DayDetailsScreen() {
         return () => unsubscribe();
     }, [tripId, dayIndex]);
 
-    // --- 3. ROUTE LOGIC ---
+    // --- 3. ROUTE LOGIC (Updated to extract stats) ---
     useEffect(() => {
         const fetchDayRoute = async () => {
             if (!trip || !trip.itinerary || !trip.itinerary[dayIndex]) return;
@@ -196,6 +197,7 @@ export default function DayDetailsScreen() {
 
             if (!startPoint || mapItems.length === 0) {
                 setDayRouteCoordinates([]);
+                setDayStats({ miles: '0', time: '0h 0m' });
                 return;
             }
 
@@ -203,14 +205,26 @@ export default function DayDetailsScreen() {
             const destination = stops[stops.length - 1];
             const waypoints = stops.slice(0, -1);
 
-            const path = await RouteService.getRoute(startPoint, destination, waypoints);
-            if (path) setDayRouteCoordinates(path);
+            // Fetch Route & Stats
+            const result = await RouteService.getRoute(startPoint, destination, waypoints);
+
+            if (result && result.points) {
+                setDayRouteCoordinates(result.points);
+
+                // Calculate Stats
+                const miles = (result.totalDistanceMeters * 0.000621371).toFixed(1); // Meters to Miles
+                const totalSeconds = result.totalDurationSeconds;
+                const hours = Math.floor(totalSeconds / 3600);
+                const minutes = Math.floor((totalSeconds % 3600) / 60);
+                const timeStr = `${hours}h ${minutes}m`;
+
+                setDayStats({ miles, time: timeStr });
+            }
         };
         fetchDayRoute();
     }, [trip, dayIndex]);
 
-    // --- HANDLERS ---
-
+    // --- HANDLERS (Unchanged) ---
     const handleSaveActivity = async (itemData: any, createExpense: boolean) => {
         if (!tripId || !user || !trip) return;
 
@@ -248,10 +262,7 @@ export default function DayDetailsScreen() {
 
     const handleSaveExpense = async (itemData: any) => {
         if (!tripId || !user) return;
-
-        // FIX: Ensure ID isn't saved in payload to avoid duplication on read
         const { id, ...cleanData } = itemData;
-
         const expensePayload = {
             title: itemData.title,
             amount: parseFloat(itemData.price || itemData.amount),
@@ -262,18 +273,13 @@ export default function DayDetailsScreen() {
             createdAt: editingExpense ? editingExpense.createdAt : new Date(),
             hasReceipt: !!itemData.receiptImage,
         };
-
-        // Add receipt if present
         if (itemData.receiptImage) {
             (expensePayload as any).receiptImage = itemData.receiptImage;
         }
-
         try {
             if (editingExpense) {
-                // UPDATE
                 await TripService.updateExpense(tripId, editingExpense.id, expensePayload);
             } else {
-                // ADD
                 await TripService.addExpense(tripId, expensePayload);
             }
         } catch (error) {
@@ -339,13 +345,10 @@ export default function DayDetailsScreen() {
         try { await TripService.updateDayTimeline(tripId, dayIndex, reorderedData); } catch (e) { }
     };
 
-    // --- RENDER ACTIVITY ---
     const renderActivityItem = ({ item, getIndex, drag, isActive }: RenderItemParams<any>) => {
         const index = getIndex();
         if (index === undefined) return null;
-
         const { icon, color } = getCategoryDetails(item.type);
-
         const renderRightActions = () => (
             <View style={styles.rightActionContainer}>
                 <TouchableOpacity
@@ -355,7 +358,6 @@ export default function DayDetailsScreen() {
                     <IconSymbol name="pencil" size={20} color="#fff" />
                     <ThemedText style={styles.actionText}>Edit</ThemedText>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                     style={[styles.actionButton, { backgroundColor: '#FF3B30' }]}
                     onPress={() => handleDeleteActivity(index, item.id)}
@@ -365,12 +367,10 @@ export default function DayDetailsScreen() {
                 </TouchableOpacity>
             </View>
         );
-
         return (
             <ScaleDecorator>
                 <View style={styles.timelineWrapper}>
                     <Swipeable
-                        // SAVE REF TO MAP
                         ref={(ref) => { if (ref && item.id) swipeableRows.current.set(item.id, ref); }}
                         renderRightActions={renderRightActions}
                         containerStyle={{ overflow: 'visible' }}
@@ -400,10 +400,8 @@ export default function DayDetailsScreen() {
         );
     };
 
-    // --- RENDER EXPENSE ---
     const renderExpenseItem = ({ item, index }: { item: any, index: number }) => {
         const { icon, color } = getCategoryDetails(item.category);
-
         const renderRightActions = () => (
             <View style={styles.rightActionContainer}>
                 <TouchableOpacity
@@ -413,7 +411,6 @@ export default function DayDetailsScreen() {
                     <IconSymbol name="pencil" size={20} color="#fff" />
                     <ThemedText style={styles.actionText}>Edit</ThemedText>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                     style={[styles.actionButton, { backgroundColor: '#FF3B30' }]}
                     onPress={() => handleDeleteExpense(item.id)}
@@ -423,17 +420,18 @@ export default function DayDetailsScreen() {
                 </TouchableOpacity>
             </View>
         );
-
-        // FIX: Composite key to prevent duplicates
         return (
             <View key={`${item.id}-${index}`} style={{ marginBottom: 12 }}>
                 <Swipeable
-                    // SAVE REF TO MAP
                     ref={(ref) => { if (ref && item.id) swipeableRows.current.set(item.id, ref); }}
                     renderRightActions={renderRightActions}
                     containerStyle={{ overflow: 'visible' }}
                 >
-                    <View style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}>
+                    <TouchableOpacity
+                        style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
+                        activeOpacity={0.7}
+                        onPress={() => { /* setSelectedExpense(item); // Needs Modal implementation */ }}
+                    >
                         <View style={styles.cardContent}>
                             <View style={[styles.cardIconBox, { backgroundColor: color + '15' }]}>
                                 <IconSymbol name={icon as any} size={20} color={color} />
@@ -451,7 +449,7 @@ export default function DayDetailsScreen() {
                                 )}
                             </View>
                         </View>
-                    </View>
+                    </TouchableOpacity>
                 </Swipeable>
             </View>
         );
@@ -536,10 +534,25 @@ export default function DayDetailsScreen() {
                     <TouchableOpacity style={styles.roundButton} onPress={() => router.back()}>
                         <IconSymbol name="chevron.left" size={24} color="#fff" />
                     </TouchableOpacity>
+
+                    {/* UPDATED HEADER TITLE BOX WITH STATS */}
                     <View style={styles.headerTitleBox}>
                         <ThemedText style={styles.headerDayText}>Day {currentDay.day}</ThemedText>
                         <ThemedText style={styles.headerTitleText} numberOfLines={1}>{currentDay.title}</ThemedText>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <IconSymbol name="car.fill" size={12} color="#ccc" />
+                                <ThemedText style={{ color: '#ccc', fontSize: 12, fontWeight: '600' }}>{dayStats.miles} mi</ThemedText>
+                            </View>
+                            <View style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#666' }} />
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <IconSymbol name="clock.fill" size={12} color="#ccc" />
+                                <ThemedText style={{ color: '#ccc', fontSize: 12, fontWeight: '600' }}>{dayStats.time}</ThemedText>
+                            </View>
+                        </View>
                     </View>
+
                     <View style={{ width: 40 }} />
                 </View>
 
@@ -571,8 +584,6 @@ export default function DayDetailsScreen() {
                             }
                             ListFooterComponent={
                                 <View style={styles.footerContainer}>
-
-                                    {/* 1. ADD ACTIVITY BUTTON */}
                                     <TouchableOpacity
                                         style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
                                         onPress={() => { setEditingActivity(null); setAddActivityVisible(true); }}
@@ -581,7 +592,6 @@ export default function DayDetailsScreen() {
                                         <ThemedText style={[styles.dashedButtonText, { color: colors.text }]}>Add Activity</ThemedText>
                                     </TouchableOpacity>
 
-                                    {/* 2. EXPENSES SECTION */}
                                     {expenses.length > 0 && (
                                         <View style={styles.expensesSection}>
                                             <View style={styles.sectionHeader}>
@@ -599,7 +609,6 @@ export default function DayDetailsScreen() {
                                         </View>
                                     )}
 
-                                    {/* 3. ADD EXPENSE BUTTON */}
                                     <TouchableOpacity
                                         style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
                                         onPress={() => { setEditingExpense(null); setAddExpenseVisible(true); }}

@@ -37,6 +37,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // --- MODALS ---
 import { AddExpenseModal } from '@/components/ui/add-expense-modal';
+import { BalancesModal } from '@/components/ui/balances-modal';
 import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { ExpenseDetailModal } from '@/components/ui/expense-detail-modal';
 
@@ -45,12 +46,19 @@ const PARALLAX_HEADER_HEIGHT = 400;
 
 // --- HELPERS ---
 
-const toLatLng = (point?: GeoPoint | null) => {
-    if (!point || typeof point.lat !== 'number' || typeof point.lng !== 'number') return null;
-    return {
-        latitude: point.lat,
-        longitude: point.lng,
-    };
+const getNormalizedPoint = (point: any): { lat: number, lng: number } | null => {
+    if (!point) return null;
+    const lat = point.lat ?? point.latitude;
+    const lng = point.lng ?? point.longitude;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    if (lat === 0 && lng === 0) return null;
+    return { lat, lng };
+};
+
+const toLatLng = (point: any) => {
+    const p = getNormalizedPoint(point);
+    if (!p) return null;
+    return { latitude: p.lat, longitude: p.lng };
 };
 
 const formatVibe = (vibe?: string) => {
@@ -68,12 +76,11 @@ const getCategoryDetails = (category: string) => {
     }
 };
 
-// --- NEW COMPONENT: Budget Progress Bar ---
 const BudgetProgressBar = ({ current, total }: { current: number, total: number }) => {
     const percentage = Math.min((current / total) * 100, 100);
-    let color = '#10B981'; // Green
-    if (percentage > 75) color = '#F59E0B'; // Orange
-    if (percentage >= 100) color = '#EF4444'; // Red
+    let color = '#10B981';
+    if (percentage > 75) color = '#F59E0B';
+    if (percentage >= 100) color = '#EF4444';
 
     return (
         <View style={{ height: 8, backgroundColor: '#F3F4F6', borderRadius: 4, width: '100%', marginVertical: 10, overflow: 'hidden' }}>
@@ -92,18 +99,20 @@ export default function TripDetailsScreen() {
     const colors = Colors[theme];
     const insets = useSafeAreaInsets();
 
-    // --- STATE ---
     const [trip, setTrip] = useState<Trip | null>(null);
     const [loading, setLoading] = useState(true);
     const [expenses, setExpenses] = useState<any[]>([]);
 
     const [routeCoordinates, setRouteCoordinates] = useState<GeoPoint[]>([]);
 
+    // STATS
+    const [dayStats, setDayStats] = useState<Record<number, { distance: string, duration: string }>>({});
+
     const [paramsModalVisible, setParamsModalVisible] = useState(false);
     const [addExpenseVisible, setAddExpenseVisible] = useState(false);
-
     const [selectedExpense, setSelectedExpense] = useState<any>(null);
     const [editingExpense, setEditingExpense] = useState<any>(null);
+    const [balancesVisible, setBalancesVisible] = useState(false);
 
     const swipeableRows = useRef(new Map());
     const closeRow = (id: string) => {
@@ -135,61 +144,83 @@ export default function TripDetailsScreen() {
         return () => unsubscribeExpenses();
     }, [tripId]);
 
-    // --- 3. FETCH ROUTE (UPDATED) ---
+    // --- 3. FETCH ROUTE ---
     useEffect(() => {
         const fetchRoute = async () => {
-            if (!trip || !trip.originCoordinates || !trip.itinerary || trip.itinerary.length === 0) return;
+            if (!trip || !trip.itinerary || trip.itinerary.length === 0) return;
 
-            const allWaypoints: GeoPoint[] = [];
+            const dayEndPoints: { lat: number, lng: number }[] = [];
 
-            // Iterate through every day to collect activities and stop locations
+            // COLLECT WAYPOINTS: Origin -> Day 1 End -> Day 2 End -> ...
             trip.itinerary.forEach((day: any) => {
-                // 1. Add all timeline activities for this day
-                if (day.timeline && day.timeline.length > 0) {
-                    // Sort by order to ensure correct path
+                let endPoint: { lat: number, lng: number } | null = null;
+
+                // Priority 1: Explicit Stop Location
+                const stopLoc = getNormalizedPoint(day.stopLocation);
+                if (stopLoc) {
+                    endPoint = stopLoc;
+                }
+                // Priority 2: Fallback to Last Valid Activity
+                else if (day.timeline && day.timeline.length > 0) {
                     const sortedActivities = [...day.timeline].sort((a: any, b: any) => a.order - b.order);
-                    sortedActivities.forEach((act: any) => {
-                        if (act.coordinates && typeof act.coordinates.lat === 'number' && typeof act.coordinates.lng === 'number') {
-                            allWaypoints.push({
-                                lat: act.coordinates.lat,
-                                lng: act.coordinates.lng
-                            });
+                    for (let i = sortedActivities.length - 1; i >= 0; i--) {
+                        const actPoint = getNormalizedPoint(sortedActivities[i].coordinates);
+                        if (actPoint) {
+                            endPoint = actPoint;
+                            break;
                         }
-                    });
+                    }
                 }
 
-                // 2. Add the day's main stop location (e.g., hotel/city center)
-                // This usually acts as the end point for the day
-                if (day.stopLocation && typeof day.stopLocation.lat === 'number' && typeof day.stopLocation.lng === 'number') {
-                    allWaypoints.push({
-                        lat: day.stopLocation.lat,
-                        lng: day.stopLocation.lng
-                    });
+                if (endPoint) {
+                    dayEndPoints.push(endPoint);
                 }
             });
 
-            if (allWaypoints.length === 0) return;
+            if (dayEndPoints.length === 0) return;
 
-            // The last point in our list is the final destination
-            const destination = allWaypoints[allWaypoints.length - 1];
-            // All other points are intermediates
-            const waypoints = allWaypoints.slice(0, -1);
+            const startLocation = getNormalizedPoint(trip.originCoordinates);
+            const endLocation = dayEndPoints[dayEndPoints.length - 1]; // Final destination
+            const intermediateWaypoints = dayEndPoints.slice(0, -1); // Stops in between
 
-            const path = await RouteService.getRoute(
-                trip.originCoordinates!,
-                destination,
-                waypoints
-            );
+            if (startLocation && endLocation) {
+                try {
+                    const result = await RouteService.getRoute(
+                        startLocation,
+                        endLocation,
+                        intermediateWaypoints
+                    );
 
-            if (path) {
-                setRouteCoordinates(path);
+                    if (result && result.points) {
+                        setRouteCoordinates(result.points);
+
+                        // PER DAY STATS (MAPPING LEGS TO DAYS)
+                        const newDayStats: Record<number, { distance: string, duration: string }> = {};
+
+                        // legs[0] = Origin -> Day 1 End
+                        // legs[1] = Day 1 End -> Day 2 End
+                        result.legs.forEach((leg, index) => {
+                            const legMiles = (leg.distanceMeters * 0.000621371).toFixed(0);
+                            const legSec = parseInt((leg.duration || "0s").replace('s', ''), 10);
+                            const lHours = Math.floor(legSec / 3600);
+                            const lMins = Math.floor((legSec % 3600) / 60);
+
+                            newDayStats[index] = {
+                                distance: `${legMiles} mi`,
+                                duration: `${lHours}h ${lMins}m`
+                            };
+                        });
+                        setDayStats(newDayStats);
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch route", e);
+                }
             }
         };
 
         fetchRoute();
     }, [trip]);
 
-    // Calculate Total Spent
     const totalSpent = useMemo(() => {
         return expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
     }, [expenses]);
@@ -211,17 +242,11 @@ export default function TripDetailsScreen() {
         return startStr;
     };
 
-    // --- ACTIONS ---
     const handleShare = async () => {
         try {
             const deepLink = `budgettrip://trip/${tripId}`;
             const message = `Join my road trip to ${trip?.destination}! 🚗💨\n\nTap here to collaborate: ${deepLink}`;
-
-            await Share.share({
-                message: message,
-                title: `Join Trip: ${trip?.destination}`,
-                url: deepLink,
-            });
+            await Share.share({ message, title: `Join Trip: ${trip?.destination}`, url: deepLink });
         } catch (error: any) {
             Alert.alert("Share failed", error.message);
         }
@@ -230,31 +255,26 @@ export default function TripDetailsScreen() {
     const handleSaveExpense = async (data: any) => {
         if (!tripId || !user) return;
         try {
-            // FIX: Destructure 'id' out so we can check if it exists for update logic
-            const { id, ...cleanData } = data;
-
-            const expensePayload = {
+            const { id: _ignoredId, ...cleanData } = data;
+            const newExpense = {
                 ...cleanData,
                 amount: parseFloat(data.amount),
                 createdAt: data.createdAt || new Date(),
                 addedBy: data.addedBy || {
                     uid: user.uid,
-                    name: user.displayName || user.email?.split('@')[0] || 'Traveler',
-                    avatar: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'Traveler'}&background=random`
+                    name: user.displayName || 'User',
+                    avatar: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random`
                 },
                 hasReceipt: !!data.receiptImage
             };
 
-            if (id) {
-                // UPDATE EXISTING
-                await TripService.updateExpense(tripId, id, expensePayload);
+            if (data.id) {
+                await TripService.updateExpense(tripId, data.id, newExpense);
                 Alert.alert("Success", "Expense updated!");
             } else {
-                // CREATE NEW
-                await TripService.addExpense(tripId, expensePayload);
+                await TripService.addExpense(tripId, newExpense);
                 Alert.alert("Success", "Expense added!");
             }
-
         } catch (error) {
             Alert.alert("Error", "Failed to save expense.");
         } finally {
@@ -280,7 +300,6 @@ export default function TripDetailsScreen() {
         setAddExpenseVisible(true);
     };
 
-    // --- MAP LOGIC ---
     const [isMapMaximized, setIsMapMaximized] = useState(false);
     const mapRef = useRef<MapView>(null);
     const scrollY = useRef(new Animated.Value(0)).current;
@@ -320,7 +339,6 @@ export default function TripDetailsScreen() {
 
     const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
-    // --- RENDER EXPENSE ITEM ---
     const renderExpenseItem = (item: any, index: number) => {
         const { icon, color } = getCategoryDetails(item.category);
 
@@ -379,38 +397,30 @@ export default function TripDetailsScreen() {
         );
     };
 
-    if (loading) {
-        return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color={colors.tint} />
-            </View>
-        );
-    }
+    if (loading) return (
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+            <ActivityIndicator size="large" color={colors.tint} />
+        </View>
+    );
 
-    if (!trip) {
-        return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-                <ThemedText>Trip not found.</ThemedText>
-                <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
-                    <ThemedText style={{ color: colors.tint }}>Go Back</ThemedText>
-                </TouchableOpacity>
-            </View>
-        );
-    }
+    if (!trip) return (
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+            <ThemedText>Trip not found.</ThemedText>
+            <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
+                <ThemedText style={{ color: colors.tint }}>Go Back</ThemedText>
+            </TouchableOpacity>
+        </View>
+    );
 
-    const initialLat = trip.originCoordinates?.lat || trip.itinerary?.[0]?.stopLocation?.lat || trip.itinerary?.[0]?.coordinates?.lat || 37.78825;
-    const initialLng = trip.originCoordinates?.lng || trip.itinerary?.[0]?.stopLocation?.lng || trip.itinerary?.[0]?.coordinates?.lng || -122.4324;
-
-    const headerCostDisplay = trip.estimatedCost > 0
-        ? `~${Math.round(trip.estimatedCost)}`
-        : `$${trip.budget}`;
+    const initialLat = getNormalizedPoint(trip.originCoordinates)?.lat || 37.78825;
+    const initialLng = getNormalizedPoint(trip.originCoordinates)?.lng || -122.4324;
+    const headerCostDisplay = trip.estimatedCost > 0 ? `~${Math.round(trip.estimatedCost)}` : `$${trip.budget}`;
 
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <ThemedView style={styles.container}>
                 <Stack.Screen options={{ headerShown: false }} />
 
-                {/* BACKGROUND MAP */}
                 <Animated.View style={[
                     styles.parallaxHeader,
                     {
@@ -423,16 +433,10 @@ export default function TripDetailsScreen() {
                         ref={mapRef}
                         style={StyleSheet.absoluteFill}
                         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-                        initialRegion={{
-                            latitude: initialLat,
-                            longitude: initialLng,
-                            latitudeDelta: 8.0,
-                            longitudeDelta: 8.0,
-                        }}
+                        initialRegion={{ latitude: initialLat, longitude: initialLng, latitudeDelta: 8.0, longitudeDelta: 8.0 }}
                         scrollEnabled={isMapMaximized}
                         zoomEnabled={isMapMaximized}
                     >
-                        {/* 1. ACTUAL DRIVING ROUTE */}
                         {routeCoordinates.length > 0 ? (
                             <Polyline
                                 coordinates={routeCoordinates.map(p => ({ latitude: p.lat, longitude: p.lng }))}
@@ -443,7 +447,7 @@ export default function TripDetailsScreen() {
                             trip.itinerary && trip.itinerary.length > 0 && (
                                 <Polyline
                                     coordinates={[
-                                        ...(trip.originCoordinates ? [toLatLng(trip.originCoordinates)!] : []),
+                                        ...(toLatLng(trip.originCoordinates) ? [toLatLng(trip.originCoordinates)!] : []),
                                         ...trip.itinerary
                                             .map(day => toLatLng(day.stopLocation))
                                             .filter((p): p is { latitude: number, longitude: number } => !!p)
@@ -455,13 +459,8 @@ export default function TripDetailsScreen() {
                             )
                         )}
 
-                        {/* 2. START MARKER */}
-                        {trip.originCoordinates && (
-                            <Marker
-                                coordinate={toLatLng(trip.originCoordinates)!}
-                                title={`Start: ${trip.startCity}`}
-                                zIndex={20}
-                            >
+                        {toLatLng(trip.originCoordinates) && (
+                            <Marker coordinate={toLatLng(trip.originCoordinates)!} title={`Start: ${trip.startCity}`} zIndex={20}>
                                 <View style={[styles.dayMarkerPill, { backgroundColor: '#333', borderColor: '#fff' }]}>
                                     <Text style={styles.dayMarkerText}>START</Text>
                                 </View>
@@ -469,17 +468,11 @@ export default function TripDetailsScreen() {
                             </Marker>
                         )}
 
-                        {/* 3. DAY MARKERS */}
                         {trip.itinerary?.map((day, index) => {
                             const coords = toLatLng(day.stopLocation);
                             if (!coords) return null;
                             return (
-                                <Marker
-                                    key={`day-${day.day}`}
-                                    coordinate={coords}
-                                    title={day.title}
-                                    zIndex={10}
-                                >
+                                <Marker key={`day-${day.day}`} coordinate={coords} title={day.title} zIndex={10}>
                                     <View style={[styles.dayMarkerPill, { backgroundColor: colors.tint }]}>
                                         <Text style={styles.dayMarkerText}>Day {index + 1}</Text>
                                     </View>
@@ -488,10 +481,9 @@ export default function TripDetailsScreen() {
                             );
                         })}
 
-                        {/* 4. ACTIVITY MARKERS */}
                         {trip.itinerary?.flatMap((day) =>
-                            day.timeline?.map((item, index) => {
-                                if (!['food', 'hotel', 'activities'].includes(item.type.toLowerCase())) return null;
+                            day.timeline?.map((item: any, index: number) => {
+                                if (!['food', 'hotel', 'activities'].includes(item.type?.toLowerCase() || '')) return null;
                                 const coords = toLatLng(item.coordinates);
                                 if (!coords) return null;
 
@@ -524,10 +516,7 @@ export default function TripDetailsScreen() {
 
                     {isMapMaximized && (
                         <>
-                            <TouchableOpacity
-                                style={[styles.closeMapButton, { top: insets.top + 10 }]}
-                                onPress={toggleMapMaximize}
-                            >
+                            <TouchableOpacity style={[styles.closeMapButton, { top: insets.top + 10 }]} onPress={toggleMapMaximize}>
                                 <IconSymbol name="xmark" size={20} color="#333" />
                             </TouchableOpacity>
 
@@ -543,14 +532,14 @@ export default function TripDetailsScreen() {
                                     onViewableItemsChanged={onViewableItemsChanged}
                                     viewabilityConfig={viewabilityConfig}
                                     renderItem={({ item, index }) => (
-                                        <TouchableOpacity
-                                            style={styles.mapCard}
-                                            onPress={() => setIsMapMaximized(false)}
-                                            activeOpacity={0.9}
-                                        >
+                                        <TouchableOpacity style={styles.mapCard} onPress={() => setIsMapMaximized(false)} activeOpacity={0.9}>
                                             <View style={{ flex: 1 }}>
                                                 <Text style={styles.mapCardTitle}>Day {index + 1}: {item.title}</Text>
-                                                <Text style={styles.mapCardSubtitle}>{item.distance || "0km"} driving</Text>
+                                                <Text style={styles.mapCardSubtitle}>
+                                                    {dayStats[index]
+                                                        ? `${dayStats[index].distance} • ${dayStats[index].duration}`
+                                                        : "Loading..."}
+                                                </Text>
                                             </View>
                                         </TouchableOpacity>
                                     )}
@@ -575,11 +564,7 @@ export default function TripDetailsScreen() {
                                 <IconSymbol name="map.fill" size={20} color="#fff" />
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={[
-                                    styles.glassPill,
-                                    isOverBudget && { backgroundColor: '#FF3B30' },
-                                    isNearBudget && { backgroundColor: '#FF9500' }
-                                ]}
+                                style={[styles.glassPill, isOverBudget && { backgroundColor: '#FF3B30' }, isNearBudget && { backgroundColor: '#FF9500' }]}
                                 onPress={() => setParamsModalVisible(true)}
                                 activeOpacity={0.7}
                             >
@@ -594,17 +579,13 @@ export default function TripDetailsScreen() {
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={{ paddingBottom: 100 }}
                     scrollEventThrottle={16}
-                    onScroll={Animated.event(
-                        [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-                        { useNativeDriver: true }
-                    )}
+                    onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
                     style={[styles.scrollView, { opacity: isMapMaximized ? 0 : 1 }]}
                     pointerEvents={isMapMaximized ? "none" : "box-none"}
                 >
                     <View style={{ height: PARALLAX_HEADER_HEIGHT - 60 }} pointerEvents="none" />
 
                     <View style={[styles.bodyContainer, { backgroundColor: colors.background }]} pointerEvents="auto">
-
                         <View style={styles.titleSection}>
                             <ThemedText style={styles.tripLabel}>Trip to</ThemedText>
                             <ThemedText style={styles.destinationTitle}>{trip.destination}</ThemedText>
@@ -613,9 +594,7 @@ export default function TripDetailsScreen() {
                                 <ThemedText style={styles.subtitleText}>From {trip.startCity}</ThemedText>
                                 <View style={styles.dotSeparator} />
                                 <IconSymbol name="calendar" size={14} color="#666" />
-                                <ThemedText style={styles.subtitleText}>
-                                    {getDateRange()}
-                                </ThemedText>
+                                <ThemedText style={styles.subtitleText}>{getDateRange()}</ThemedText>
                             </View>
                         </View>
 
@@ -645,15 +624,9 @@ export default function TripDetailsScreen() {
                         {/* Expenses Section */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeaderRow}>
-                                <ThemedText type="subtitle" style={[styles.sectionTitle, { marginBottom: 0 }]}>
-                                    Expenses
-                                </ThemedText>
-
-                                {/* TOTAL EXPENSE DISPLAY */}
+                                <ThemedText type="subtitle" style={[styles.sectionTitle, { marginBottom: 0 }]}>Expenses</ThemedText>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
-                                    <ThemedText style={{ color: '#FF3B30', fontFamily: Fonts.bold, fontSize: 16 }}>
-                                        -${totalSpent.toFixed(2)}
-                                    </ThemedText>
+                                    <ThemedText style={{ color: '#FF3B30', fontFamily: Fonts.bold, fontSize: 16 }}>-${totalSpent.toFixed(2)}</ThemedText>
                                 </View>
                             </View>
 
@@ -661,32 +634,21 @@ export default function TripDetailsScreen() {
                                 <View style={[styles.warningBanner, { backgroundColor: isOverBudget ? '#FFEBEE' : '#FFF3E0' }]}>
                                     <IconSymbol name="exclamationmark.triangle.fill" size={18} color={isOverBudget ? '#C62828' : '#EF6C00'} />
                                     <ThemedText style={[styles.warningText, { color: isOverBudget ? '#C62828' : '#EF6C00' }]}>
-                                        {isOverBudget
-                                            ? `Over Budget by $${(totalSpent - trip.budget).toFixed(0)}!`
-                                            : `Approaching limit: ${budgetPercent.toFixed(0)}% spent`
-                                        }
+                                        {isOverBudget ? `Over Budget by $${(totalSpent - trip.budget).toFixed(0)}!` : `Approaching limit: ${budgetPercent.toFixed(0)}% spent`}
                                     </ThemedText>
                                 </View>
                             )}
 
-                            {/* DISPLAY ALL EXPENSES */}
                             {expenses.length > 0 && (
                                 <View style={{ gap: 0 }}>
                                     {expenses.map((item, index) => renderExpenseItem(item, index))}
                                 </View>
                             )}
 
-                            <TouchableOpacity
-                                onPress={() => setAddExpenseVisible(true)}
-                                style={[
-                                    styles.addItemButton,
-                                    { borderColor: colors.icon + '40', marginTop: 16 }
-                                ]}
-                            >
+                            <TouchableOpacity onPress={() => setAddExpenseVisible(true)} style={[styles.addItemButton, { borderColor: colors.icon + '40', marginTop: 16 }]}>
                                 <IconSymbol name="plus" size={20} color={colors.text} />
                                 <ThemedText style={styles.addItemText}>Add Expense</ThemedText>
                             </TouchableOpacity>
-
                         </View>
 
                         {/* Itinerary */}
@@ -703,24 +665,23 @@ export default function TripDetailsScreen() {
                                             <View style={styles.stepLeft}>
                                                 <ThemedText style={styles.stepDayLabel}>DAY</ThemedText>
                                                 <ThemedText style={[styles.stepDayValue, { color: colors.tint }]}>{paddedDay}</ThemedText>
-                                                {!isLast && (
-                                                    <View style={[styles.stepLine, { backgroundColor: colors.icon + '20' }]} />
-                                                )}
+                                                {!isLast && <View style={[styles.stepLine, { backgroundColor: colors.icon + '20' }]} />}
                                             </View>
-
                                             <TouchableOpacity
                                                 style={[styles.stepCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}
-                                                onPress={() => router.push({
-                                                    pathname: '/trip-details/day-details',
-                                                    params: { tripId: trip.id, dayIndex: index }
-                                                })}
+                                                onPress={() => router.push({ pathname: '/trip-details/day-details', params: { tripId: trip.id, dayIndex: index } })}
                                                 activeOpacity={0.7}
                                             >
                                                 <View style={{ flex: 1 }}>
                                                     <ThemedText type="defaultSemiBold" style={styles.stepCardTitle}>{day.title}</ThemedText>
                                                     <View style={styles.stepCardMeta}>
                                                         <IconSymbol name="car" size={14} color="#808080" />
-                                                        <ThemedText style={styles.grayText}>{day.drive_time || "0h"} drive</ThemedText>
+                                                        {/* DISPLAY SPECIFIC DAY STATS HERE */}
+                                                        <ThemedText style={styles.grayText}>
+                                                            {dayStats[index]
+                                                                ? `${dayStats[index].distance} • ${dayStats[index].duration} drive`
+                                                                : "Computing drive..."}
+                                                        </ThemedText>
                                                     </View>
                                                 </View>
                                                 <IconSymbol name="chevron.right" size={20} color={colors.icon} />
@@ -733,7 +694,8 @@ export default function TripDetailsScreen() {
                     </View>
                 </Animated.ScrollView>
 
-                {/* --- MODALS --- */}
+                {/* MODALS */}
+                <BalancesModal visible={balancesVisible} onClose={() => setBalancesVisible(false)} debts={[]} currentUser="u1" onSettle={() => { }} />
                 <AddExpenseModal
                     visible={addExpenseVisible}
                     onClose={() => { setAddExpenseVisible(false); setEditingExpense(null); }}
@@ -742,22 +704,14 @@ export default function TripDetailsScreen() {
                     tripStartDate={trip.startDate}
                     initialData={editingExpense}
                 />
-
-                <ExpenseDetailModal
-                    visible={!!selectedExpense}
-                    onClose={() => setSelectedExpense(null)}
-                    expense={selectedExpense}
-                />
-
+                <ExpenseDetailModal visible={!!selectedExpense} onClose={() => setSelectedExpense(null)} expense={selectedExpense} />
                 <BottomSheetModal isVisible={paramsModalVisible} onClose={() => setParamsModalVisible(false)} title="Trip Details" height="65%">
                     <ScrollView>
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>Dates</ThemedText>
                             <View style={{ alignItems: 'flex-end' }}>
                                 <ThemedText style={styles.paramValue}>{getDateRange()}</ThemedText>
-                                <ThemedText style={{ fontSize: 12, color: '#808080' }}>
-                                    {trip.duration} Days
-                                </ThemedText>
+                                <ThemedText style={{ fontSize: 12, color: '#808080' }}>{trip.duration} Days</ThemedText>
                             </View>
                         </View>
                         <View style={styles.paramSeparator} />
@@ -768,21 +722,16 @@ export default function TripDetailsScreen() {
                                 <ThemedText style={styles.paramValue}>{formatVibe(trip.vibe)}</ThemedText>
                             </View>
                         </View>
-
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>Travelers</ThemedText>
-                            <ThemedText style={styles.paramValue}>
-                                {trip.travelers?.adults || 1} Adults, {trip.travelers?.children || 0} Children
-                            </ThemedText>
+                            <ThemedText style={styles.paramValue}>{trip.travelers?.adults || 1} Adults, {trip.travelers?.children || 0} Children</ThemedText>
                         </View>
                         <View style={styles.paramSeparator} />
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>Vehicle</ThemedText>
                             <View style={{ alignItems: 'flex-end' }}>
                                 <ThemedText style={styles.paramValue}>{trip.vehicle?.name || "N/A"}</ThemedText>
-                                <ThemedText style={{ fontSize: 12, color: '#808080' }}>
-                                    {trip.vehicle?.mpg || 0} mpg • ${trip.vehicle?.gasPrice || 0}/gal
-                                </ThemedText>
+                                <ThemedText style={{ fontSize: 12, color: '#808080' }}>{trip.vehicle?.mpg || 0} mpg • ${trip.vehicle?.gasPrice || 0}/gal</ThemedText>
                             </View>
                         </View>
                         <View style={styles.paramSeparator} />
@@ -791,7 +740,6 @@ export default function TripDetailsScreen() {
                             <ThemedText style={styles.paramValue}>${trip.budget}</ThemedText>
                         </View>
                         <View style={styles.paramSeparator} />
-
                         {trip.estimatedCost > 0 && (
                             <>
                                 <View style={styles.paramRow}>
@@ -801,16 +749,11 @@ export default function TripDetailsScreen() {
                                 <View style={styles.paramSeparator} />
                             </>
                         )}
-
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>Total Spent</ThemedText>
-                            <ThemedText style={[styles.paramValue, isOverBudget && { color: '#FF3B30' }]}>
-                                ${totalSpent.toFixed(2)}
-                            </ThemedText>
+                            <ThemedText style={[styles.paramValue, isOverBudget && { color: '#FF3B30' }]}>${totalSpent.toFixed(2)}</ThemedText>
                         </View>
-
                         <BudgetProgressBar current={totalSpent} total={trip.budget} />
-
                     </ScrollView>
                 </BottomSheetModal>
             </ThemedView>
@@ -875,7 +818,6 @@ const styles = StyleSheet.create({
     stepCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     grayText: { color: '#808080', fontSize: 13 },
     miniActivityMarker: { width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 3 },
-
     // --- CARD STYLES ---
     card: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
     cardContent: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },

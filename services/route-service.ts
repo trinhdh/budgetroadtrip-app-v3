@@ -1,16 +1,27 @@
-// trinhdh/budgetroadtrip-app-v3/budgetroadtrip-app-v3-develop/services/route-service.ts
+// services/route-service.ts
 
 import { GeoPoint } from '@/constants/types';
-import { decode } from "@googlemaps/polyline-codec"; // <--- Official Google Library
+import { decode } from "@googlemaps/polyline-codec";
 
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY || '';
 const ROUTES_API_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+
+// Define the return type structure
+export interface RouteResult {
+    points: GeoPoint[];
+    legs: {
+        distanceMeters: number;
+        duration: string; // Format like "3600s"
+    }[];
+    totalDistanceMeters: number;
+    totalDurationSeconds: number;
+}
 
 export const RouteService = {
     /**
      * Fetches a route using the new Google Routes API (v2)
      */
-    async getRoute(origin: GeoPoint, destination: GeoPoint, waypoints: GeoPoint[] = []) {
+    async getRoute(origin: GeoPoint, destination: GeoPoint, waypoints: GeoPoint[] = []): Promise<RouteResult | null> {
         if (!GOOGLE_API_KEY) {
             console.error("Missing Google API Key");
             return null;
@@ -36,7 +47,8 @@ export const RouteService = {
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Goog-Api-Key': GOOGLE_API_KEY,
-                    'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
+                    // UPDATED: Request legs, total distance, and duration
+                    'X-Goog-FieldMask': 'routes.polyline.encodedPolyline,routes.distanceMeters,routes.duration,routes.legs',
                 },
                 body: JSON.stringify(body)
             });
@@ -44,17 +56,26 @@ export const RouteService = {
             const data = await response.json();
 
             if (data.routes && data.routes.length > 0) {
-                const encoded = data.routes[0].polyline.encodedPolyline;
+                const route = data.routes[0];
+                const encoded = route.polyline.encodedPolyline;
 
-                // --- GOOGLE LIBRARY USAGE ---
-                // 1. Decode returns array of arrays: [[lat, lng], [lat, lng]]
-                const points = decode(encoded, 5);
-
-                // 2. Map to your App's GeoPoint structure { lat, lng }
-                return points.map(([lat, lng]) => ({
+                // 1. Decode polyline
+                const points = decode(encoded, 5).map(([lat, lng]) => ({
                     lat,
                     lng
                 }));
+
+                // 2. Parse Totals
+                const totalDistance = route.distanceMeters || 0;
+                // Duration comes as "3600s", remove 's' and parse
+                const totalDuration = parseInt((route.duration || "0s").replace('s', ''), 10);
+
+                return {
+                    points,
+                    legs: route.legs || [], // Array of legs corresponding to waypoints
+                    totalDistanceMeters: totalDistance,
+                    totalDurationSeconds: totalDuration
+                };
             }
 
             console.warn("No routes found", data);
