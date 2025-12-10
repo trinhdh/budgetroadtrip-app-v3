@@ -2,7 +2,7 @@ import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ReceiptCameraModal } from '@/components/ui/receipt-camera-modal';
 import { Colors, Fonts } from '@/constants/theme';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Alert,
     Keyboard,
@@ -22,7 +22,9 @@ type Props = {
     visible: boolean;
     onClose: () => void;
     itineraryDays: any[];
-    tripStartDate?: Date | string | null; // <--- NEW PROP
+    tripStartDate?: Date | string | null;
+    currentDayIndex?: number;
+    initialData?: any; // <--- ADDED: To support editing
     onSave: (expenseData: any) => void;
 };
 
@@ -34,7 +36,15 @@ const CATEGORIES = [
     { id: 'Other', icon: 'circle.grid.2x2.fill', color: '#808080' },
 ];
 
-export function AddExpenseModal({ visible, onClose, itineraryDays, tripStartDate, onSave }: Props) {
+export function AddExpenseModal({
+    visible,
+    onClose,
+    itineraryDays,
+    tripStartDate,
+    currentDayIndex,
+    initialData, // <--- Destructure new prop
+    onSave
+}: Props) {
     // Form State
     const [amount, setAmount] = useState('');
     const [title, setTitle] = useState('');
@@ -44,6 +54,35 @@ export function AddExpenseModal({ visible, onClose, itineraryDays, tripStartDate
 
     // Camera State
     const [cameraVisible, setCameraVisible] = useState(false);
+
+    // Effect: Handle Reset (Add Mode) vs Pre-fill (Edit Mode)
+    useEffect(() => {
+        if (visible) {
+            if (initialData) {
+                // --- EDIT MODE ---
+                setAmount(initialData.amount ? String(initialData.amount) : '');
+                setTitle(initialData.title || '');
+                // Handle case capitalization safety
+                const cat = initialData.category
+                    ? initialData.category.charAt(0).toUpperCase() + initialData.category.slice(1).toLowerCase()
+                    : 'Food';
+                setSelectedCategory(CATEGORIES.some(c => c.id === cat) ? cat : 'Food');
+
+                setReceiptUri(initialData.receiptImage || initialData.receiptUri || null);
+
+                // If editing, use the day from the item, otherwise fallback to current context
+                setSelectedDay(initialData.day || (currentDayIndex !== undefined ? currentDayIndex + 1 : 1));
+            } else {
+                // --- ADD MODE (Reset) ---
+                setAmount('');
+                setTitle('');
+                setSelectedCategory('Food');
+                setReceiptUri(null);
+                // Default to Day 1, or convert 0-based index to 1-based day
+                setSelectedDay(currentDayIndex !== undefined ? currentDayIndex + 1 : 1);
+            }
+        }
+    }, [visible, currentDayIndex, initialData]);
 
     // Helper to format date: "Dec 10"
     const getFormattedDate = (dayNum: number) => {
@@ -75,6 +114,9 @@ export function AddExpenseModal({ visible, onClose, itineraryDays, tripStartDate
         }
 
         const expenseData = {
+            // Include ID if editing so parent knows which doc to update
+            ...(initialData?.id && { id: initialData.id }),
+
             amount: numericAmount,
             title: title || 'Expense',
             category: selectedCategory,
@@ -85,24 +127,19 @@ export function AddExpenseModal({ visible, onClose, itineraryDays, tripStartDate
         };
 
         onSave(expenseData);
-
-        // Reset form
-        setAmount('');
-        setTitle('');
-        setReceiptUri(null);
-        setSelectedDay(1);
-        setSelectedCategory('Food');
         onClose();
     };
 
-    const isValid = parseFloat(amount) > 0;
+    const isValid = parseFloat(amount) > 0 && title.trim().length > 0;
+    const isEditing = !!initialData;
 
     return (
         <>
             <BottomSheetModal
                 isVisible={visible}
                 onClose={onClose}
-                title="Add New Expense"
+                // Dynamic Title
+                title={isEditing ? "Edit Expense" : "Add New Expense"}
                 height="90%"
             >
                 <KeyboardAvoidingView
@@ -126,7 +163,7 @@ export function AddExpenseModal({ visible, onClose, itineraryDays, tripStartDate
                                         keyboardType="decimal-pad"
                                         value={amount}
                                         onChangeText={setAmount}
-                                        autoFocus={false}
+                                        autoFocus={false} // Don't autofocus on edit to prevent jarring jumps
                                     />
                                 </View>
 
@@ -188,51 +225,62 @@ export function AddExpenseModal({ visible, onClose, itineraryDays, tripStartDate
                                         />
                                     </View>
 
-                                    {/* Day Selection */}
-                                    <Text style={[styles.sectionLabel, { marginTop: 24, marginBottom: 12 }]}>Assign to Day</Text>
-                                    <ScrollView
-                                        horizontal
-                                        showsHorizontalScrollIndicator={false}
-                                        contentContainerStyle={styles.dayScroll}
-                                    >
-                                        {itineraryDays.map((day) => {
-                                            const isSelected = selectedDay === day.day;
-                                            const dateStr = getFormattedDate(day.day);
+                                    {/* Day Selection - HIDDEN if currentDayIndex is provided AND we are NOT editing (or editing same day) */}
+                                    {/* Logic: If adding new from DayView, hide day picker. If editing, maybe show it? For now following same logic: hide if context provided */}
+                                    {currentDayIndex === undefined && (
+                                        <>
+                                            <Text style={[styles.sectionLabel, { marginTop: 24, marginBottom: 12 }]}>
+                                                Assign to Day
+                                            </Text>
+                                            <ScrollView
+                                                horizontal
+                                                showsHorizontalScrollIndicator={false}
+                                                contentContainerStyle={styles.dayScroll}
+                                            >
+                                                {itineraryDays.map((day) => {
+                                                    const isSelected = selectedDay === day.day;
+                                                    const dateStr = getFormattedDate(day.day);
 
-                                            return (
-                                                <TouchableOpacity
-                                                    key={day.day}
-                                                    style={[
-                                                        styles.dayPill,
-                                                        isSelected && {
-                                                            backgroundColor: Colors.light.tint,
-                                                            borderColor: Colors.light.tint
-                                                        }
-                                                    ]}
-                                                    onPress={() => setSelectedDay(day.day)}
-                                                >
-                                                    <Text style={[
-                                                        styles.dayPillText,
-                                                        isSelected && { color: '#fff', fontWeight: 'bold' }
-                                                    ]}>
-                                                        Day {day.day}
-                                                    </Text>
-                                                    {dateStr && (
-                                                        <Text style={[
-                                                            styles.dayPillDate,
-                                                            isSelected ? { color: 'rgba(255,255,255,0.8)' } : { color: '#999' }
-                                                        ]}>
-                                                            {dateStr}
-                                                        </Text>
-                                                    )}
-                                                </TouchableOpacity>
-                                            );
-                                        })}
-                                    </ScrollView>
+                                                    return (
+                                                        <TouchableOpacity
+                                                            key={day.day}
+                                                            style={[
+                                                                styles.dayPill,
+                                                                isSelected && {
+                                                                    backgroundColor: Colors.light.tint,
+                                                                    borderColor: Colors.light.tint
+                                                                }
+                                                            ]}
+                                                            onPress={() => setSelectedDay(day.day)}
+                                                        >
+                                                            <Text style={[
+                                                                styles.dayPillText,
+                                                                isSelected && { color: '#fff', fontWeight: 'bold' }
+                                                            ]}>
+                                                                Day {day.day}
+                                                            </Text>
+                                                            {dateStr && (
+                                                                <Text style={[
+                                                                    styles.dayPillDate,
+                                                                    isSelected ? { color: 'rgba(255,255,255,0.8)' } : { color: '#999' }
+                                                                ]}>
+                                                                    {dateStr}
+                                                                </Text>
+                                                            )}
+                                                        </TouchableOpacity>
+                                                    );
+                                                })}
+                                            </ScrollView>
+                                        </>
+                                    )}
 
                                     {/* Receipt Button */}
                                     <TouchableOpacity
-                                        style={[styles.receiptButton, receiptUri && styles.receiptButtonActive]}
+                                        style={[
+                                            styles.receiptButton,
+                                            receiptUri && styles.receiptButtonActive,
+                                            currentDayIndex !== undefined && { marginTop: 24 }
+                                        ]}
                                         onPress={() => setCameraVisible(true)}
                                         activeOpacity={0.7}
                                     >
@@ -266,7 +314,9 @@ export function AddExpenseModal({ visible, onClose, itineraryDays, tripStartDate
                                     onPress={handleSave}
                                     disabled={!isValid}
                                 >
-                                    <Text style={styles.saveButtonText}>Save Expense</Text>
+                                    <Text style={styles.saveButtonText}>
+                                        {isEditing ? "Update Expense" : "Save Expense"}
+                                    </Text>
                                 </TouchableOpacity>
                             </View>
                         </View>

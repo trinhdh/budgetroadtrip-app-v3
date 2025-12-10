@@ -9,7 +9,6 @@ import {
     Platform,
     ScrollView,
     StyleSheet,
-    Switch,
     TextInput,
     TouchableOpacity,
     TouchableWithoutFeedback,
@@ -21,6 +20,7 @@ import { AddressSearchModal } from './address-search-modal';
 type Props = {
     visible: boolean;
     onClose: () => void;
+    initialData?: any; // <--- ADDED: To support editing
     onSave: (item: any, createExpense: boolean) => void;
 };
 
@@ -32,26 +32,45 @@ const ACTIVITY_TYPES = [
     { id: 'other', label: 'Other', icon: 'circle.grid.2x2.fill', color: '#808080' },
 ];
 
-export function AddActivityModal({ visible, onClose, onSave }: Props) {
+export function AddActivityModal({ visible, onClose, initialData, onSave }: Props) {
     const [step, setStep] = useState<'search' | 'details'>('search');
     const [selectedPlace, setSelectedPlace] = useState<any>(null);
     const [selectedType, setSelectedType] = useState('activities');
+    const [name, setName] = useState('');
     const [price, setPrice] = useState('');
-    const [addToBudget, setAddToBudget] = useState(true);
 
-    // Reset state when modal opens/closes
+    // Handle Reset (Add Mode) vs Pre-fill (Edit Mode)
     useEffect(() => {
-        if (!visible) {
-            // Small delay to reset after animation out
-            const timer = setTimeout(() => {
-                setStep('search');
-                setSelectedPlace(null);
-                setPrice('');
-                setAddToBudget(true);
-            }, 300);
-            return () => clearTimeout(timer);
+        if (visible) {
+            if (initialData) {
+                // --- EDIT MODE ---
+                setName(initialData.title || '');
+                setPrice(initialData.price ? String(initialData.price) : '');
+                setSelectedType(initialData.type || 'activities');
+
+                // reconstruct place object so we can go back/forth or save
+                setSelectedPlace({
+                    name: initialData.title,
+                    address: initialData.address || initialData.desc,
+                    coordinates: initialData.coordinates,
+                });
+
+                // Skip search, go straight to details
+                setStep('details');
+            } else {
+                // --- ADD MODE (Reset) ---
+                // Small timeout to prevent UI flicker while modal opens
+                const timer = setTimeout(() => {
+                    setStep('search');
+                    setSelectedPlace(null);
+                    setPrice('');
+                    setName('');
+                    setSelectedType('activities');
+                }, 100);
+                return () => clearTimeout(timer);
+            }
         }
-    }, [visible]);
+    }, [visible, initialData]);
 
     const handleLocationSelect = (data: any, details: any) => {
         const coords = details?.geometry?.location
@@ -61,13 +80,15 @@ export function AddActivityModal({ visible, onClose, onSave }: Props) {
             }
             : { latitude: 0, longitude: 0 };
 
+        const placeName = data.structured_formatting?.main_text || details?.name || data.description?.split(',')[0] || 'New Activity';
+
         setSelectedPlace({
-            name: data.description || details?.name,
+            name: placeName,
             address: data.description,
             coordinates: coords,
         });
 
-        // Switch content immediately within the same modal
+        setName(placeName);
         setStep('details');
     };
 
@@ -75,24 +96,30 @@ export function AddActivityModal({ visible, onClose, onSave }: Props) {
         if (!selectedPlace) return;
 
         const newItem = {
-            title: selectedPlace.name.split(',')[0],
+            // Keep ID if editing so parent knows what to update
+            ...(initialData?.id && { id: initialData.id }),
+
+            title: name || selectedPlace.name,
             desc: selectedPlace.address,
             address: selectedPlace.address,
             type: selectedType,
             price: Number(price) || 0,
             coordinates: selectedPlace.coordinates,
-            order: Date.now(),
+            // Keep original order if editing, else new timestamp
+            order: initialData?.order || Date.now(),
         };
 
-        onSave(newItem, addToBudget && newItem.price > 0);
+        onSave(newItem, false);
         onClose();
     };
+
+    const isEditing = !!initialData;
 
     return (
         <BottomSheetModal
             isVisible={visible}
             onClose={onClose}
-            title={step === 'search' ? "Search Place" : "Trip Activity"}
+            title={step === 'search' ? "Search Place" : (isEditing ? "Edit Activity" : "Trip Activity")}
             height="90%"
         >
             <KeyboardAvoidingView
@@ -100,20 +127,17 @@ export function AddActivityModal({ visible, onClose, onSave }: Props) {
                 style={{ flex: 1 }}
             >
                 {step === 'search' ? (
-                    // --- STEP 1: SEARCH ---
                     <AddressSearchModal
                         onSelect={handleLocationSelect}
                         placeholder="Where are you going?"
                     />
                 ) : (
-                    // --- STEP 2: DETAILS ---
                     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                         <View style={{ flex: 1 }}>
                             <ScrollView
                                 contentContainerStyle={styles.scrollContent}
                                 showsVerticalScrollIndicator={false}
                             >
-                                {/* Back Button inside Details */}
                                 <TouchableOpacity onPress={() => setStep('search')} style={styles.backLink}>
                                     <IconSymbol name="chevron.left" size={20} color={Colors.light.tint} />
                                     <ThemedText style={{ color: Colors.light.tint }}>Change Location</ThemedText>
@@ -125,17 +149,43 @@ export function AddActivityModal({ visible, onClose, onSave }: Props) {
                                         <IconSymbol name="mappin.and.ellipse" size={24} color={Colors.light.tint} />
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ fontSize: 16 }}>
-                                            {selectedPlace?.name.split(',')[0]}
+                                        <ThemedText style={{ fontSize: 16, fontWeight: '600' }}>
+                                            {selectedPlace?.name || name}
                                         </ThemedText>
-                                        <ThemedText style={{ fontSize: 12, color: '#808080', marginTop: 2 }} numberOfLines={1}>
+                                        <ThemedText style={{ fontSize: 12, color: '#808080', marginTop: 2 }}>
                                             {selectedPlace?.address}
                                         </ThemedText>
                                     </View>
                                 </View>
 
+                                {/* Activity Name Input */}
+                                <ThemedText style={styles.label}>Activity Name</ThemedText>
+                                <View style={[styles.inputContainer, { marginBottom: 24 }]}>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="e.g. Lunch at Joe's"
+                                        placeholderTextColor="#E0E0E0"
+                                        value={name}
+                                        onChangeText={setName}
+                                    />
+                                </View>
+
+                                {/* Cost */}
+                                <ThemedText style={styles.label}>Display Cost (Optional)</ThemedText>
+                                <View style={styles.inputContainer}>
+                                    <ThemedText style={{ fontSize: 20, fontWeight: 'bold', color: '#BDBDBD' }}>$</ThemedText>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="0.00"
+                                        placeholderTextColor="#E0E0E0"
+                                        keyboardType="decimal-pad"
+                                        value={price}
+                                        onChangeText={setPrice}
+                                    />
+                                </View>
+
                                 {/* Category */}
-                                <ThemedText style={styles.label}>Category</ThemedText>
+                                <ThemedText style={[styles.label, { marginTop: 24 }]}>Category</ThemedText>
                                 <View style={styles.typeRow}>
                                     {ACTIVITY_TYPES.map((type) => (
                                         <TouchableOpacity
@@ -163,38 +213,13 @@ export function AddActivityModal({ visible, onClose, onSave }: Props) {
                                     ))}
                                 </View>
 
-                                {/* Cost */}
-                                <ThemedText style={styles.label}>Cost (Optional)</ThemedText>
-                                <View style={styles.inputContainer}>
-                                    <ThemedText style={{ fontSize: 20, fontWeight: 'bold', color: '#BDBDBD' }}>$</ThemedText>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="0.00"
-                                        placeholderTextColor="#E0E0E0"
-                                        keyboardType="decimal-pad"
-                                        value={price}
-                                        onChangeText={setPrice}
-                                    />
-                                </View>
-
-                                {/* Budget Toggle */}
-                                <View style={styles.toggleRow}>
-                                    <View style={{ flex: 1 }}>
-                                        <ThemedText style={styles.toggleLabel}>Add to Expenses</ThemedText>
-                                        <ThemedText style={styles.toggleSubLabel}>Automatically add this cost to your budget</ThemedText>
-                                    </View>
-                                    <Switch
-                                        value={addToBudget}
-                                        onValueChange={setAddToBudget}
-                                        trackColor={{ false: '#767577', true: Colors.light.tint }}
-                                        thumbColor={'#f4f3f4'}
-                                    />
-                                </View>
                             </ScrollView>
 
                             <View style={styles.footer}>
                                 <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                                    <ThemedText style={styles.saveButtonText}>Add to Itinerary</ThemedText>
+                                    <ThemedText style={styles.saveButtonText}>
+                                        {isEditing ? "Update Activity" : "Add to Itinerary"}
+                                    </ThemedText>
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -215,13 +240,12 @@ const styles = StyleSheet.create({
     },
     previewCard: {
         flexDirection: 'row', alignItems: 'center', gap: 16,
-        backgroundColor: '#fff', padding: 16, borderRadius: 16, marginBottom: 24,
+        backgroundColor: '#FAFAFA', padding: 12, borderRadius: 12, marginBottom: 24,
         borderWidth: 1, borderColor: '#F0F0F0',
-        shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 2
     },
-    iconCircle: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+    iconCircle: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
 
-    label: { fontSize: 13, fontWeight: '700', color: '#999', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+    label: { fontSize: 13, fontWeight: '700', color: '#999', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
 
     typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
     typeButton: {
@@ -236,13 +260,9 @@ const styles = StyleSheet.create({
     inputContainer: {
         flexDirection: 'row', alignItems: 'center',
         borderWidth: 1, borderColor: '#E0E0E0', borderRadius: 16,
-        paddingHorizontal: 16, height: 56, marginBottom: 24, backgroundColor: '#FAFAFA'
+        paddingHorizontal: 16, height: 56, backgroundColor: '#fff'
     },
-    input: { flex: 1, fontSize: 20, marginLeft: 8, fontWeight: 'bold', color: '#333' },
-
-    toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    toggleLabel: { fontSize: 16, fontWeight: '600', color: '#333' },
-    toggleSubLabel: { fontSize: 12, color: '#888', marginTop: 2 },
+    input: { flex: 1, fontSize: 18, marginLeft: 8, fontWeight: '500', color: '#333' },
 
     footer: {
         position: 'absolute', bottom: 20, left: 20, right: 20,

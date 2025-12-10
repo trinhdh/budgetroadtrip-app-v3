@@ -1,61 +1,71 @@
+import { db } from '@/firebaseConfig';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     Dimensions,
+    Image,
     Platform,
     StyleSheet,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, {
-    interpolate,
+    Easing,
     useAnimatedStyle,
     useSharedValue,
-    withSpring,
-    withTiming,
+    withTiming
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AddActivityModal } from '@/components/ui/add-activity-modal';
-// Assuming AddExpenseModal is imported
 import { AddExpenseModal } from '@/components/ui/add-expense-modal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
-import { GeoPoint, TimelineItem, Trip } from '@/constants/types';
+import { GeoPoint, Trip } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { RouteService } from '@/services/route-service';
 import { TripService } from '@/services/trip-service';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// --- TYPESCRIPT FIX: Extend the type locally ---
-interface ExtendedTimelineItem extends TimelineItem {
-    id?: string;
-}
-
-// --- SHEET CONFIGURATION ---
 const MAX_TRANSLATE_Y = -SCREEN_HEIGHT + 100;
 
-const getCategoryIcon = (type: string) => {
+// --- HELPERS ---
+const toLatLng = (point?: any) => {
+    if (!point) return null;
+    const lat = point.lat ?? point.latitude;
+    const lng = point.lng ?? point.longitude;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    return { latitude: lat, longitude: lng };
+};
+
+const toGeoPoint = (point?: any): GeoPoint | null => {
+    if (!point) return null;
+    const lat = point.lat ?? point.latitude;
+    const lng = point.lng ?? point.longitude;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    return { lat, lng };
+};
+
+const getCategoryDetails = (type: string) => {
     switch (type.toLowerCase()) {
-        case 'food': return 'fork.knife';
-        case 'hotel': return 'bed.double.fill';
-        case 'activities': return 'camera.fill';
-        case 'fuel': return 'fuelpump.fill';
-        // ICON FIX: Use 'banknote' if available, or map 'attach-money' in your IconSymbol file
-        case 'expense': return 'banknote';
-        case 'other': return 'circle.grid.2x2.fill';
-        default: return 'mappin.circle.fill';
+        case 'food': return { icon: 'fork.knife', color: '#E71D36' };
+        case 'hotel': return { icon: 'bed.double.fill', color: '#2EC4B6' };
+        case 'activities': return { icon: 'camera.fill', color: '#7209B7' };
+        case 'fuel': return { icon: 'fuelpump.fill', color: '#FF9F1C' };
+        case 'expense': return { icon: 'banknote', color: '#808080' };
+        case 'other': return { icon: 'circle.grid.2x2.fill', color: '#808080' };
+        default: return { icon: 'mappin.circle.fill', color: '#808080' };
     }
 };
 
@@ -71,21 +81,24 @@ export default function DayDetailsScreen() {
     const insets = useSafeAreaInsets();
     const mapRef = useRef<MapView>(null);
 
+    // NEW: Store refs to swipeable rows to close them programmatically
+    const swipeableRows = useRef(new Map());
+
     const [trip, setTrip] = useState<Trip | null>(null);
     const [loading, setLoading] = useState(true);
+    const [expenses, setExpenses] = useState<any[]>([]);
 
-    // --- MODAL STATES ---
     const [addActivityVisible, setAddActivityVisible] = useState(false);
-    const [addExpenseVisible, setAddExpenseVisible] = useState(false);
+    const [editingActivity, setEditingActivity] = useState<any>(null);
 
-    // --- ANIMATION VALUES ---
+    const [addExpenseVisible, setAddExpenseVisible] = useState(false);
+    const [editingExpense, setEditingExpense] = useState<any>(null);
+
     const [dayRouteCoordinates, setDayRouteCoordinates] = useState<GeoPoint[]>([]);
+
     const translateY = useSharedValue(-SCREEN_HEIGHT * 0.55);
     const context = useSharedValue({ y: 0 });
 
-    const fabOpen = useSharedValue(0);
-
-    // --- GESTURE FOR SHEET ---
     const gesture = Gesture.Pan()
         .onStart(() => { context.value = { y: translateY.value }; })
         .onUpdate((event) => {
@@ -93,12 +106,13 @@ export default function DayDetailsScreen() {
             translateY.value = Math.max(translateY.value, MAX_TRANSLATE_Y);
         })
         .onEnd(() => {
+            const timingConfig = { duration: 250, easing: Easing.out(Easing.quad) };
             if (translateY.value > -SCREEN_HEIGHT * 0.3) {
-                translateY.value = withSpring(-SCREEN_HEIGHT * 0.15, { damping: 15 });
+                translateY.value = withTiming(-SCREEN_HEIGHT * 0.15, timingConfig);
             } else if (translateY.value < -SCREEN_HEIGHT * 0.7) {
-                translateY.value = withSpring(MAX_TRANSLATE_Y, { damping: 15 });
+                translateY.value = withTiming(MAX_TRANSLATE_Y, timingConfig);
             } else {
-                translateY.value = withSpring(-SCREEN_HEIGHT * 0.55, { damping: 15 });
+                translateY.value = withTiming(-SCREEN_HEIGHT * 0.55, timingConfig);
             }
         });
 
@@ -106,32 +120,13 @@ export default function DayDetailsScreen() {
         transform: [{ translateY: translateY.value }],
     }));
 
-    // --- FAB ANIMATIONS ---
-    const toggleFab = () => {
-        fabOpen.value = withTiming(fabOpen.value === 0 ? 1 : 0, { duration: 200 });
+    // --- HELPER TO CLOSE ROWS ---
+    const closeRow = (id: string) => {
+        const row = swipeableRows.current.get(id);
+        if (row) row.close();
     };
 
-    const rMainFabStyle = useAnimatedStyle(() => ({
-        transform: [{ rotate: `${interpolate(fabOpen.value, [0, 1], [0, 45])}deg` }]
-    }));
-
-    const rAction1Style = useAnimatedStyle(() => ({
-        opacity: fabOpen.value,
-        transform: [
-            { scale: fabOpen.value },
-            { translateY: interpolate(fabOpen.value, [0, 1], [0, -70]) }
-        ]
-    }));
-
-    const rAction2Style = useAnimatedStyle(() => ({
-        opacity: fabOpen.value,
-        transform: [
-            { scale: fabOpen.value },
-            { translateY: interpolate(fabOpen.value, [0, 1], [0, -140]) }
-        ]
-    }));
-
-    // --- DATA FETCHING ---
+    // --- 1. FETCH TRIP DATA ---
     useEffect(() => {
         if (!tripId) return;
         const unsubscribe = TripService.subscribeToTrip(tripId, (data) => {
@@ -142,166 +137,310 @@ export default function DayDetailsScreen() {
         return () => unsubscribe();
     }, [tripId]);
 
-    // --- ROUTE & MAP LOGIC ---
+    // --- 2. FETCH EXPENSES ---
+    useEffect(() => {
+        if (!tripId) return;
+        const q = query(
+            collection(db, 'trips', tripId, 'expenses'),
+            where('day', '==', dayIndex + 1),
+            orderBy('createdAt', 'desc')
+        );
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const loadedExpenses = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setExpenses(loadedExpenses);
+        });
+        return () => unsubscribe();
+    }, [tripId, dayIndex]);
+
+    // --- 3. ROUTE LOGIC ---
     useEffect(() => {
         const fetchDayRoute = async () => {
             if (!trip || !trip.itinerary || !trip.itinerary[dayIndex]) return;
 
             const currentDay = trip.itinerary[dayIndex];
-            const timeline = (currentDay.timeline || []).sort((a, b) => a.order - b.order);
+            const timeline = (currentDay.timeline || []).sort((a: any, b: any) => a.order - b.order);
 
-            let startPoint: GeoPoint;
-            if (dayIndex === 0) startPoint = trip.originCoordinates || { latitude: 0, longitude: 0 };
-            else startPoint = trip.itinerary[dayIndex - 1].stopLocation;
-
-            // TS FIX: Ensure we only map items with valid coordinates
-            const mapItems = timeline.filter(t => t.coordinates && t.coordinates.latitude);
-
-            if (mapRef.current && mapItems.length > 0) {
-                const allCoords = [startPoint, ...mapItems.map(t => t.coordinates)];
-                mapRef.current.fitToCoordinates(allCoords, {
-                    edgePadding: { top: 100, right: 50, bottom: 250, left: 50 },
-                    animated: true,
-                });
+            let startPoint = null;
+            if (dayIndex === 0) {
+                startPoint = toGeoPoint(trip.originCoordinates);
+            } else {
+                const prevDay = trip.itinerary[dayIndex - 1];
+                if (prevDay) {
+                    startPoint = toGeoPoint(prevDay.stopLocation);
+                    const prevTimeline = prevDay.timeline || [];
+                    if (!startPoint && prevTimeline.length > 0) {
+                        startPoint = toGeoPoint(prevTimeline[prevTimeline.length - 1].coordinates);
+                    }
+                }
             }
 
-            if (mapItems.length === 0) {
+            const mapItems = timeline.filter((t: any) => toGeoPoint(t.coordinates));
+
+            if (mapRef.current) {
+                const pointsToFit = mapItems.map((t: any) => toLatLng(t.coordinates));
+                if (startPoint) {
+                    const sp = toLatLng(startPoint);
+                    if (sp) pointsToFit.unshift(sp);
+                }
+                const validPoints = pointsToFit.filter((p): p is { latitude: number; longitude: number } => !!p);
+                if (validPoints.length > 0) {
+                    mapRef.current.fitToCoordinates(validPoints, {
+                        edgePadding: { top: 100, right: 50, bottom: 250, left: 50 },
+                        animated: true,
+                    });
+                }
+            }
+
+            if (!startPoint || mapItems.length === 0) {
                 setDayRouteCoordinates([]);
                 return;
             }
 
-            const stops = mapItems.map(t => t.coordinates);
+            const stops = mapItems.map((t: any) => toGeoPoint(t.coordinates)).filter((c): c is GeoPoint => !!c);
             const destination = stops[stops.length - 1];
             const waypoints = stops.slice(0, -1);
 
-            if (stops.length > 0) {
-                const path = await RouteService.getRoute(startPoint, destination, waypoints);
-                if (path) setDayRouteCoordinates(path);
-            }
+            const path = await RouteService.getRoute(startPoint, destination, waypoints);
+            if (path) setDayRouteCoordinates(path);
         };
         fetchDayRoute();
     }, [trip, dayIndex]);
 
-    const handleAddActivity = async (newItem: any, createExpense: boolean) => {
-        if (!tripId || !user) return;
-        try {
-            const currentTimeline = trip?.itinerary[dayIndex].timeline || [];
-            const itemWithMeta = { ...newItem, id: Date.now().toString(), order: currentTimeline.length + 1 };
-            await TripService.addActivityToDay(tripId, dayIndex, itemWithMeta);
-            if (createExpense && newItem.price > 0) {
-                await createExpenseRecord(newItem);
-            }
-            toggleFab();
-        } catch (error) { Alert.alert("Error", "Failed to add activity."); }
-    };
+    // --- HANDLERS ---
 
-    const handleAddExpense = async (newItem: any) => {
-        if (!tripId || !user) return;
-        try {
-            const currentTimeline = trip?.itinerary[dayIndex].timeline || [];
-            const expenseItem = {
-                ...newItem,
-                type: 'expense',
-                coordinates: null,
+    const handleSaveActivity = async (itemData: any, createExpense: boolean) => {
+        if (!tripId || !user || !trip) return;
+
+        const currentTimeline = trip.itinerary[dayIndex].timeline || [];
+        let updatedTimeline;
+
+        if (editingActivity) {
+            updatedTimeline = currentTimeline.map((t: any) =>
+                t.id === editingActivity.id ? { ...t, ...itemData } : t
+            );
+        } else {
+            const newItem = {
+                ...itemData,
                 id: Date.now().toString(),
                 order: currentTimeline.length + 1
             };
-            await TripService.addActivityToDay(tripId, dayIndex, expenseItem);
-
-            if (newItem.price > 0) {
-                await createExpenseRecord(newItem);
-            }
-            toggleFab();
-        } catch (error) { Alert.alert("Error", "Failed to add expense."); }
-    };
-
-    const createExpenseRecord = async (item: any) => {
-        if (!tripId || !user) return;
-        const expenseItem = {
-            title: item.title,
-            amount: item.price,
-            category: item.type,
-            day: dayIndex + 1,
-            date: new Date().toISOString(),
-            addedBy: { uid: user.uid, name: user.displayName || 'User', avatar: user.photoURL || '' },
-            createdAt: new Date(),
-        };
-        await TripService.addExpense(tripId, expenseItem);
-    }
-
-    // TS FIX: Use ExtendedTimelineItem to avoid 'id missing' error
-    const handleDragEnd = async ({ data }: { data: ExtendedTimelineItem[] }) => {
-        if (!tripId) return;
-        const reorderedData = data.map((item, index) => ({ ...item, order: index + 1 }));
-        if (trip && trip.itinerary[dayIndex]) {
-            const updatedTrip = { ...trip };
-            // TS FIX: Cast back to any/original type if needed
-            updatedTrip.itinerary[dayIndex].timeline = reorderedData as TimelineItem[];
-            setTrip(updatedTrip);
+            updatedTimeline = [...currentTimeline, newItem];
         }
-        try { await TripService.updateDayTimeline(tripId, dayIndex, reorderedData as TimelineItem[]); } catch (e) { }
+
+        const updatedTrip = { ...trip };
+        updatedTrip.itinerary[dayIndex].timeline = updatedTimeline;
+        setTrip(updatedTrip);
+
+        try {
+            await TripService.updateDayTimeline(tripId, dayIndex, updatedTimeline);
+            if (!editingActivity && createExpense && itemData.price > 0) {
+                await handleSaveExpense(itemData);
+            }
+        } catch (error) {
+            Alert.alert("Error", "Failed to save activity.");
+        } finally {
+            setEditingActivity(null);
+        }
     };
 
-    const handleDeleteActivity = async (itemIndex: number) => {
+    const handleSaveExpense = async (itemData: any) => {
+        if (!tripId || !user) return;
+
+        const expensePayload = {
+            title: itemData.title,
+            amount: itemData.price || itemData.amount,
+            category: itemData.type || itemData.category || 'expense',
+            day: dayIndex + 1,
+            date: editingExpense ? editingExpense.date : new Date().toISOString(),
+            addedBy: editingExpense ? editingExpense.addedBy : { uid: user.uid, name: user.displayName || 'User', avatar: user.photoURL || '' },
+            createdAt: editingExpense ? editingExpense.createdAt : new Date(),
+        };
+
+        try {
+            if (editingExpense) {
+                const expenseRef = doc(db, 'trips', tripId, 'expenses', editingExpense.id);
+                await updateDoc(expenseRef, expensePayload);
+            } else {
+                await TripService.addExpense(tripId, expensePayload);
+            }
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Error", "Failed to save expense.");
+        } finally {
+            setEditingExpense(null);
+        }
+    };
+
+    const handleDeleteExpense = async (expenseId: string) => {
+        Alert.alert("Delete Expense", "Are you sure you want to delete this expense?", [
+            { text: "Cancel", style: "cancel", onPress: () => closeRow(expenseId) }, // Close on cancel too
+            {
+                text: "Delete",
+                style: "destructive",
+                onPress: async () => {
+                    closeRow(expenseId); // Close immediately
+                    if (!tripId) return;
+                    try {
+                        await deleteDoc(doc(db, 'trips', tripId, 'expenses', expenseId));
+                    } catch (error) {
+                        Alert.alert("Error", "Failed to delete expense.");
+                    }
+                }
+            }
+        ]);
+    };
+
+    const handleDeleteActivity = async (itemIndex: number, itemId: string) => {
+        closeRow(itemId); // Close immediately
         if (!trip || !tripId) return;
-        const currentTimeline = trip.itinerary[dayIndex].timeline;
-        const newTimeline = currentTimeline.filter((_, index) => index !== itemIndex);
-        const reindexedTimeline = newTimeline.map((item, index) => ({ ...item, order: index + 1 }));
+        const currentTimeline = trip.itinerary[dayIndex].timeline || [];
+        const newTimeline = currentTimeline.filter((_: any, index: number) => index !== itemIndex);
+        const reindexedTimeline = newTimeline.map((item: any, index: number) => ({ ...item, order: index + 1 }));
+
+        const updatedTrip = { ...trip };
+        updatedTrip.itinerary[dayIndex].timeline = reindexedTimeline;
+        setTrip(updatedTrip);
         try { await TripService.updateDayTimeline(tripId, dayIndex, reindexedTimeline); } catch (e) { }
     };
 
-    const renderTimelineItem = ({ item, getIndex, drag, isActive }: RenderItemParams<ExtendedTimelineItem>) => {
+    const handleEditActivityPress = (item: any) => {
+        closeRow(item.id); // Close immediately
+        setEditingActivity(item);
+        setAddActivityVisible(true);
+    };
+
+    const handleEditExpensePress = (item: any) => {
+        closeRow(item.id); // Close immediately
+        setEditingExpense(item);
+        setAddExpenseVisible(true);
+    };
+
+    const handleDragEnd = async ({ data }: { data: any[] }) => {
+        if (!tripId || !trip) return;
+        const reorderedData = data.map((item, index) => ({ ...item, order: index + 1 }));
+        const updatedTrip = { ...trip };
+        updatedTrip.itinerary[dayIndex].timeline = reorderedData;
+        setTrip(updatedTrip);
+        try { await TripService.updateDayTimeline(tripId, dayIndex, reorderedData); } catch (e) { }
+    };
+
+    // --- RENDER ACTIVITY ---
+    const renderActivityItem = ({ item, getIndex, drag, isActive }: RenderItemParams<any>) => {
         const index = getIndex();
         if (index === undefined) return null;
 
-        const hasLocation = item.coordinates && item.coordinates.latitude;
+        const { icon, color } = getCategoryDetails(item.type);
 
         const renderRightActions = () => (
-            <TouchableOpacity style={styles.deleteAction} onPress={() => handleDeleteActivity(index)}>
-                <IconSymbol name="trash.fill" size={24} color="#fff" />
-            </TouchableOpacity>
+            <View style={styles.rightActionContainer}>
+                <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#F5A623' }]}
+                    onPress={() => handleEditActivityPress(item)}
+                >
+                    <IconSymbol name="pencil" size={20} color="#fff" />
+                    <ThemedText style={styles.actionText}>Edit</ThemedText>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#FF3B30' }]}
+                    onPress={() => handleDeleteActivity(index, item.id)}
+                >
+                    <IconSymbol name="trash.fill" size={20} color="#fff" />
+                    <ThemedText style={styles.actionText}>Delete</ThemedText>
+                </TouchableOpacity>
+            </View>
         );
 
         return (
             <ScaleDecorator>
-                <Swipeable renderRightActions={renderRightActions}>
-                    <TouchableOpacity
-                        onLongPress={drag}
-                        disabled={isActive}
-                        style={[styles.timelineWrapper, isActive && { opacity: 0.8 }]}
-                        activeOpacity={1}
+                <View style={styles.timelineWrapper}>
+                    <Swipeable
+                        // SAVE REF TO MAP
+                        ref={(ref) => { if (ref && item.id) swipeableRows.current.set(item.id, ref); }}
+                        renderRightActions={renderRightActions}
+                        containerStyle={{ overflow: 'visible' }}
                     >
-                        <View style={styles.timelineColumn}>
-                            <View style={[styles.timelineDot, { borderColor: hasLocation ? colors.tint : colors.icon }]}>
-                                {hasLocation ? (
-                                    <ThemedText style={{ fontSize: 10, color: colors.tint, fontWeight: 'bold' }}>{index + 1}</ThemedText>
+                        <TouchableOpacity
+                            onLongPress={drag}
+                            disabled={isActive}
+                            style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
+                            activeOpacity={0.9}
+                        >
+                            <View style={styles.cardContent}>
+                                <View style={[styles.cardIconBox, { backgroundColor: color + '15' }]}>
+                                    <IconSymbol name={icon as any} size={20} color={color} />
+                                </View>
+                                <View style={{ flex: 1, justifyContent: 'center', gap: 4 }}>
+                                    <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ fontSize: 16 }}>{item.title}</ThemedText>
+                                    <ThemedText style={styles.addressText} numberOfLines={1}>{item.address || item.desc || item.type}</ThemedText>
+                                </View>
+                                <View style={styles.dragHandle}>
+                                    <IconSymbol name="line.3.horizontal" size={16} color={colors.icon + '40'} />
+                                </View>
+                            </View>
+                        </TouchableOpacity>
+                    </Swipeable>
+                </View>
+            </ScaleDecorator>
+        );
+    };
+
+    // --- RENDER EXPENSE ---
+    const renderExpenseItem = ({ item }: { item: any }) => {
+        const { icon, color } = getCategoryDetails(item.category);
+
+        const renderRightActions = () => (
+            <View style={styles.rightActionContainer}>
+                <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#F5A623' }]}
+                    onPress={() => handleEditExpensePress(item)}
+                >
+                    <IconSymbol name="pencil" size={20} color="#fff" />
+                    <ThemedText style={styles.actionText}>Edit</ThemedText>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#FF3B30' }]}
+                    onPress={() => handleDeleteExpense(item.id)}
+                >
+                    <IconSymbol name="trash.fill" size={20} color="#fff" />
+                    <ThemedText style={styles.actionText}>Delete</ThemedText>
+                </TouchableOpacity>
+            </View>
+        );
+
+        return (
+            <View style={{ marginBottom: 12 }}>
+                <Swipeable
+                    // SAVE REF TO MAP
+                    ref={(ref) => { if (ref && item.id) swipeableRows.current.set(item.id, ref); }}
+                    renderRightActions={renderRightActions}
+                    containerStyle={{ overflow: 'visible' }}
+                >
+                    <View style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}>
+                        <View style={styles.cardContent}>
+                            <View style={[styles.cardIconBox, { backgroundColor: color + '15' }]}>
+                                <IconSymbol name={icon as any} size={20} color={color} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ fontSize: 16 }}>{item.title}</ThemedText>
+                                <ThemedText style={styles.addressText}>{item.category}</ThemedText>
+                            </View>
+                            <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                                <ThemedText style={[styles.priceText, { color: '#FF3B30' }]}>-${item.amount}</ThemedText>
+                                {item.addedBy?.avatar ? (
+                                    <Image source={{ uri: item.addedBy.avatar }} style={styles.avatar} />
                                 ) : (
-                                    // ICON FIX: Use 'banknote' (iOS SF Symbol) or 'cash' (Ionicons) 
-                                    <IconSymbol name="banknote" size={12} color={colors.icon} />
+                                    <View style={[styles.avatar, { backgroundColor: '#ccc' }]} />
                                 )}
                             </View>
-                            <View style={[styles.timelineConnector, { backgroundColor: colors.icon + '30' }]} />
                         </View>
-                        <View style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}>
-                            <View style={styles.cardContent}>
-                                <View style={[styles.iconBox, { backgroundColor: hasLocation ? colors.tint + '15' : '#FFD70030' }]}>
-                                    <IconSymbol name={getCategoryIcon(item.type) as any} size={22} color={hasLocation ? colors.tint : '#DAA520'} />
-                                </View>
-                                <View style={{ flex: 1, justifyContent: 'center' }}>
-                                    <ThemedText type="defaultSemiBold" numberOfLines={1}>{item.title}</ThemedText>
-                                    <ThemedText style={styles.categoryLabel}>{item.type}</ThemedText>
-                                </View>
-                                <View style={{ alignItems: 'flex-end' }}>
-                                    {item.price > 0 && <ThemedText style={styles.priceText}>${item.price}</ThemedText>}
-                                </View>
-                            </View>
-                            <View style={styles.dragHandle}>
-                                <IconSymbol name="line.3.horizontal" size={18} color={colors.icon + '40'} />
-                            </View>
-                        </View>
-                    </TouchableOpacity>
+                    </View>
                 </Swipeable>
-            </ScaleDecorator>
+            </View>
         );
     };
 
@@ -309,49 +448,74 @@ export default function DayDetailsScreen() {
     if (!trip || !trip.itinerary || !trip.itinerary[dayIndex]) return null;
 
     const currentDay = trip.itinerary[dayIndex];
-    // TS FIX: Cast to ExtendedTimelineItem
-    const timeline = (currentDay.timeline || []).sort((a, b) => a.order - b.order) as ExtendedTimelineItem[];
+    const rawTimeline = (currentDay.timeline || []).sort((a: any, b: any) => a.order - b.order);
+    const timeline = rawTimeline.map((item: any, idx: number) => ({
+        ...item,
+        id: item.id || `stable-id-${idx}-${item.title}`
+    }));
 
-    const mapMarkers = timeline.filter(t => t.coordinates && t.coordinates.latitude);
-    const startPoint = dayIndex === 0 ? trip.originCoordinates : trip.itinerary[dayIndex - 1].stopLocation;
+    const mapMarkers = timeline.filter((t: any) => toLatLng(t.coordinates) !== null);
+    let startPoint = null;
+    if (dayIndex === 0) {
+        startPoint = toGeoPoint(trip.originCoordinates);
+    } else {
+        const prevDay = trip.itinerary[dayIndex - 1];
+        if (prevDay) {
+            startPoint = toGeoPoint(prevDay.stopLocation);
+            const prevTimeline = prevDay.timeline || [];
+            if (!startPoint && prevTimeline.length > 0) {
+                startPoint = toGeoPoint(prevTimeline[prevTimeline.length - 1].coordinates);
+            }
+        }
+    }
+    const hasMapData = (startPoint && toLatLng(startPoint)) || mapMarkers.length > 0;
+    const initialLat = startPoint?.lat || 37.78825;
+    const initialLng = startPoint?.lng || -122.4324;
 
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <ThemedView style={styles.container}>
                 <Stack.Screen options={{ headerShown: false }} />
 
-                <View style={StyleSheet.absoluteFill}>
-                    <MapView
-                        ref={mapRef}
-                        style={StyleSheet.absoluteFill}
-                        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-                        initialRegion={{
-                            latitude: startPoint?.latitude || 37.78825,
-                            longitude: startPoint?.longitude || -122.4324,
-                            latitudeDelta: 0.5,
-                            longitudeDelta: 0.5,
-                        }}
-                    >
-                        {startPoint && (
-                            <Marker coordinate={startPoint} title="Start" zIndex={10}>
-                                <View style={[styles.startMarker, { backgroundColor: '#222' }]}>
-                                    {/* ICON FIX: Use 'play.fill' or 'play-arrow' */}
-                                    <IconSymbol name="play.fill" size={10} color="#fff" />
-                                </View>
-                            </Marker>
-                        )}
-                        {mapMarkers.map((item, idx) => (
-                            <Marker key={`m-${idx}-${item.title}`} coordinate={item.coordinates} title={item.title} zIndex={5}>
-                                <View style={[styles.markerBadge, { backgroundColor: colors.tint }]}>
-                                    <ThemedText style={styles.markerText}>{idx + 1}</ThemedText>
-                                </View>
-                            </Marker>
-                        ))}
-                        {dayRouteCoordinates.length > 0 && (
-                            <Polyline coordinates={dayRouteCoordinates} strokeColor={colors.tint} strokeWidth={4} />
-                        )}
-                    </MapView>
-                </View>
+                {/* MAP */}
+                {hasMapData ? (
+                    <View style={StyleSheet.absoluteFill}>
+                        <MapView
+                            ref={mapRef}
+                            style={StyleSheet.absoluteFill}
+                            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                            initialRegion={{ latitude: initialLat, longitude: initialLng, latitudeDelta: 0.5, longitudeDelta: 0.5 }}
+                        >
+                            {startPoint && toLatLng(startPoint) && (
+                                <Marker coordinate={toLatLng(startPoint)!} title="Start" zIndex={10}>
+                                    <View style={[styles.startMarker, { backgroundColor: '#222' }]}>
+                                        <IconSymbol name="play.fill" size={10} color="#fff" />
+                                    </View>
+                                </Marker>
+                            )}
+                            {mapMarkers.map((item: any, idx: number) => {
+                                const coords = toLatLng(item.coordinates);
+                                const { color } = getCategoryDetails(item.type);
+                                if (!coords) return null;
+                                return (
+                                    <Marker key={`m-${idx}-${item.id}`} coordinate={coords} title={item.title} zIndex={5}>
+                                        <View style={[styles.markerPill, { backgroundColor: color, borderColor: '#fff', borderWidth: 2 }]}>
+                                            <ThemedText style={styles.markerText} numberOfLines={1}>{item.title}</ThemedText>
+                                        </View>
+                                    </Marker>
+                                );
+                            })}
+                            {dayRouteCoordinates.length > 0 && (
+                                <Polyline coordinates={dayRouteCoordinates.map(p => ({ latitude: p.lat, longitude: p.lng }))} strokeColor={colors.tint} strokeWidth={4} />
+                            )}
+                        </MapView>
+                    </View>
+                ) : (
+                    <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
+                        <IconSymbol name="map.fill" size={80} color="#333" />
+                        <ThemedText style={{ color: '#555', marginTop: 10, fontWeight: '600' }}>No route data yet</ThemedText>
+                    </View>
+                )}
 
                 {/* HEADER */}
                 <LinearGradient colors={['rgba(0,0,0,0.7)', 'transparent']} style={[styles.gradientHeader, { height: insets.top + 80 }]} />
@@ -367,69 +531,90 @@ export default function DayDetailsScreen() {
                 </View>
 
                 {/* BOTTOM SHEET */}
-                {/* 1. WRAP ENTIRE SHEET IN DETECTOR */}
                 <GestureDetector gesture={gesture}>
                     <Animated.View style={[styles.sheetContainer, { backgroundColor: colors.background, top: SCREEN_HEIGHT }, rBottomSheetStyle]}>
                         <View style={styles.sheetHandleContainer}>
                             <View style={[styles.sheetHandle, { backgroundColor: colors.icon + '40' }]} />
                         </View>
 
-                        {/* 2. REMOVED simultaneousHandlers PROP to fix TS Error */}
                         <DraggableFlatList
                             data={timeline}
                             onDragEnd={handleDragEnd}
-                            // TS FIX: Robust key extractor
-                            keyExtractor={(item, index) => item.id || `item-${index}`}
-                            renderItem={renderTimelineItem}
+                            keyExtractor={(item) => item.id}
+                            renderItem={renderActivityItem}
                             contentContainerStyle={{ paddingBottom: 150, paddingHorizontal: 20 }}
                             showsVerticalScrollIndicator={false}
+                            bounces={false}
+                            ListHeaderComponent={
+                                <View style={[styles.sectionHeader, { marginTop: 10 }]}>
+                                    <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>Activities</ThemedText>
+                                </View>
+                            }
                             ListEmptyComponent={
                                 <View style={styles.emptyState}>
                                     <IconSymbol name="map.fill" size={40} color={colors.icon + '40'} />
-                                    <ThemedText style={{ color: colors.icon, marginTop: 10 }}>No activities yet.</ThemedText>
+                                    <ThemedText style={{ color: colors.icon, marginTop: 10 }}>Start your day plan below.</ThemedText>
+                                </View>
+                            }
+                            ListFooterComponent={
+                                <View style={styles.footerContainer}>
+
+                                    {/* 1. ADD ACTIVITY BUTTON */}
+                                    <TouchableOpacity
+                                        style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
+                                        onPress={() => { setEditingActivity(null); setAddActivityVisible(true); }}
+                                    >
+                                        <IconSymbol name="mappin.and.ellipse" size={20} color={colors.text} />
+                                        <ThemedText style={[styles.dashedButtonText, { color: colors.text }]}>Add Activity</ThemedText>
+                                    </TouchableOpacity>
+
+                                    {/* 2. EXPENSES SECTION */}
+                                    {expenses.length > 0 && (
+                                        <View style={styles.expensesSection}>
+                                            <View style={styles.sectionHeader}>
+                                                <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>Expenses</ThemedText>
+                                                <ThemedText style={{ color: '#FF3B30', fontWeight: 'bold' }}>
+                                                    -${expenses.reduce((sum, e) => sum + (e.amount || 0), 0).toFixed(2)}
+                                                </ThemedText>
+                                            </View>
+
+                                            {expenses.map((expense) => (
+                                                <View key={expense.id}>
+                                                    {renderExpenseItem({ item: expense })}
+                                                </View>
+                                            ))}
+                                        </View>
+                                    )}
+
+                                    {/* 3. ADD EXPENSE BUTTON */}
+                                    <TouchableOpacity
+                                        style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
+                                        onPress={() => { setEditingExpense(null); setAddExpenseVisible(true); }}
+                                    >
+                                        <IconSymbol name="banknote" size={20} color={colors.text} />
+                                        <ThemedText style={[styles.dashedButtonText, { color: colors.text }]}>Add Expense</ThemedText>
+                                    </TouchableOpacity>
                                 </View>
                             }
                         />
-
-                        {/* SPEED DIAL */}
-                        <View style={[styles.fabContainer, { bottom: insets.bottom + 20 }]}>
-                            <Animated.View style={[styles.fabAction, { backgroundColor: '#FF9500' }, rAction2Style]}>
-                                <TouchableOpacity onPress={() => setAddExpenseVisible(true)} style={styles.fabBtn}>
-                                    {/* ICON FIX */}
-                                    <IconSymbol name="banknote" size={20} color="#fff" />
-                                    <ThemedText style={styles.fabActionLabel}>Expense</ThemedText>
-                                </TouchableOpacity>
-                            </Animated.View>
-
-                            <Animated.View style={[styles.fabAction, { backgroundColor: colors.tint }, rAction1Style]}>
-                                <TouchableOpacity onPress={() => setAddActivityVisible(true)} style={styles.fabBtn}>
-                                    <IconSymbol name="mappin.and.ellipse" size={20} color="#fff" />
-                                    <ThemedText style={styles.fabActionLabel}>Activity</ThemedText>
-                                </TouchableOpacity>
-                            </Animated.View>
-
-                            <TouchableOpacity onPress={toggleFab} activeOpacity={0.8} style={[styles.fab, { backgroundColor: colors.text }]}>
-                                <Animated.View style={rMainFabStyle}>
-                                    <IconSymbol name="plus" size={28} color={colors.background} />
-                                </Animated.View>
-                            </TouchableOpacity>
-                        </View>
-
                     </Animated.View>
                 </GestureDetector>
 
                 <AddActivityModal
                     visible={addActivityVisible}
-                    onClose={() => setAddActivityVisible(false)}
-                    onSave={handleAddActivity}
+                    onClose={() => { setAddActivityVisible(false); setEditingActivity(null); }}
+                    onSave={handleSaveActivity}
+                    initialData={editingActivity}
                 />
-
-                {/* TS FIX: Added itineraryDays prop */}
                 <AddExpenseModal
                     visible={addExpenseVisible}
-                    onClose={() => setAddExpenseVisible(false)}
-                    onSave={handleAddExpense}
-                    itineraryDays={trip.itinerary} />
+                    onClose={() => { setAddExpenseVisible(false); setEditingExpense(null); }}
+                    onSave={handleSaveExpense}
+                    itineraryDays={trip.itinerary}
+                    tripStartDate={trip.startDate}
+                    currentDayIndex={dayIndex}
+                    initialData={editingExpense}
+                />
             </ThemedView>
         </GestureHandlerRootView>
     );
@@ -439,32 +624,32 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     gradientHeader: { position: 'absolute', top: 0, left: 0, right: 0 },
-    headerControls: { position: 'absolute', left: 20, right: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    headerControls: { position: 'absolute', left: 20, right: 20, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
     roundButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
-    headerTitleBox: { alignItems: 'center' },
-    headerDayText: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase' },
-    headerTitleText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+    headerTitleBox: { alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.65)', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
+    headerDayText: { color: '#4CC9F0', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 },
+    headerTitleText: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center' },
     startMarker: { width: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
-    markerBadge: { width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
-    markerText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+    markerPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, justifyContent: 'center', alignItems: 'center', minWidth: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3, elevation: 4 },
+    markerText: { color: '#fff', fontSize: 12, fontWeight: 'bold', maxWidth: 120 },
     sheetContainer: { position: 'absolute', left: 0, right: 0, height: SCREEN_HEIGHT, borderTopLeftRadius: 24, borderTopRightRadius: 24, shadowColor: "#000", shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.1, shadowRadius: 5, elevation: 5 },
     sheetHandleContainer: { alignItems: 'center', paddingTop: 12, paddingBottom: 8 },
     sheetHandle: { width: 40, height: 4, borderRadius: 2 },
-    timelineWrapper: { flexDirection: 'row', minHeight: 80 },
-    timelineColumn: { width: 40, alignItems: 'center', marginRight: 8 },
-    timelineDot: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', zIndex: 2, marginTop: 16 },
-    timelineConnector: { width: 2, flex: 1, marginTop: -2 },
-    card: { flex: 1, flexDirection: 'row', alignItems: 'center', marginBottom: 16, borderRadius: 16, borderWidth: 1, padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
+    timelineWrapper: { marginBottom: 20 },
+    card: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
     cardContent: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
-    iconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-    categoryLabel: { fontSize: 12, color: '#888', textTransform: 'capitalize', marginTop: 2 },
-    priceText: { fontSize: 15, fontFamily: Fonts.bold, color: '#333' },
-    dragHandle: { paddingLeft: 10, justifyContent: 'center' },
-    deleteAction: { backgroundColor: '#FF3B30', justifyContent: 'center', alignItems: 'center', width: 70, height: 70, borderRadius: 16, marginLeft: 8, marginTop: 16 },
-    emptyState: { alignItems: 'center', padding: 40 },
-    fabContainer: { position: 'absolute', right: 20, alignItems: 'flex-end' },
-    fab: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4.65, elevation: 8, zIndex: 10 },
-    fabAction: { position: 'absolute', right: 4, height: 48, borderRadius: 24, justifyContent: 'center', paddingHorizontal: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3, elevation: 5 },
-    fabBtn: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    fabActionLabel: { color: '#fff', fontWeight: 'bold', fontSize: 14 }
+    cardIconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    addressText: { fontSize: 12, color: '#888', flex: 1 },
+    priceText: { fontSize: 14, fontFamily: Fonts.bold },
+    avatar: { width: 24, height: 24, borderRadius: 12, marginLeft: 6 },
+    dragHandle: { marginTop: 0 },
+    rightActionContainer: { flexDirection: 'row', height: '100%', paddingLeft: 8 },
+    actionButton: { width: 70, height: '100%', justifyContent: 'center', alignItems: 'center', borderRadius: 16, marginLeft: 8 },
+    actionText: { color: '#fff', fontSize: 12, fontWeight: 'bold', marginTop: 4 },
+    emptyState: { alignItems: 'center', padding: 30 },
+    footerContainer: { gap: 12, marginTop: 10, paddingBottom: 100 },
+    expensesSection: { marginTop: 10, marginBottom: 20 },
+    sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
+    dashedButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed' },
+    dashedButtonText: { fontSize: 16, fontFamily: Fonts.medium },
 });
