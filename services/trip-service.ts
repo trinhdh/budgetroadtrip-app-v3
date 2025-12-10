@@ -6,6 +6,7 @@ import {
     arrayUnion,
     collection,
     deleteDoc,
+    deleteField,
     doc,
     getDoc,
     getDocs,
@@ -21,7 +22,7 @@ import {
 } from 'firebase/firestore';
 
 // Import Types
-import { Trip, TripPayload } from '@/constants/types';
+import { GeoPoint, ItineraryItem, Trip, TripPayload } from '@/constants/types';
 
 export const TripService = {
     /**
@@ -195,6 +196,87 @@ export const TripService = {
             });
         } catch (error) {
             console.error("Error saving overview cache:", error);
+        }
+    },
+
+    async addDayToTrip(
+        tripId: string,
+        currentDuration: number,
+        startCity: string,
+        destination: string,
+        destinationCoordinates: GeoPoint | null
+    ) {
+        try {
+            const tripRef = doc(db, 'trips', tripId);
+            const newDayNumber = currentDuration + 1;
+
+            // Use the trip's ultimate destination/coords as the default stop location
+            const defaultCoords = destinationCoordinates || { lat: 0, lng: 0 };
+
+            // Create the new empty itinerary item
+            const newDay: Partial<ItineraryItem> = {
+                // Using timestamp + day number as a unique ID fallback
+                id: Date.now().toString() + newDayNumber,
+                order: newDayNumber - 1,
+                day: newDayNumber,
+                title: `Day ${newDayNumber}: ${destination}`,
+                description: "New day, plan activities!",
+                fuel_cost: 0,
+                drive_time: "0h",
+                start_city: startCity,
+                end_city: destination,
+                coordinates: defaultCoords,
+                stopLocation: defaultCoords,
+                timeline: [],
+                hotel_options: [],
+                food_options: [],
+                activity_options: [],
+            };
+
+            // Update the document: append day, increment duration, and clear cache
+            await updateDoc(tripRef, {
+                // Append new day to the itinerary array
+                itinerary: arrayUnion(newDay),
+
+                // Increment the trip duration
+                duration: increment(1),
+
+                // Invalidate/Delete the cache fields to force redraw/re-route on next load
+                overviewPolyline: deleteField(),
+                overviewStats: deleteField(),
+            });
+
+            return newDayNumber;
+        } catch (error) {
+            console.error("Error adding new day to trip: ", error);
+            throw error;
+        }
+    },
+
+    async deleteDayFromTrip(tripId: string, dayIndex: number): Promise<void> {
+        const tripRef = doc(db, 'trips', tripId);
+        const tripSnap = await getDoc(tripRef);
+
+        if (tripSnap.exists()) {
+            const currentItinerary = tripSnap.data().itinerary || [];
+
+            // 1. Remove the day
+            const newItinerary = currentItinerary.filter((_: any, index: number) => index !== dayIndex);
+
+            // 2. Re-index the remaining days (update 'day' and 'order')
+            const reindexedItinerary = newItinerary.map((dayItem: any, index: number) => ({
+                ...dayItem,
+                order: index,
+                day: index + 1,
+            }));
+
+            // 3. Update Firestore (Atomic update)
+            await updateDoc(tripRef, {
+                itinerary: reindexedItinerary,
+                duration: increment(-1),
+                overviewPolyline: deleteField(),
+                overviewStats: deleteField(),
+            });
         }
     },
 

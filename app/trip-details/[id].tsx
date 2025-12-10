@@ -1,4 +1,4 @@
-import { decode } from "@googlemaps/polyline-codec"; // <--- Ensure this is installed
+import { decode } from "@googlemaps/polyline-codec";
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -116,9 +116,66 @@ export default function TripDetailsScreen() {
     const [balancesVisible, setBalancesVisible] = useState(false);
 
     const swipeableRows = useRef(new Map());
+    const scrollViewRef = useRef<ScrollView>(null);
+
     const closeRow = (id: string) => {
         const row = swipeableRows.current.get(id);
         if (row) row.close();
+    };
+
+    // --- NEW: Handle Day Deletion ---
+    const handleDeleteDay = (dayId: string, dayIndex: number) => {
+        closeRow(dayId);
+
+        Alert.alert(
+            "Delete Day",
+            `Are you sure you want to delete Day ${dayIndex + 1}? All associated activities will be removed.`,
+            [
+                { text: "Cancel", style: "cancel", onPress: () => { } },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        if (!tripId) return;
+                        try {
+                            // This calls the new backend logic to remove the day and clear cache
+                            await TripService.deleteDayFromTrip(tripId, dayIndex);
+                            Alert.alert("Success", `Day ${dayIndex + 1} deleted.`);
+                        } catch (error) {
+                            Alert.alert("Error", "Failed to delete the day.");
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+
+    // --- Add Day Handler ---
+    const handleAddDay = async () => {
+        if (!tripId || !trip) return;
+
+        const startCity = trip.startCity;
+        const destination = trip.destination;
+        const destinationCoordinates = trip.originCoordinates || { lat: 0, lng: 0 };
+
+        try {
+            const newDayNumber = await TripService.addDayToTrip(
+                tripId,
+                trip.duration,
+                startCity,
+                destination,
+                destinationCoordinates
+            );
+
+            Alert.alert("Success", `Day ${newDayNumber} added to your itinerary!`);
+
+            setTimeout(() => {
+                scrollViewRef.current?.scrollToEnd({ animated: true });
+            }, 50);
+        } catch (error) {
+            Alert.alert("Error", "Failed to add new day to the itinerary.");
+        }
     };
 
     // --- 1. FETCH TRIP ---
@@ -156,11 +213,9 @@ export default function TripDetailsScreen() {
 
             // A. CHECK CACHE FIRST
             if (trip.overviewPolyline) {
-                console.log("📍 Using cached overview route");
                 try {
                     const points = decode(trip.overviewPolyline, 5).map(([lat, lng]) => ({ lat, lng }));
                     setRouteCoordinates(points);
-                    // Stats are loaded in the subscription above, so we are done!
                     return;
                 } catch (e) {
                     console.error("Error decoding overview cache, falling back to API", e);
@@ -195,11 +250,10 @@ export default function TripDetailsScreen() {
             if (dayEndPoints.length === 0) return;
 
             const startLocation = getNormalizedPoint(trip.originCoordinates);
-            const endLocation = dayEndPoints[dayEndPoints.length - 1]; // Final destination
-            const intermediateWaypoints = dayEndPoints.slice(0, -1); // Stops in between
+            const endLocation = dayEndPoints[dayEndPoints.length - 1];
+            const intermediateWaypoints = dayEndPoints.slice(0, -1);
 
             if (startLocation && endLocation) {
-                console.log("🌐 Fetching overview route from API...");
                 try {
                     const result = await RouteService.getRoute(
                         startLocation,
@@ -213,8 +267,6 @@ export default function TripDetailsScreen() {
                         // C. CALCULATE STATS
                         const newOverviewStats: Record<number, { distance: string, duration: string }> = {};
 
-                        // legs[0] = Origin -> Day 1 End
-                        // legs[1] = Day 1 End -> Day 2 End
                         result.legs.forEach((leg, index) => {
                             const legMiles = (leg.distanceMeters * 0.000621371).toFixed(0);
                             const legSec = parseInt((leg.duration || "0s").replace('s', ''), 10);
@@ -227,7 +279,7 @@ export default function TripDetailsScreen() {
                             };
                         });
 
-                        setOverviewStats(newOverviewStats); // Update local state for immediate UI feedback
+                        setOverviewStats(newOverviewStats);
 
                         // D. SAVE TO CACHE
                         if (result.encodedPolyline) {
@@ -256,12 +308,12 @@ export default function TripDetailsScreen() {
         const start = new Date(trip.startDate);
         const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-        if (trip.endDate) {
-            const end = new Date(trip.endDate);
-            const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            return `${startStr} - ${endStr}`;
-        }
-        return startStr;
+        // Calculate end date based on duration
+        let endDate = new Date(start);
+        endDate.setDate(start.getDate() + trip.duration - 1);
+
+        const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return `${startStr} - ${endStr}`;
     };
 
     const handleShare = async () => {
@@ -414,6 +466,75 @@ export default function TripDetailsScreen() {
                             </View>
                         </View>
                     </TouchableOpacity>
+                </Swipeable>
+            </View>
+        );
+    };
+
+    // --- RENDER ITINERARY ITEM ---
+    const renderItineraryItem = (day: any, index: number) => {
+        const dayId = day.id || `day-${day.day}`;
+        const isLast = index === (trip?.itinerary?.length || 0) - 1;
+        const dayNum = index + 1;
+        const paddedDay = dayNum < 10 ? `0${dayNum}` : dayNum;
+
+        // Stats Logic
+        const hasActivities = (day.timeline && day.timeline.length > 0);
+        let driveText = "Tap to view route";
+
+        if (!hasActivities) {
+            driveText = "0 mi • 0h 0m drive";
+        } else {
+            const stats = day.routeStats || overviewStats[index];
+            if (stats && stats.distance && stats.duration) {
+                driveText = `${stats.distance} • ${stats.duration} drive`;
+            }
+        }
+
+        // Right Actions (Swipe Left)
+        const renderRightActions = () => (
+            <View style={[styles.rightActionContainer, { height: '100%' }]}>
+                <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#FF3B30', width: 80, marginLeft: 8 }]}
+                    onPress={() => handleDeleteDay(dayId, index)}
+                >
+                    <IconSymbol name="trash.fill" size={20} color="#fff" />
+                    <ThemedText style={styles.actionText}>Delete</ThemedText>
+                </TouchableOpacity>
+            </View>
+        );
+
+
+        return (
+            <View key={dayId} style={styles.stepItemWrapper}>
+                <Swipeable
+                    ref={(ref) => { if (ref && dayId) swipeableRows.current.set(dayId, ref); }}
+                    renderRightActions={renderRightActions}
+                    containerStyle={{ overflow: 'visible' }}
+                >
+                    <View style={styles.stepItem}>
+                        <View style={styles.stepLeft}>
+                            <ThemedText style={styles.stepDayLabel}>DAY</ThemedText>
+                            <ThemedText style={[styles.stepDayValue, { color: colors.tint }]}>{paddedDay}</ThemedText>
+                            {!isLast && <View style={[styles.stepLine, { backgroundColor: colors.icon + '20' }]} />}
+                        </View>
+                        <TouchableOpacity
+                            style={[styles.stepCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}
+                            onPress={() => router.push({ pathname: '/trip-details/day-details', params: { tripId: tripId, dayIndex: index } })}
+                            activeOpacity={0.7}
+                        >
+                            <View style={{ flex: 1 }}>
+                                <ThemedText type="defaultSemiBold" style={styles.stepCardTitle}>{day.title}</ThemedText>
+                                <View style={styles.stepCardMeta}>
+                                    <IconSymbol name="car" size={14} color="#808080" />
+                                    <ThemedText style={styles.grayText}>
+                                        {driveText}
+                                    </ThemedText>
+                                </View>
+                            </View>
+                            <IconSymbol name="chevron.right" size={20} color={colors.icon} />
+                        </TouchableOpacity>
+                    </View>
                 </Swipeable>
             </View>
         );
@@ -602,6 +723,7 @@ export default function TripDetailsScreen() {
 
                 {/* SCROLL CONTENT */}
                 <Animated.ScrollView
+                    ref={scrollViewRef as any}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={{ paddingBottom: 100 }}
                     scrollEventThrottle={16}
@@ -681,45 +803,18 @@ export default function TripDetailsScreen() {
                         <View style={styles.section}>
                             <ThemedText type="subtitle" style={styles.sectionTitle}>Itinerary</ThemedText>
                             <View style={styles.timelineList}>
-                                {trip.itinerary?.map((day, index) => {
-                                    const isLast = index === (trip.itinerary?.length || 0) - 1;
-                                    const dayNum = index + 1;
-                                    const paddedDay = dayNum < 10 ? `0${dayNum}` : dayNum;
-
-                                    // --- UPDATED STATS DISPLAY LOGIC ---
-                                    // 1. Try to get stats from the day itself (calculated in DayDetails)
-                                    // 2. Fallback to overview stats (calculated in this file)
-                                    const stats = day.routeStats || overviewStats[index];
-
-                                    return (
-                                        <View key={day.day} style={styles.stepItem}>
-                                            <View style={styles.stepLeft}>
-                                                <ThemedText style={styles.stepDayLabel}>DAY</ThemedText>
-                                                <ThemedText style={[styles.stepDayValue, { color: colors.tint }]}>{paddedDay}</ThemedText>
-                                                {!isLast && <View style={[styles.stepLine, { backgroundColor: colors.icon + '20' }]} />}
-                                            </View>
-                                            <TouchableOpacity
-                                                style={[styles.stepCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}
-                                                onPress={() => router.push({ pathname: '/trip-details/day-details', params: { tripId: trip.id, dayIndex: index } })}
-                                                activeOpacity={0.7}
-                                            >
-                                                <View style={{ flex: 1 }}>
-                                                    <ThemedText type="defaultSemiBold" style={styles.stepCardTitle}>{day.title}</ThemedText>
-                                                    <View style={styles.stepCardMeta}>
-                                                        <IconSymbol name="car" size={14} color="#808080" />
-                                                        <ThemedText style={styles.grayText}>
-                                                            {stats
-                                                                ? `${stats.distance} • ${stats.duration} drive`
-                                                                : "Tap to view route"}
-                                                        </ThemedText>
-                                                    </View>
-                                                </View>
-                                                <IconSymbol name="chevron.right" size={20} color={colors.icon} />
-                                            </TouchableOpacity>
-                                        </View>
-                                    );
-                                })}
+                                {trip.itinerary?.map((day, index) => renderItineraryItem(day, index))}
                             </View>
+
+                            {/* ADD NEW DAY BUTTON */}
+                            <TouchableOpacity
+                                style={[styles.addItemButton, { borderColor: colors.tint, backgroundColor: colors.tint + '10', marginTop: 16 }]}
+                                onPress={handleAddDay}
+                            >
+                                <IconSymbol name="plus" size={20} color={colors.tint} />
+                                <ThemedText style={[styles.addItemText, { color: colors.tint }]}>Add New Day</ThemedText>
+                            </TouchableOpacity>
+
                         </View>
                     </View>
                 </Animated.ScrollView>
@@ -838,7 +933,8 @@ const styles = StyleSheet.create({
     paramValue: { fontSize: 16, fontFamily: Fonts.bold },
     paramSeparator: { height: 1, backgroundColor: '#F0F0F0' },
     timelineList: { paddingLeft: 0 },
-    stepItem: { flexDirection: 'row', marginBottom: 20 },
+    stepItemWrapper: { marginBottom: 20 },
+    stepItem: { flexDirection: 'row', paddingRight: 8 },
     stepLeft: { alignItems: 'center', marginRight: 16, width: 40, paddingTop: 8 },
     stepDayLabel: { fontSize: 10, fontWeight: 'bold', color: '#999', letterSpacing: 1, marginBottom: 2 },
     stepDayValue: { fontSize: 24, fontFamily: Fonts.bold, lineHeight: 28 },
