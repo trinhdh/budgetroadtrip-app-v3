@@ -66,6 +66,21 @@ export const TripService = {
     },
 
     /**
+     * Updates the custom notes for a trip.
+     */
+    async updateTripNotes(tripId: string, notes: string): Promise<void> {
+        try {
+            const tripRef = doc(db, 'trips', tripId);
+            await updateDoc(tripRef, {
+                notes: notes,
+            });
+        } catch (error) {
+            console.error("Error updating trip notes:", error);
+            throw error;
+        }
+    },
+
+    /**
      * Updates the title and description of a single day in the itinerary array.
      */
     async updateDayDetails(tripId: string, dayIndex: number, updatedDetails: { title: string, description: string }): Promise<void> {
@@ -195,6 +210,8 @@ export const TripService = {
             }
         } catch (error) {
             console.error("Error saving route cache:", error);
+            // Re-throw the error to indicate failure
+            throw error;
         }
     },
 
@@ -232,6 +249,8 @@ export const TripService = {
             });
         } catch (error) {
             console.error("Error saving overview cache:", error);
+            // Re-throw the error to indicate failure
+            throw error;
         }
     },
 

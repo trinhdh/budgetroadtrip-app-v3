@@ -42,6 +42,7 @@ import { AddExpenseModal } from '@/components/ui/add-expense-modal';
 import { BalancesModal } from '@/components/ui/balances-modal';
 import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { ExpenseDetailModal } from '@/components/ui/expense-detail-modal';
+import { NotesModal } from '@/components/ui/notes-modal'; // <-- NEW IMPORT
 
 const { width, height } = Dimensions.get('window');
 const PARALLAX_HEADER_HEIGHT = 400;
@@ -122,7 +123,7 @@ const EditDayModal = ({ visible, onClose, day, onSave }: EditDayModalProps) => {
             isVisible={visible}
             onClose={onClose}
             title={`Edit Day ${day?.day}`}
-            height="35%" // <--- UPDATED HEIGHT AS REQUESTED
+            height="35%"
         >
             <View style={{ padding: 20, flex: 1, justifyContent: 'space-between' }}>
                 <View style={{ gap: 15 }}>
@@ -172,7 +173,8 @@ export default function TripDetailsScreen() {
     const [editingExpense, setEditingExpense] = useState<any>(null);
     const [balancesVisible, setBalancesVisible] = useState(false);
 
-    // --- NEW STATE FOR EDITING DAY ---
+    // --- NEW STATE FOR NOTES/DAY EDITING ---
+    const [notesModalVisible, setNotesModalVisible] = useState(false); // <-- New State
     const [editingDay, setEditingDay] = useState<any>(null);
     // ---------------------------------
 
@@ -183,6 +185,19 @@ export default function TripDetailsScreen() {
         const row = swipeableRows.current.get(id);
         if (row) row.close();
     };
+
+    // --- Handle Save Notes ---
+    const handleSaveNotes = async (newNotes: string) => {
+        if (!tripId) return;
+        setNotesModalVisible(false);
+        try {
+            await TripService.updateTripNotes(tripId, newNotes);
+            Alert.alert("Success", "Notes saved!");
+        } catch (error) {
+            Alert.alert("Error", "Failed to save notes.");
+        }
+    };
+    // -------------------------
 
     // --- NEW: Handle Day Edit Press ---
     const handleEditDayPress = (day: any) => {
@@ -389,9 +404,8 @@ export default function TripDetailsScreen() {
     const isOverBudget = trip && totalSpent > trip.budget;
     const isNearBudget = !isOverBudget && budgetPercent >= 90;
 
-    // --- NEW: Check if the trip is a Manual type ---
-    // We check if the 'vibe' is explicitly missing/undefined, which is how we save manual trips
-    const isManualTrip = trip && trip.vibe === undefined;
+    // A trip is manual if the vibe is explicitly saved as null (from create-trip.tsx fix)
+    const isManualTrip = trip && trip.mode === 'manual';
 
     const getDateRange = () => {
         if (!trip?.startDate) return 'TBD';
@@ -845,6 +859,30 @@ export default function TripDetailsScreen() {
                             </View>
                         </View>
 
+                        {/* --- NEW: NOTES SECTION --- */}
+                        <View style={styles.section}>
+                            <ThemedText type="subtitle" style={styles.sectionTitle}>Trip Notes</ThemedText>
+                            <TouchableOpacity
+                                style={[styles.noteCard, { borderColor: colors.icon + '20', backgroundColor: colors.background }]}
+                                onPress={() => setNotesModalVisible(true)}
+                                activeOpacity={0.7}
+                            >
+                                <View style={styles.noteContent}>
+                                    <IconSymbol name="pencil" size={24} color={colors.text} />
+                                    <View style={{ flex: 1 }}>
+                                        <ThemedText type="defaultSemiBold">
+                                            {trip?.notes ? "Edit Notes" : "Add Notes"}
+                                        </ThemedText>
+                                        <ThemedText style={styles.notesPreview} numberOfLines={1}>
+                                            {trip?.notes || "Tap to add packing lists, reminders, etc."}
+                                        </ThemedText>
+                                    </View>
+                                    <IconSymbol name="chevron.right" size={20} color={colors.icon} />
+                                </View>
+                            </TouchableOpacity>
+                        </View>
+                        {/* --- END NOTES SECTION --- */}
+
                         {/* Budget Breakdown */}
                         {trip.estimatedBreakdown && trip.estimatedBreakdown.length > 0 && (
                             <View style={styles.section}>
@@ -954,7 +992,7 @@ export default function TripDetailsScreen() {
                         <View style={styles.paramSeparator} />
 
                         {/* CONDITIONAL RENDERING: AI-related fields are hidden for manual trips */}
-                        {/* A trip is manual if trip.vibe is undefined, as set in create-trip.tsx */}
+                        {/* A trip is manual if the vibe is explicitly saved as null */}
                         {!isManualTrip && (
                             <>
                                 {/* Trip Vibe */}
@@ -1009,6 +1047,16 @@ export default function TripDetailsScreen() {
                         <BudgetProgressBar current={totalSpent} total={trip.budget} />
                     </ScrollView>
                 </BottomSheetModal>
+
+                {/* --- NEW NOTES MODAL --- */}
+                <NotesModal
+                    visible={notesModalVisible}
+                    onClose={() => setNotesModalVisible(false)}
+                    initialNotes={trip?.notes}
+                    onSave={handleSaveNotes}
+                />
+                {/* --- END NEW NOTES MODAL --- */}
+
             </ThemedView>
         </GestureHandlerRootView>
     );
@@ -1082,7 +1130,28 @@ const styles = StyleSheet.create({
     actionButton: { width: 70, height: '100%', justifyContent: 'center', alignItems: 'center', borderRadius: 16, marginLeft: 8 },
     actionText: { color: '#fff', fontSize: 12, fontWeight: 'bold', marginTop: 4 },
 
-    // --- NEW MODAL STYLES ---
+    // --- NEW NOTE CARD STYLES ---
+    noteCard: {
+        borderRadius: 16,
+        borderWidth: 1,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    noteContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    notesPreview: {
+        fontSize: 13,
+        color: '#808080',
+        marginTop: 2,
+    },
+    // --- NEW MODAL STYLES (Pulled from EditDayModal) ---
     input: {
         borderWidth: 1,
         borderRadius: 12,

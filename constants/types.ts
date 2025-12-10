@@ -174,6 +174,7 @@ export type Trip = {
     // --------------------------------------------------
 
     vibe: string | null;
+    notes?: string;
 
     budget: number;
     estimatedCost: number;
