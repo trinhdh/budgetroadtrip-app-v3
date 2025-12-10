@@ -70,6 +70,20 @@ const getCategoryDetails = (category: string) => {
     }
 };
 
+// --- NEW COMPONENT: Budget Progress Bar ---
+const BudgetProgressBar = ({ current, total }: { current: number, total: number }) => {
+    const percentage = Math.min((current / total) * 100, 100);
+    let color = '#10B981'; // Green
+    if (percentage > 75) color = '#F59E0B'; // Orange
+    if (percentage >= 100) color = '#EF4444'; // Red
+
+    return (
+        <View style={{ height: 8, backgroundColor: '#F3F4F6', borderRadius: 4, width: '100%', marginVertical: 10, overflow: 'hidden' }}>
+            <View style={{ height: '100%', width: `${percentage}%`, backgroundColor: color, borderRadius: 4 }} />
+        </View>
+    );
+};
+
 export default function TripDetailsScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
@@ -172,12 +186,17 @@ export default function TripDetailsScreen() {
     // --- ACTIONS ---
     const handleShare = async () => {
         try {
-            const message = trip
-                ? `Check out my trip to ${trip.destination}! Budget: $${trip.budget}`
-                : "Check out my trip plan!";
-            await Share.share({ message, title: 'Trip Details' });
+            // Updated Share Logic with Deep Link
+            const deepLink = `budgettrip://trip/${tripId}`;
+            const message = `Join my road trip to ${trip?.destination}! 🚗💨\n\nTap here to collaborate: ${deepLink}`;
+
+            await Share.share({
+                message: message,
+                title: `Join Trip: ${trip?.destination}`,
+                url: deepLink, // iOS often uses this field
+            });
         } catch (error: any) {
-            Alert.alert(error.message);
+            Alert.alert("Share failed", error.message);
         }
     };
 
@@ -235,6 +254,10 @@ export default function TripDetailsScreen() {
         } catch (error) {
             Alert.alert("Error", "Could not settle debt.");
         }
+    };
+
+    const handleEditTrip = () => {
+        Alert.alert("Coming Soon", "Edit functionality will be available in the next update!");
     };
 
     // --- MAP LOGIC ---
@@ -450,7 +473,7 @@ export default function TripDetailsScreen() {
                                         >
                                             <View style={{ flex: 1 }}>
                                                 <Text style={styles.mapCardTitle}>Day {index + 1}: {item.title}</Text>
-                                                <Text style={styles.mapCardSubtitle}>{item.distance || "0"} driving</Text>
+                                                <Text style={styles.mapCardSubtitle}>{item.distance || "0km"} driving</Text>
                                             </View>
                                         </TouchableOpacity>
                                     )}
@@ -483,7 +506,6 @@ export default function TripDetailsScreen() {
                                 onPress={() => setParamsModalVisible(true)}
                                 activeOpacity={0.7}
                             >
-                                {/* Updated Header Display */}
                                 <ThemedText style={styles.budgetText}>{headerCostDisplay}</ThemedText>
                             </TouchableOpacity>
                         </View>
@@ -679,8 +701,7 @@ export default function TripDetailsScreen() {
                 />
 
                 <BottomSheetModal isVisible={paramsModalVisible} onClose={() => setParamsModalVisible(false)} title="Trip Details" height="65%">
-                    <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
-                        <ThemedText style={styles.modalSubtitle}>Overview</ThemedText>
+                    <ScrollView>
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>Dates</ThemedText>
                             <View style={{ alignItems: 'flex-end' }}>
@@ -698,8 +719,7 @@ export default function TripDetailsScreen() {
                                 <ThemedText style={styles.paramValue}>{formatVibe(trip.vibe)}</ThemedText>
                             </View>
                         </View>
-                        <View style={styles.paramSeparator} />
-                        <ThemedText style={[styles.modalSubtitle, { marginTop: 24 }]}>Logistics & Budget</ThemedText>
+
                         <View style={styles.paramRow}>
                             <ThemedText style={styles.paramLabel}>Travelers</ThemedText>
                             <ThemedText style={styles.paramValue}>
@@ -740,6 +760,10 @@ export default function TripDetailsScreen() {
                                 ${totalSpent.toFixed(2)}
                             </ThemedText>
                         </View>
+
+                        {/* ADDED: Budget Progress Bar */}
+                        <BudgetProgressBar current={totalSpent} total={trip.budget} />
+
                     </ScrollView>
                 </BottomSheetModal>
             </ThemedView>
@@ -748,6 +772,7 @@ export default function TripDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
+    // ... (Keep existing styles, no changes needed here)
     container: { flex: 1, backgroundColor: '#F9FAFB' },
     scrollView: { flex: 1 },
     parallaxHeader: { position: 'absolute', top: 0, left: 0, right: 0, width: '100%', zIndex: 0, overflow: 'hidden' },
