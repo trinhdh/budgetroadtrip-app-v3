@@ -1,14 +1,16 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { ReceiptCameraModal } from '@/components/ui/receipt-camera-modal';
 import { Colors, Fonts } from '@/constants/theme';
 import { Trip } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
+import { storage } from '@/firebaseConfig'; // <--- 1. Import Storage
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { TripService } from '@/services/trip-service';
 import { Image as ExpoImage } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'; // <--- 2. Storage methods
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -51,7 +53,6 @@ export default function ExpenseScreen() {
     const [selectedDay, setSelectedDay] = useState(1);
     const [receiptUri, setReceiptUri] = useState<string | null>(null);
 
-    const [cameraVisible, setCameraVisible] = useState(false);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
@@ -86,14 +87,43 @@ export default function ExpenseScreen() {
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     };
 
-    const handleReceiptCaptured = (uri: string, data?: any) => {
-        setReceiptUri(uri);
-        if (data) {
-            if (data.amount) setAmount(data.amount);
-            if (data.merchant) setTitle(data.merchant);
-            if (data.category) setSelectedCategory(data.category);
+    const takePhoto = async () => {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission needed', 'Camera access is required to scan receipts.');
+            return;
         }
-        setCameraVisible(false);
+
+        const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            quality: 0.5,
+            base64: false,
+        });
+
+        if (!result.canceled && result.assets[0].uri) {
+            setReceiptUri(result.assets[0].uri);
+        }
+    };
+
+    // --- 3. HELPER: Upload Image to Firebase Storage ---
+    const uploadReceipt = async (uri: string) => {
+        if (!tripId) return null;
+        try {
+            const response = await fetch(uri);
+            const blob = await response.blob();
+
+            // Create a unique filename: receipts/{tripId}/{timestamp}.jpg
+            const filename = `receipts/${Array.isArray(tripId) ? tripId[0] : tripId}/${Date.now()}.jpg`;
+            const storageRef = ref(storage, filename);
+
+            await uploadBytes(storageRef, blob);
+            const downloadUrl = await getDownloadURL(storageRef);
+            return downloadUrl;
+        } catch (error) {
+            console.error("Upload failed", error);
+            throw error;
+        }
     };
 
     const handleSave = async () => {
@@ -107,33 +137,41 @@ export default function ExpenseScreen() {
 
         setSaving(true);
 
-        const tId = Array.isArray(tripId) ? tripId[0] : tripId;
-
-        const expenseData = {
-            amount: numericAmount,
-            title: title || 'Expense',
-            category: selectedCategory,
-            day: selectedDay,
-            receiptImage: receiptUri,
-            date: getFormattedDate(selectedDay) || `Day ${selectedDay}`,
-            addedBy: initialData?.addedBy || {
-                uid: user.uid,
-                name: user.displayName || 'User',
-                avatar: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random`
-            },
-            createdAt: initialData?.createdAt ? new Date(initialData.createdAt) : new Date(),
-            hasReceipt: !!receiptUri
-        };
-
         try {
+            let finalReceiptUrl = receiptUri;
+
+            // --- 4. Logic: If URI is local (starts with file://), upload it first ---
+            if (receiptUri && (receiptUri.startsWith('file://') || receiptUri.startsWith('content://'))) {
+                finalReceiptUrl = await uploadReceipt(receiptUri);
+            }
+
+            const tId = Array.isArray(tripId) ? tripId[0] : tripId;
+
+            const expenseData = {
+                amount: numericAmount,
+                title: title || 'Expense',
+                category: selectedCategory,
+                day: selectedDay,
+                receiptImage: finalReceiptUrl, // Save the remote URL
+                date: getFormattedDate(selectedDay) || `Day ${selectedDay}`,
+                addedBy: initialData?.addedBy || {
+                    uid: user.uid,
+                    name: user.displayName || 'User',
+                    avatar: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random`
+                },
+                createdAt: initialData?.createdAt ? new Date(initialData.createdAt) : new Date(),
+                hasReceipt: !!finalReceiptUrl
+            };
+
             if (isEditing && initialData.id) {
                 await TripService.updateExpense(tId, initialData.id, expenseData);
             } else {
                 await TripService.addExpense(tId, expenseData);
             }
             router.back();
-        } catch {
-            Alert.alert("Error", "Failed to save expense.");
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Error", "Failed to upload receipt or save expense.");
         } finally {
             setSaving(false);
         }
@@ -295,7 +333,7 @@ export default function ExpenseScreen() {
                                         borderColor: colors.tint
                                     }
                                 ]}
-                                onPress={() => setCameraVisible(true)}
+                                onPress={takePhoto}
                             >
                                 {receiptUri ? (
                                     <View style={styles.receiptRow}>
@@ -329,12 +367,6 @@ export default function ExpenseScreen() {
                     </TouchableWithoutFeedback>
                 </ScrollView>
             </KeyboardAvoidingView>
-
-            <ReceiptCameraModal
-                visible={cameraVisible}
-                onClose={() => setCameraVisible(false)}
-                onCapture={handleReceiptCaptured}
-            />
         </ThemedView>
     );
 }
@@ -362,12 +394,6 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
         marginTop: 24,
         marginBottom: 30,
-    },
-    dollarSign: {
-        fontSize: 36,
-        opacity: 0.4,
-        marginRight: 6,
-        marginBottom: 4
     },
     amountInput: {
         fontSize: 54,
