@@ -96,7 +96,10 @@ function RootLayoutNav() {
         <Stack.Screen name="trip-details/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="trip-details/day-details" options={{ headerShown: false }} />
         <Stack.Screen name="trip-details/expense" options={{ presentation: 'modal', headerShown: false, animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="trip-details/activity" options={{ presentation: 'modal', headerShown: false, animation: 'slide_from_bottom' }} />
+
       </Stack>
+
       <StatusBar style="auto" />
     </ThemeProvider>
   );

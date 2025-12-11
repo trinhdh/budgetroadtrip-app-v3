@@ -29,9 +29,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { AddActivityModal } from '@/components/ui/add-activity-modal';
-// 1. Remove AddExpenseModal import
-// import { AddExpenseModal } from '@/components/ui/add-expense-modal';
+// 1. Remove AddActivityModal
+// import { AddActivityModal } from '@/components/ui/add-activity-modal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { GeoPoint, Trip } from '@/constants/types';
@@ -90,16 +89,12 @@ export default function DayDetailsScreen() {
     const [loading, setLoading] = useState(true);
     const [expenses, setExpenses] = useState<any[]>([]);
 
-    const [addActivityVisible, setAddActivityVisible] = useState(false);
-    const [editingActivity, setEditingActivity] = useState<any>(null);
-
-    // 2. Remove local expense state variables
-    // const [addExpenseVisible, setAddExpenseVisible] = useState(false);
-    // const [editingExpense, setEditingExpense] = useState<any>(null);
+    // 2. Remove modal state
+    // const [addActivityVisible, setAddActivityVisible] = useState(false);
+    // const [editingActivity, setEditingActivity] = useState<any>(null);
 
     const [dayRouteCoordinates, setDayRouteCoordinates] = useState<GeoPoint[]>([]);
 
-    // State for Day Stats
     const [dayStats, setDayStats] = useState({ miles: '0', time: '0h 0m' });
 
     const translateY = useSharedValue(-SCREEN_HEIGHT * 0.55);
@@ -168,7 +163,6 @@ export default function DayDetailsScreen() {
             const currentDay = trip.itinerary[dayIndex];
             const timeline = (currentDay.timeline || []).sort((a: any, b: any) => a.order - b.order);
 
-            // --- A. Determine Start Point ---
             let startPoint = null;
             if (dayIndex === 0) {
                 startPoint = toGeoPoint(trip.originCoordinates);
@@ -185,7 +179,6 @@ export default function DayDetailsScreen() {
 
             const mapItems = timeline.filter((t: any) => toGeoPoint(t.coordinates));
 
-            // --- B. Fit Map to Markers (UI Only) ---
             if (mapRef.current) {
                 const pointsToFit = mapItems.map((t: any) => toLatLng(t.coordinates));
                 if (startPoint) {
@@ -201,7 +194,6 @@ export default function DayDetailsScreen() {
                 }
             }
 
-            // --- C. Check Cache First (Route & Stats) ---
             if (currentDay.routePolyline && currentDay.routeStats) {
                 try {
                     const points = decode(currentDay.routePolyline, 5).map(([lat, lng]) => ({
@@ -213,13 +205,12 @@ export default function DayDetailsScreen() {
                         miles: currentDay.routeStats.distance,
                         time: currentDay.routeStats.duration
                     });
-                    return; // EXIT EARLY - NO API CALL
+                    return;
                 } catch (e) {
                     console.error("Failed to decode cache:", e);
                 }
             }
 
-            // --- D. API Call (Fallback if no cache) ---
             if (!startPoint || mapItems.length === 0) {
                 setDayRouteCoordinates([]);
                 setDayStats({ miles: '0', time: '0h 0m' });
@@ -234,8 +225,6 @@ export default function DayDetailsScreen() {
 
             if (result && result.points) {
                 setDayRouteCoordinates(result.points);
-
-                // 1. Calculate Stats
                 const miles = (result.totalDistanceMeters * 0.000621371).toFixed(1);
                 const totalSeconds = result.totalDurationSeconds;
                 const hours = Math.floor(totalSeconds / 3600);
@@ -244,7 +233,6 @@ export default function DayDetailsScreen() {
 
                 setDayStats({ miles, time: timeStr });
 
-                // 2. Save to Cache (WITH STATS)
                 if (result.encodedPolyline) {
                     await TripService.saveDayRoute(
                         tripId,
@@ -272,10 +260,8 @@ export default function DayDetailsScreen() {
         let url = "";
 
         if (Platform.OS === 'ios') {
-            // Apple Maps: daddr=Destination
             url = `http://maps.apple.com/?daddr=${destStr}`;
         } else {
-            // Google Maps Universal Link
             url = `https://www.google.com/maps/dir/?api=1&destination=${destStr}`;
         }
 
@@ -285,54 +271,7 @@ export default function DayDetailsScreen() {
         });
     };
 
-    const handleSaveActivity = async (itemData: any, createExpense: boolean) => {
-        if (!tripId || !user || !trip) return;
-
-        const currentTimeline = trip.itinerary[dayIndex].timeline || [];
-        let updatedTimeline;
-
-        if (editingActivity) {
-            updatedTimeline = currentTimeline.map((t: any) =>
-                t.id === editingActivity.id ? { ...t, ...itemData } : t
-            );
-        } else {
-            const newItem = {
-                ...itemData,
-                id: Date.now().toString(),
-                order: currentTimeline.length + 1
-            };
-            updatedTimeline = [...currentTimeline, newItem];
-        }
-
-        const updatedTrip = { ...trip };
-        updatedTrip.itinerary[dayIndex].timeline = updatedTimeline;
-        setTrip(updatedTrip);
-
-        try {
-            await TripService.updateDayTimeline(tripId, dayIndex, updatedTimeline);
-            if (!editingActivity && createExpense && itemData.price > 0) {
-                // If we need to create an expense from activity, navigate to expense route
-                router.push({
-                    pathname: '/trip-details/expense',
-                    params: {
-                        tripId: tripId,
-                        expense: JSON.stringify({
-                            title: itemData.title,
-                            amount: itemData.price,
-                            category: itemData.type,
-                            day: dayIndex + 1
-                        })
-                    }
-                });
-            }
-        } catch (error) {
-            Alert.alert("Error", "Failed to save activity.");
-        } finally {
-            setEditingActivity(null);
-        }
-    };
-
-    // 3. Remove handleSaveExpense - it's handled in the expense screen now
+    // 3. Remove handleSaveActivity, now handled in activity.tsx
 
     const handleDeleteExpense = async (expenseId: string) => {
         Alert.alert("Delete Expense", "Are you sure you want to delete this expense?", [
@@ -368,13 +307,27 @@ export default function DayDetailsScreen() {
         try { await TripService.updateDayTimeline(tripId, dayIndex, reindexedTimeline); } catch (e) { }
     };
 
+    // 4. Update Edit Activity to use Router
     const handleEditActivityPress = (item: any) => {
         closeRow(item.id);
-        setEditingActivity(item);
-        setAddActivityVisible(true);
+        router.push({
+            pathname: '/trip-details/activity',
+            params: {
+                tripId: tripId,
+                dayIndex: dayIndex,
+                activity: JSON.stringify(item)
+            }
+        });
     };
 
-    // 4. Update Edit Expense to use Router
+    // 5. Update Add Activity (New) to use Router
+    const handleAddActivityPress = () => {
+        router.push({
+            pathname: '/trip-details/activity',
+            params: { tripId: tripId, dayIndex: dayIndex }
+        });
+    };
+
     const handleEditExpensePress = (item: any) => {
         closeRow(item.id);
         router.push({
@@ -383,11 +336,9 @@ export default function DayDetailsScreen() {
         });
     };
 
-    // 5. Update Add Expense (New) to use Router
     const handleAddExpensePress = () => {
         router.push({
             pathname: '/trip-details/expense',
-            // Pass partial object to set the default day
             params: { tripId: tripId, expense: JSON.stringify({ day: dayIndex + 1 }) }
         });
     };
@@ -511,7 +462,6 @@ export default function DayDetailsScreen() {
                     <TouchableOpacity
                         style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
                         activeOpacity={0.7}
-                        // Optionally open expense detail here if you want
                         onPress={() => { /* handleEditExpensePress(item) */ }}
                     >
                         <View style={styles.cardContent}>
@@ -669,7 +619,8 @@ export default function DayDetailsScreen() {
                                 <View style={styles.footerContainer}>
                                     <TouchableOpacity
                                         style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
-                                        onPress={() => { setEditingActivity(null); setAddActivityVisible(true); }}
+                                        // 6. Navigate to Add Activity Screen
+                                        onPress={handleAddActivityPress}
                                     >
                                         <IconSymbol name="mappin.and.ellipse" size={20} color={colors.text} />
                                         <ThemedText style={[styles.dashedButtonText, { color: colors.text }]}>Add Activity</ThemedText>
@@ -694,7 +645,6 @@ export default function DayDetailsScreen() {
 
                                     <TouchableOpacity
                                         style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
-                                        // 6. Navigate to Expense Screen on Press
                                         onPress={handleAddExpensePress}
                                     >
                                         <IconSymbol name="banknote" size={20} color={colors.text} />
@@ -706,14 +656,8 @@ export default function DayDetailsScreen() {
                     </Animated.View>
                 </GestureDetector>
 
-                <AddActivityModal
-                    visible={addActivityVisible}
-                    onClose={() => { setAddActivityVisible(false); setEditingActivity(null); }}
-                    onSave={handleSaveActivity}
-                    initialData={editingActivity}
-                />
+                {/* 7. Remove AddActivityModal Component */}
 
-                {/* 7. Remove AddExpenseModal Component */}
             </ThemedView>
         </GestureHandlerRootView>
     );
