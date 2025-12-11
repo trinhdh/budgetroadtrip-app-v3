@@ -30,7 +30,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AddActivityModal } from '@/components/ui/add-activity-modal';
-import { AddExpenseModal } from '@/components/ui/add-expense-modal';
+// 1. Remove AddExpenseModal import
+// import { AddExpenseModal } from '@/components/ui/add-expense-modal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { GeoPoint, Trip } from '@/constants/types';
@@ -92,8 +93,9 @@ export default function DayDetailsScreen() {
     const [addActivityVisible, setAddActivityVisible] = useState(false);
     const [editingActivity, setEditingActivity] = useState<any>(null);
 
-    const [addExpenseVisible, setAddExpenseVisible] = useState(false);
-    const [editingExpense, setEditingExpense] = useState<any>(null);
+    // 2. Remove local expense state variables
+    // const [addExpenseVisible, setAddExpenseVisible] = useState(false);
+    // const [editingExpense, setEditingExpense] = useState<any>(null);
 
     const [dayRouteCoordinates, setDayRouteCoordinates] = useState<GeoPoint[]>([]);
 
@@ -309,7 +311,19 @@ export default function DayDetailsScreen() {
         try {
             await TripService.updateDayTimeline(tripId, dayIndex, updatedTimeline);
             if (!editingActivity && createExpense && itemData.price > 0) {
-                await handleSaveExpense(itemData);
+                // If we need to create an expense from activity, navigate to expense route
+                router.push({
+                    pathname: '/trip-details/expense',
+                    params: {
+                        tripId: tripId,
+                        expense: JSON.stringify({
+                            title: itemData.title,
+                            amount: itemData.price,
+                            category: itemData.type,
+                            day: dayIndex + 1
+                        })
+                    }
+                });
             }
         } catch (error) {
             Alert.alert("Error", "Failed to save activity.");
@@ -318,35 +332,7 @@ export default function DayDetailsScreen() {
         }
     };
 
-    const handleSaveExpense = async (itemData: any) => {
-        if (!tripId || !user) return;
-        const { id, ...cleanData } = itemData;
-        const expensePayload = {
-            title: itemData.title,
-            amount: parseFloat(itemData.price || itemData.amount),
-            category: itemData.type || itemData.category || 'expense',
-            day: dayIndex + 1,
-            date: editingExpense ? editingExpense.date : new Date().toISOString(),
-            addedBy: editingExpense ? editingExpense.addedBy : { uid: user.uid, name: user.displayName || 'User', avatar: user.photoURL || '' },
-            createdAt: editingExpense ? editingExpense.createdAt : new Date(),
-            hasReceipt: !!itemData.receiptImage,
-        };
-        if (itemData.receiptImage) {
-            (expensePayload as any).receiptImage = itemData.receiptImage;
-        }
-        try {
-            if (editingExpense) {
-                await TripService.updateExpense(tripId, editingExpense.id, expensePayload);
-            } else {
-                await TripService.addExpense(tripId, expensePayload);
-            }
-        } catch (error) {
-            console.error(error);
-            Alert.alert("Error", "Failed to save expense.");
-        } finally {
-            setEditingExpense(null);
-        }
-    };
+    // 3. Remove handleSaveExpense - it's handled in the expense screen now
 
     const handleDeleteExpense = async (expenseId: string) => {
         Alert.alert("Delete Expense", "Are you sure you want to delete this expense?", [
@@ -388,10 +374,22 @@ export default function DayDetailsScreen() {
         setAddActivityVisible(true);
     };
 
+    // 4. Update Edit Expense to use Router
     const handleEditExpensePress = (item: any) => {
         closeRow(item.id);
-        setEditingExpense(item);
-        setAddExpenseVisible(true);
+        router.push({
+            pathname: '/trip-details/expense',
+            params: { tripId: tripId, expense: JSON.stringify(item) }
+        });
+    };
+
+    // 5. Update Add Expense (New) to use Router
+    const handleAddExpensePress = () => {
+        router.push({
+            pathname: '/trip-details/expense',
+            // Pass partial object to set the default day
+            params: { tripId: tripId, expense: JSON.stringify({ day: dayIndex + 1 }) }
+        });
     };
 
     const handleDragEnd = async ({ data }: { data: any[] }) => {
@@ -408,7 +406,6 @@ export default function DayDetailsScreen() {
         if (index === undefined) return null;
         const { icon, color } = getCategoryDetails(item.type);
 
-        // --- LEFT ACTION: Swipe RIGHT to Reveal (Navigate) ---
         const renderLeftActions = () => (
             <View style={styles.leftActionContainer}>
                 <TouchableOpacity
@@ -424,7 +421,6 @@ export default function DayDetailsScreen() {
             </View>
         );
 
-        // --- RIGHT ACTIONS: Swipe LEFT to Reveal (Edit/Delete) ---
         const renderRightActions = () => (
             <View style={styles.rightActionContainer}>
                 <TouchableOpacity
@@ -449,7 +445,7 @@ export default function DayDetailsScreen() {
                 <View style={styles.timelineWrapper}>
                     <Swipeable
                         ref={(ref) => { if (ref && item.id) swipeableRows.current.set(item.id, ref); }}
-                        renderLeftActions={renderLeftActions}  // <--- Added Left Action
+                        renderLeftActions={renderLeftActions}
                         renderRightActions={renderRightActions}
                         containerStyle={{ overflow: 'visible' }}
                     >
@@ -468,7 +464,6 @@ export default function DayDetailsScreen() {
                                     <ThemedText style={styles.addressText} numberOfLines={1}>{item.address || item.desc || item.type}</ThemedText>
                                 </View>
 
-                                {/* ADDED: Cost Display */}
                                 {item.price > 0 && (
                                     <ThemedText style={{ fontSize: 14, fontWeight: '600', color: '#333', marginRight: 8 }}>
                                         ${item.price}
@@ -516,7 +511,8 @@ export default function DayDetailsScreen() {
                     <TouchableOpacity
                         style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
                         activeOpacity={0.7}
-                        onPress={() => { /* setSelectedExpense(item); */ }}
+                        // Optionally open expense detail here if you want
+                        onPress={() => { /* handleEditExpensePress(item) */ }}
                     >
                         <View style={styles.cardContent}>
                             <View style={[styles.cardIconBox, { backgroundColor: color + '15' }]}>
@@ -628,7 +624,7 @@ export default function DayDetailsScreen() {
 
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                <IconSymbol name="car.fill" size={12} color="#ccc" />
+                                <IconSymbol name="car" size={12} color="#ccc" />
                                 <ThemedText style={{ color: '#ccc', fontSize: 12, fontWeight: '600' }}>{dayStats.miles} mi</ThemedText>
                             </View>
                             <View style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#666' }} />
@@ -698,7 +694,8 @@ export default function DayDetailsScreen() {
 
                                     <TouchableOpacity
                                         style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
-                                        onPress={() => { setEditingExpense(null); setAddExpenseVisible(true); }}
+                                        // 6. Navigate to Expense Screen on Press
+                                        onPress={handleAddExpensePress}
                                     >
                                         <IconSymbol name="banknote" size={20} color={colors.text} />
                                         <ThemedText style={[styles.dashedButtonText, { color: colors.text }]}>Add Expense</ThemedText>
@@ -715,15 +712,8 @@ export default function DayDetailsScreen() {
                     onSave={handleSaveActivity}
                     initialData={editingActivity}
                 />
-                <AddExpenseModal
-                    visible={addExpenseVisible}
-                    onClose={() => { setAddExpenseVisible(false); setEditingExpense(null); }}
-                    onSave={handleSaveExpense}
-                    itineraryDays={trip.itinerary}
-                    tripStartDate={trip.startDate}
-                    currentDayIndex={dayIndex}
-                    initialData={editingExpense}
-                />
+
+                {/* 7. Remove AddExpenseModal Component */}
             </ThemedView>
         </GestureHandlerRootView>
     );
