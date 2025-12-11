@@ -29,8 +29,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-// 1. Remove AddActivityModal
-// import { AddActivityModal } from '@/components/ui/add-activity-modal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { GeoPoint, Trip } from '@/constants/types';
@@ -88,10 +86,6 @@ export default function DayDetailsScreen() {
     const [trip, setTrip] = useState<Trip | null>(null);
     const [loading, setLoading] = useState(true);
     const [expenses, setExpenses] = useState<any[]>([]);
-
-    // 2. Remove modal state
-    // const [addActivityVisible, setAddActivityVisible] = useState(false);
-    // const [editingActivity, setEditingActivity] = useState<any>(null);
 
     const [dayRouteCoordinates, setDayRouteCoordinates] = useState<GeoPoint[]>([]);
 
@@ -155,7 +149,7 @@ export default function DayDetailsScreen() {
         return () => unsubscribe();
     }, [tripId, dayIndex]);
 
-    // --- 3. ROUTE LOGIC (With Caching) ---
+    // --- 3. ROUTE LOGIC ---
     useEffect(() => {
         const fetchDayRoute = async () => {
             if (!trip || !trip.itinerary || !trip.itinerary[dayIndex]) return;
@@ -248,30 +242,24 @@ export default function DayDetailsScreen() {
     }, [trip, dayIndex]);
 
     // --- HANDLERS ---
-
     const handleNavigateToItem = (item: any) => {
         const coords = toLatLng(item.coordinates);
         if (!coords) {
             Alert.alert("Error", "Location coordinates not found.");
             return;
         }
-
         const destStr = `${coords.latitude},${coords.longitude}`;
         let url = "";
-
         if (Platform.OS === 'ios') {
             url = `http://maps.apple.com/?daddr=${destStr}`;
         } else {
             url = `https://www.google.com/maps/dir/?api=1&destination=${destStr}`;
         }
-
         Linking.openURL(url).catch(err => {
             console.error("Failed to open map:", err);
             Alert.alert("Error", "Could not open map application.");
         });
     };
-
-    // 3. Remove handleSaveActivity, now handled in activity.tsx
 
     const handleDeleteExpense = async (expenseId: string) => {
         Alert.alert("Delete Expense", "Are you sure you want to delete this expense?", [
@@ -307,7 +295,6 @@ export default function DayDetailsScreen() {
         try { await TripService.updateDayTimeline(tripId, dayIndex, reindexedTimeline); } catch (e) { }
     };
 
-    // 4. Update Edit Activity to use Router
     const handleEditActivityPress = (item: any) => {
         closeRow(item.id);
         router.push({
@@ -320,7 +307,6 @@ export default function DayDetailsScreen() {
         });
     };
 
-    // 5. Update Add Activity (New) to use Router
     const handleAddActivityPress = () => {
         router.push({
             pathname: '/trip-details/activity',
@@ -352,6 +338,7 @@ export default function DayDetailsScreen() {
         try { await TripService.updateDayTimeline(tripId, dayIndex, reorderedData); } catch (e) { }
     };
 
+    // Render Items
     const renderActivityItem = ({ item, getIndex, drag, isActive }: RenderItemParams<any>) => {
         const index = getIndex();
         if (index === undefined) return null;
@@ -462,7 +449,6 @@ export default function DayDetailsScreen() {
                     <TouchableOpacity
                         style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
                         activeOpacity={0.7}
-                        onPress={() => { /* handleEditExpensePress(item) */ }}
                     >
                         <View style={styles.cardContent}>
                             <View style={[styles.cardIconBox, { backgroundColor: color + '15' }]}>
@@ -518,7 +504,13 @@ export default function DayDetailsScreen() {
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <ThemedView style={styles.container}>
-                <Stack.Screen options={{ headerShown: false }} />
+                <Stack.Screen
+                    options={{
+                        headerShown: false,
+                        gestureEnabled: true,
+                        fullScreenGestureEnabled: true // <--- ENABLE FULL SCREEN SWIPE BACK
+                    }}
+                />
 
                 {/* MAP */}
                 {hasMapData ? (
@@ -619,7 +611,6 @@ export default function DayDetailsScreen() {
                                 <View style={styles.footerContainer}>
                                     <TouchableOpacity
                                         style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
-                                        // 6. Navigate to Add Activity Screen
                                         onPress={handleAddActivityPress}
                                     >
                                         <IconSymbol name="mappin.and.ellipse" size={20} color={colors.text} />
@@ -655,8 +646,6 @@ export default function DayDetailsScreen() {
                         />
                     </Animated.View>
                 </GestureDetector>
-
-                {/* 7. Remove AddActivityModal Component */}
 
             </ThemedView>
         </GestureHandlerRootView>

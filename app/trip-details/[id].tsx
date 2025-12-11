@@ -705,7 +705,7 @@ export default function TripDetailsScreen() {
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <ThemedView style={styles.container}>
-                <Stack.Screen options={{ headerShown: false }} />
+                <Stack.Screen options={{ headerShown: false, gestureEnabled: true }} />
 
                 <Animated.View style={[
                     styles.parallaxHeader,
