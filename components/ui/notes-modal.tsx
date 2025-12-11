@@ -39,7 +39,7 @@ export function NotesModal({ visible, onClose, initialNotes, onSave }: Props) {
             isVisible={visible}
             onClose={onClose}
             title="Trip Notes"
-            height="60%"
+            height="50%"
         >
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -97,7 +97,6 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 8,
         elevation: 5,
-        marginBottom: 20
     },
     saveButtonText: {
         color: '#fff',
