@@ -10,6 +10,7 @@ import {
     FlatList,
     Image,
     Keyboard,
+    Modal, // <--- Ensure Modal is imported
     Platform,
     ScrollView,
     Share,
@@ -24,15 +25,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// --- BOTTOM SHEET IMPORTS ---
-import BottomSheet, {
-    BottomSheetBackdrop,
-    BottomSheetFooter,
-    BottomSheetFooterProps,
-    BottomSheetTextInput,
-    BottomSheetView
-} from '@gorhom/bottom-sheet';
 
 // --- SERVICE & CONTEXT ---
 import { GeoPoint, Trip } from '@/constants/types';
@@ -182,10 +174,9 @@ export default function TripDetailsScreen() {
     // --- NEW STATE FOR DAY EDITING ---
     const [editingDay, setEditingDay] = useState<any>(null);
 
-    // --- BOTTOM SHEET REFS & STATE FOR NOTES ---
-    const notesSheetRef = useRef<BottomSheet>(null);
+    // --- REPLACED: Simple Modal State for Notes ---
+    const [isNotesModalVisible, setNotesModalVisible] = useState(false);
     const [noteText, setNoteText] = useState('');
-    const notesSnapPoints = useMemo(() => ['45%', '45%'], []);
 
     // ---------------------------------
 
@@ -197,27 +188,19 @@ export default function TripDetailsScreen() {
         if (row) row.close();
     };
 
-    // --- Handle Open/Close Notes Sheet ---
+    // --- Handle Open/Close Notes Modal ---
     const handleOpenNotes = () => {
         setNoteText(trip?.notes || '');
-        notesSheetRef.current?.expand();
+        setNotesModalVisible(true);
     };
-
-    // --- Handle Sheet Changes (Dismiss Keyboard on Close) ---
-    const handleSheetChanges = useCallback((index: number) => {
-        // Index -1 means the sheet is closed/hidden
-        if (index === -1) {
-            Keyboard.dismiss();
-        }
-    }, []);
 
     // --- Handle Save Notes ---
     const handleSaveNotes = async () => {
         if (!tripId) return;
 
-        // Close sheet and dismiss keyboard
-        notesSheetRef.current?.close();
+        // Dismiss Modal & Keyboard
         Keyboard.dismiss();
+        setNotesModalVisible(false);
 
         try {
             await TripService.updateTripNotes(tripId, noteText);
@@ -227,35 +210,6 @@ export default function TripDetailsScreen() {
         }
     };
     // -------------------------
-
-    const renderBackdrop = useCallback(
-        (props: any) => (
-            <BottomSheetBackdrop
-                {...props}
-                disappearsOnIndex={-1}
-                appearsOnIndex={0}
-                opacity={0.5}
-            />
-        ),
-        []
-    );
-
-    // --- NEW: Render Footer for Notes Sheet ---
-    const renderFooter = useCallback(
-        (props: BottomSheetFooterProps) => (
-            <BottomSheetFooter {...props} bottomInset={insets.bottom || 24}>
-                <View style={{ paddingHorizontal: 24, paddingBottom: 10, backgroundColor: colors.background }}>
-                    <TouchableOpacity
-                        style={[styles.sheetSaveButton, { backgroundColor: colors.tint }]}
-                        onPress={handleSaveNotes}
-                    >
-                        <ThemedText style={styles.sheetSaveButtonText}>Save Notes</ThemedText>
-                    </TouchableOpacity>
-                </View>
-            </BottomSheetFooter>
-        ),
-        [colors.tint, colors.background, insets.bottom, handleSaveNotes]
-    );
 
     // --- NEW: Handle Day Edit Press ---
     const handleEditDayPress = (day: any) => {
@@ -1074,36 +1028,37 @@ export default function TripDetailsScreen() {
                     </ScrollView>
                 </BottomSheetModal>
 
-                {/* --- NEW NOTES SHEET (Inline Implementation) --- */}
-                <BottomSheet
-                    ref={notesSheetRef}
-                    index={-1} // Starts closed
-                    snapPoints={notesSnapPoints}
-                    enablePanDownToClose={true}
-                    backdropComponent={renderBackdrop}
-                    keyboardBehavior="interactive"
-                    keyboardBlurBehavior="restore"
-                    enableBlurKeyboardOnGesture={true}
-                    backgroundStyle={{ backgroundColor: colors.background }}
-                    handleIndicatorStyle={{ backgroundColor: colors.icon }}
-                    onChange={handleSheetChanges}
-                    footerComponent={renderFooter} // <--- Added Footer
+                {/* --- NEW: Simple React Native Modal for Notes --- */}
+                <Modal
+                    visible={isNotesModalVisible}
+                    animationType="slide"
+                    presentationStyle="pageSheet"
+                    onRequestClose={() => setNotesModalVisible(false)}
                 >
-                    <BottomSheetView style={styles.sheetContentContainer}>
-                        <ThemedText type="subtitle" style={styles.sheetTitle}>Trip Notes</ThemedText>
+                    <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+                        <View style={[styles.modalHeader, { borderBottomColor: colors.icon + '30' }]}>
+                            <TouchableOpacity onPress={() => setNotesModalVisible(false)}>
+                                <ThemedText style={{ color: colors.tint, fontSize: 16 }}>Cancel</ThemedText>
+                            </TouchableOpacity>
+                            <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>Trip Notes</ThemedText>
+                            <TouchableOpacity onPress={handleSaveNotes}>
+                                <ThemedText style={{ fontWeight: 'bold', color: colors.tint, fontSize: 16 }}>Save</ThemedText>
+                            </TouchableOpacity>
+                        </View>
 
-                        {/* BottomSheetTextInput handles keyboard avoidance automatically */}
-                        <BottomSheetTextInput
-                            style={[styles.sheetInput, { color: colors.text, borderColor: colors.icon + '40' }]}
-                            placeholder="Write packing lists, reminders, or reservation codes here..."
-                            placeholderTextColor="#999"
+                        <TextInput
+                            style={[styles.modalInput, { color: colors.text }]}
                             multiline
+                            placeholder="Write your notes here..."
+                            placeholderTextColor="#999"
                             value={noteText}
                             onChangeText={setNoteText}
+                            textAlignVertical="top"
+                            autoFocus
                         />
-                    </BottomSheetView>
-                </BottomSheet>
-                {/* --- END NOTES SHEET --- */}
+                    </View>
+                </Modal>
+                {/* --- END NOTES MODAL --- */}
 
             </ThemedView>
         </GestureHandlerRootView>
@@ -1199,7 +1154,27 @@ const styles = StyleSheet.create({
         color: '#808080',
         marginTop: 2,
     },
-    // --- NEW MODAL STYLES (Pulled from EditDayModal) ---
+    // --- NEW MODAL STYLES ---
+    modalContainer: {
+        flex: 1,
+        paddingHorizontal: 20,
+        paddingTop: Platform.OS === 'android' ? 20 : 0
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 16,
+        borderBottomWidth: 1,
+    },
+    modalInput: {
+        flex: 1,
+        fontSize: 16,
+        lineHeight: 24,
+        marginTop: 20,
+        fontFamily: Fonts.regular
+    },
+    // (Used by EditDayModal wrapper)
     input: {
         borderWidth: 1,
         borderRadius: 12,
@@ -1215,42 +1190,4 @@ const styles = StyleSheet.create({
     },
     saveButtonText: { color: '#fff', fontSize: 16, fontFamily: Fonts.bold },
     paramLabel: { fontSize: 14, color: '#666', fontFamily: Fonts.medium },
-
-    // --- BOTTOM SHEET STYLES ---
-    sheetContentContainer: {
-        flex: 1,
-        paddingHorizontal: 24,
-        paddingBottom: 30,
-    },
-    sheetTitle: {
-        textAlign: 'center',
-        marginBottom: 20,
-    },
-    sheetInput: {
-        flex: 1,
-        fontSize: 16,
-        lineHeight: 20,
-        padding: 16,
-        height: 200,
-        borderRadius: 12,
-        borderWidth: 1,
-        backgroundColor: 'rgba(150, 150, 150, 0.1)', // Subtle background
-        textAlignVertical: 'top',
-    },
-    sheetSaveButton: {
-        height: 48,
-        borderRadius: 28,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.15,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    sheetSaveButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
 });
