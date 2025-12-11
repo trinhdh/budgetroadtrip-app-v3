@@ -42,22 +42,18 @@ export default function ExpenseScreen() {
     const initialData = expense ? JSON.parse(Array.isArray(expense) ? expense[0] : expense) : null;
     const isEditing = !!initialData;
 
-    // Trip Data (needed for dates & itinerary)
     const [trip, setTrip] = useState<Trip | null>(null);
     const [loadingTrip, setLoadingTrip] = useState(true);
 
-    // Form State
     const [amount, setAmount] = useState('');
     const [title, setTitle] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('Food');
     const [selectedDay, setSelectedDay] = useState(1);
     const [receiptUri, setReceiptUri] = useState<string | null>(null);
 
-    // Camera State
     const [cameraVisible, setCameraVisible] = useState(false);
     const [saving, setSaving] = useState(false);
 
-    // Fetch Trip Data
     useEffect(() => {
         if (!tripId) return;
         const id = Array.isArray(tripId) ? tripId[0] : tripId;
@@ -70,7 +66,6 @@ export default function ExpenseScreen() {
         return () => unsubscribe();
     }, [tripId]);
 
-    // Initialize Form
     useEffect(() => {
         if (initialData) {
             setAmount(initialData.amount ? String(initialData.amount) : '');
@@ -111,6 +106,7 @@ export default function ExpenseScreen() {
         }
 
         setSaving(true);
+
         const tId = Array.isArray(tripId) ? tripId[0] : tripId;
 
         const expenseData = {
@@ -120,7 +116,6 @@ export default function ExpenseScreen() {
             day: selectedDay,
             receiptImage: receiptUri,
             date: getFormattedDate(selectedDay) || `Day ${selectedDay}`,
-            // Preserve creation data if editing, else new
             addedBy: initialData?.addedBy || {
                 uid: user.uid,
                 name: user.displayName || 'User',
@@ -137,7 +132,7 @@ export default function ExpenseScreen() {
                 await TripService.addExpense(tId, expenseData);
             }
             router.back();
-        } catch (error) {
+        } catch {
             Alert.alert("Error", "Failed to save expense.");
         } finally {
             setSaving(false);
@@ -146,7 +141,7 @@ export default function ExpenseScreen() {
 
     if (loadingTrip) {
         return (
-            <ThemedView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+            <ThemedView style={styles.centered}>
                 <ActivityIndicator size="large" color={colors.tint} />
             </ThemedView>
         );
@@ -156,132 +151,180 @@ export default function ExpenseScreen() {
 
     return (
         <ThemedView style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-                    <ThemedText style={{ color: colors.text }}>Cancel</ThemedText>
+            {/* HEADER */}
+            <View style={styles.headerContainer}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+                    <ThemedText style={{ color: colors.text, opacity: 0.6 }}>Cancel</ThemedText>
                 </TouchableOpacity>
-                <ThemedText type="subtitle">{isEditing ? 'Edit Expense' : 'New Expense'}</ThemedText>
+
+                <ThemedText type="title" style={styles.headerTitle}>
+                    {isEditing ? 'Edit Expense' : 'New Expense'}
+                </ThemedText>
+
                 <TouchableOpacity onPress={handleSave} disabled={!isValid || saving}>
                     {saving ? (
                         <ActivityIndicator color={colors.tint} />
                     ) : (
-                        <ThemedText style={{ color: isValid ? colors.tint : '#ccc', fontWeight: 'bold' }}>Save</ThemedText>
+                        <ThemedText
+                            style={{
+                                color: isValid ? colors.tint : '#ccc',
+                                fontWeight: 'bold'
+                            }}>
+                            Save
+                        </ThemedText>
                     )}
                 </TouchableOpacity>
             </View>
 
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            {/* BODY */}
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+                <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.scrollContent}
+                >
                     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                         <View>
-                            {/* Amount Input */}
-                            <View style={styles.amountContainer}>
-                                <ThemedText style={styles.currencySymbol}>$</ThemedText>
+
+                            {/* AMOUNT */}
+                            <View style={styles.amountWrapper}>
                                 <TextInput
-                                    style={[styles.amountInput, { color: colors.text }]}
+                                    style={styles.amountInput}
                                     placeholder="0.00"
-                                    placeholderTextColor="#E0E0E0"
+                                    placeholderTextColor="#D8D8D8"
                                     keyboardType="decimal-pad"
                                     value={amount}
                                     onChangeText={setAmount}
-                                    autoFocus={!isEditing}
                                 />
                             </View>
 
-                            {/* Categories */}
+                            {/* CATEGORY */}
                             <ThemedText style={styles.sectionLabel}>Category</ThemedText>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-                                {CATEGORIES.map((cat) => (
-                                    <TouchableOpacity
-                                        key={cat.id}
-                                        style={[
-                                            styles.categoryCard,
-                                            selectedCategory === cat.id && { backgroundColor: cat.color, borderColor: cat.color }
-                                        ]}
-                                        onPress={() => setSelectedCategory(cat.id)}
-                                    >
-                                        <View style={[
-                                            styles.iconCircle,
-                                            selectedCategory === cat.id ? { backgroundColor: 'rgba(255,255,255,0.2)' } : { backgroundColor: cat.color + '15' }
-                                        ]}>
-                                            <IconSymbol name={cat.icon as any} size={20} color={selectedCategory === cat.id ? '#fff' : cat.color} />
-                                        </View>
-                                        <ThemedText style={[styles.categoryText, selectedCategory === cat.id && { color: '#fff', fontWeight: 'bold' }]}>
-                                            {cat.id}
-                                        </ThemedText>
-                                    </TouchableOpacity>
-                                ))}
+                            <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.categoryScroll}
+                            >
+                                {CATEGORIES.map(cat => {
+                                    const selected = selectedCategory === cat.id;
+                                    return (
+                                        <TouchableOpacity
+                                            key={cat.id}
+                                            onPress={() => setSelectedCategory(cat.id)}
+                                            style={[
+                                                styles.categoryChip,
+                                                { borderColor: selected ? cat.color : '#E5E5E5' },
+                                                selected && { backgroundColor: cat.color }
+                                            ]}
+                                        >
+                                            <IconSymbol
+                                                name={cat.icon as any}
+                                                size={18}
+                                                color={selected ? '#fff' : cat.color}
+                                            />
+                                            <ThemedText
+                                                style={[
+                                                    styles.categoryLabel,
+                                                    selected && { color: '#fff', fontWeight: '600' }
+                                                ]}
+                                            >
+                                                {cat.id}
+                                            </ThemedText>
+                                        </TouchableOpacity>
+                                    );
+                                })}
                             </ScrollView>
 
-                            <View style={styles.divider} />
-
-                            {/* Details */}
-                            <View style={styles.formSection}>
-                                <View style={[styles.inputContainer, { backgroundColor: colors.background, borderColor: colors.icon + '40' }]}>
-                                    <IconSymbol name="pencil" size={20} color="#999" style={{ marginRight: 12 }} />
-                                    <TextInput
-                                        style={[styles.textInput, { color: colors.text }]}
-                                        placeholder="Description (e.g. Starbucks)"
-                                        placeholderTextColor="#999"
-                                        value={title}
-                                        onChangeText={setTitle}
-                                    />
-                                </View>
-
-                                {/* Day Selection */}
-                                <ThemedText style={[styles.sectionLabel, { marginTop: 24, marginBottom: 12 }]}>Assign to Day</ThemedText>
-                                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayScroll}>
-                                    {trip?.itinerary?.map((day) => {
-                                        const isSelected = selectedDay === day.day;
-                                        const dateStr = getFormattedDate(day.day);
-                                        return (
-                                            <TouchableOpacity
-                                                key={day.day}
-                                                style={[
-                                                    styles.dayPill,
-                                                    isSelected && { backgroundColor: colors.tint, borderColor: colors.tint }
-                                                ]}
-                                                onPress={() => setSelectedDay(day.day)}
-                                            >
-                                                <ThemedText style={[styles.dayPillText, isSelected && { color: '#fff' }]}>
-                                                    Day {day.day}
-                                                </ThemedText>
-                                                {dateStr && (
-                                                    <ThemedText style={[styles.dayPillDate, isSelected ? { color: 'rgba(255,255,255,0.8)' } : { color: '#999' }]}>
-                                                        {dateStr}
-                                                    </ThemedText>
-                                                )}
-                                            </TouchableOpacity>
-                                        );
-                                    })}
-                                </ScrollView>
-
-                                {/* Receipt */}
-                                <TouchableOpacity
-                                    style={[
-                                        styles.receiptButton,
-                                        { borderColor: colors.icon + '40' },
-                                        receiptUri && { borderColor: colors.tint, backgroundColor: colors.tint + '10', borderStyle: 'solid' }
-                                    ]}
-                                    onPress={() => setCameraVisible(true)}
-                                >
-                                    {receiptUri ? (
-                                        <View style={styles.receiptContent}>
-                                            <ExpoImage source={{ uri: receiptUri }} style={styles.receiptPreview} />
-                                            <ThemedText style={[styles.receiptTextActive, { color: colors.tint }]}>Receipt Attached</ThemedText>
-                                            <IconSymbol name="checkmark.circle.fill" size={22} color={colors.tint} style={{ marginLeft: 'auto' }} />
-                                        </View>
-                                    ) : (
-                                        <View style={styles.receiptContent}>
-                                            <View style={[styles.iconCircle, { backgroundColor: '#F0F2F5' }]}>
-                                                <IconSymbol name="camera.viewfinder" size={20} color={colors.tint} />
-                                            </View>
-                                            <ThemedText style={styles.receiptText}>Scan Receipt</ThemedText>
-                                        </View>
-                                    )}
-                                </TouchableOpacity>
+                            {/* DESCRIPTION */}
+                            <View style={styles.inputRow}>
+                                <IconSymbol name="pencil" size={18} color="#999" style={{ marginRight: 12 }} />
+                                <TextInput
+                                    style={styles.textInput}
+                                    placeholder="Description (e.g. Starbucks)"
+                                    placeholderTextColor="#999"
+                                    value={title}
+                                    onChangeText={setTitle}
+                                />
                             </View>
+
+                            {/* DAY SELECTOR */}
+                            <ThemedText style={[styles.sectionLabel, { marginTop: 28 }]}>
+                                Assign to Day
+                            </ThemedText>
+                            <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.dayScroll}
+                            >
+                                {trip?.itinerary?.map(day => {
+                                    const selected = selectedDay === day.day;
+                                    const dateStr = getFormattedDate(day.day);
+                                    return (
+                                        <TouchableOpacity
+                                            key={day.day}
+                                            onPress={() => setSelectedDay(day.day)}
+                                            style={[
+                                                styles.dayChip,
+                                                selected && { backgroundColor: colors.tint, borderColor: colors.tint }
+                                            ]}
+                                        >
+                                            <ThemedText style={[styles.dayChipText, selected && { color: '#fff' }]}>
+                                                Day {day.day}
+                                            </ThemedText>
+
+                                            {dateStr && (
+                                                <ThemedText
+                                                    style={[
+                                                        styles.dayChipDate,
+                                                        selected ? { color: 'rgba(255,255,255,0.8)' } : { color: '#888' }
+                                                    ]}
+                                                >
+                                                    {dateStr}
+                                                </ThemedText>
+                                            )}
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </ScrollView>
+
+                            {/* RECEIPT */}
+                            <TouchableOpacity
+                                style={[
+                                    styles.receiptBox,
+                                    receiptUri && {
+                                        backgroundColor: colors.tint + '10',
+                                        borderColor: colors.tint
+                                    }
+                                ]}
+                                onPress={() => setCameraVisible(true)}
+                            >
+                                {receiptUri ? (
+                                    <View style={styles.receiptRow}>
+                                        <ExpoImage source={{ uri: receiptUri }} style={styles.receiptPreview} />
+                                        <ThemedText
+                                            style={{
+                                                fontWeight: '600',
+                                                color: colors.tint,
+                                                marginLeft: 10
+                                            }}
+                                        >
+                                            Receipt Attached
+                                        </ThemedText>
+                                        <IconSymbol
+                                            name="checkmark.circle.fill"
+                                            size={20}
+                                            color={colors.tint}
+                                            style={{ marginLeft: 'auto' }}
+                                        />
+                                    </View>
+                                ) : (
+                                    <View style={styles.receiptRow}>
+                                        <View style={styles.receiptIconBox}>
+                                            <IconSymbol name="camera.viewfinder" size={20} color={colors.tint} />
+                                        </View>
+                                        <ThemedText style={styles.receiptLabel}>Scan Receipt</ThemedText>
+                                    </View>
+                                )}
+                            </TouchableOpacity>
                         </View>
                     </TouchableWithoutFeedback>
                 </ScrollView>
@@ -298,34 +341,112 @@ export default function ExpenseScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 20 : 50, paddingBottom: 20 },
-    closeButton: { padding: 8 },
-    scrollContent: { paddingHorizontal: 20, paddingBottom: 50 },
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-    amountContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginVertical: 30 },
-    currencySymbol: { fontSize: 40, fontWeight: 'bold', color: '#BDBDBD', marginRight: 4, marginTop: 4 },
-    amountInput: { fontSize: 64, fontWeight: 'bold', minWidth: 100, textAlign: 'center' },
+    headerContainer: {
+        paddingHorizontal: 20,
+        paddingTop: Platform.OS === 'ios' ? 14 : 40,
+        paddingBottom: 16,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+    },
+    headerButton: { padding: 4 },
+    headerTitle: { fontWeight: '700', fontSize: 18 },
 
-    sectionLabel: { fontSize: 14, fontWeight: '600', color: '#666', marginBottom: 10, textTransform: 'uppercase' },
-    categoryScroll: { gap: 12, paddingRight: 20 },
-    categoryCard: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 24, borderWidth: 1, borderColor: '#eee', gap: 8, height: 50 },
-    iconCircle: { width: 30, height: 30, borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
-    categoryText: { fontSize: 14, color: '#444', fontWeight: '500' },
+    scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
 
-    divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 24 },
+    amountWrapper: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'flex-end',
+        marginTop: 24,
+        marginBottom: 30,
+    },
+    dollarSign: {
+        fontSize: 36,
+        opacity: 0.4,
+        marginRight: 6,
+        marginBottom: 4
+    },
+    amountInput: {
+        fontSize: 54,
+        fontWeight: '700',
+        textAlign: 'center',
+        minWidth: 120
+    },
 
-    formSection: { gap: 16 },
-    inputContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, height: 56 },
-    textInput: { flex: 1, fontSize: 16, fontFamily: Fonts.regular },
+    sectionLabel: {
+        fontSize: 13,
+        fontWeight: '700',
+        opacity: 0.7,
+        marginBottom: 10
+    },
 
-    dayScroll: { gap: 8, paddingRight: 20 },
-    dayPill: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 16, borderWidth: 1, borderColor: '#eee', backgroundColor: '#fff', alignItems: 'center', minWidth: 80 },
-    dayPillText: { fontSize: 15, color: '#333', fontWeight: '600' },
-    dayPillDate: { fontSize: 11, marginTop: 2, fontWeight: '500' },
+    categoryScroll: { gap: 10, paddingRight: 16 },
+    categoryChip: {
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        borderWidth: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8
+    },
+    categoryLabel: { fontSize: 14, color: '#444' },
 
-    receiptButton: { borderWidth: 1, borderRadius: 16, padding: 12, borderStyle: 'dashed', marginTop: 10 },
-    receiptContent: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    receiptText: { fontSize: 16, color: '#666', fontWeight: '500' },
-    receiptTextActive: { fontSize: 16, fontWeight: '600' },
-    receiptPreview: { width: 40, height: 40, borderRadius: 8, borderWidth: 1, borderColor: '#eee' },
+    inputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#E5E5E5',
+        borderRadius: 14,
+        paddingHorizontal: 16,
+        height: 50,
+        marginTop: 16,
+    },
+    textInput: {
+        flex: 1,
+        fontSize: 16,
+        fontFamily: Fonts.regular
+    },
+
+    dayScroll: { gap: 10, paddingRight: 16, marginBottom: 6 },
+    dayChip: {
+        borderWidth: 1,
+        borderColor: '#E5E5E5',
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 14,
+        minWidth: 80,
+        alignItems: 'center'
+    },
+    dayChipText: { fontSize: 15, fontWeight: '600' },
+    dayChipDate: { fontSize: 11, marginTop: 2 },
+
+    receiptBox: {
+        borderStyle: 'dashed',
+        borderWidth: 1,
+        borderColor: '#CCC',
+        padding: 14,
+        borderRadius: 16,
+        marginTop: 28
+    },
+    receiptRow: { flexDirection: 'row', alignItems: 'center' },
+    receiptIconBox: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: '#F2F2F2',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    receiptLabel: { marginLeft: 12, fontSize: 16, fontWeight: '500' },
+    receiptPreview: {
+        width: 50,
+        height: 50,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#DDD'
+    }
 });
