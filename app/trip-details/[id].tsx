@@ -421,7 +421,7 @@ export default function TripDetailsScreen() {
 
     const handleShare = async () => {
         try {
-            const deepLink = `budgettrip://trip/${tripId}`;
+            const deepLink = `budgetroadtrip://trip-details/${tripId}`;
             const message = `Join my road trip to ${trip?.destination}! 🚗💨\n\nTap here to collaborate: ${deepLink}`;
             await Share.share({ message, title: `Join Trip: ${trip?.destination}`, url: deepLink });
         } catch (error: any) {

@@ -295,7 +295,7 @@ export default function HomeScreen() {
 
   const handleShareTrip = async (trip: UiTrip) => {
     try {
-      const deepLink = `budgettrip://trip/${trip.id}`;
+      const deepLink = `budgetroadtrip://trip-details/${trip.id}`;
       const message = `👋 You've been invited to join a trip to ${trip.destination}! 🌍\n\n📅 Dates: ${trip.formattedStartDate} - ${trip.formattedEndDate}\n\nTap the link below to view the itinerary and collaborate:\n${deepLink}`;
 
       await Share.share({
