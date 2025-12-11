@@ -48,7 +48,6 @@ import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // --- MODALS ---
-import { AddExpenseModal } from '@/components/ui/add-expense-modal';
 import { BalancesModal } from '@/components/ui/balances-modal';
 import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { ExpenseDetailModal } from '@/components/ui/expense-detail-modal';
@@ -177,9 +176,7 @@ export default function TripDetailsScreen() {
     const [overviewStats, setOverviewStats] = useState<Record<string, { distance: string, duration: string }>>({});
 
     const [paramsModalVisible, setParamsModalVisible] = useState(false);
-    const [addExpenseVisible, setAddExpenseVisible] = useState(false);
     const [selectedExpense, setSelectedExpense] = useState<any>(null);
-    const [editingExpense, setEditingExpense] = useState<any>(null);
     const [balancesVisible, setBalancesVisible] = useState(false);
 
     // --- NEW STATE FOR DAY EDITING ---
@@ -490,35 +487,6 @@ export default function TripDetailsScreen() {
         }
     };
 
-    const handleSaveExpense = async (data: any) => {
-        if (!tripId || !user) return;
-        try {
-            const { id: _ignoredId, ...cleanData } = data;
-            const newExpense = {
-                ...cleanData,
-                amount: parseFloat(data.amount),
-                createdAt: data.createdAt || new Date(),
-                addedBy: data.addedBy || {
-                    uid: user.uid,
-                    name: user.displayName || 'User',
-                    avatar: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random`
-                },
-                hasReceipt: !!data.receiptImage
-            };
-
-            if (data.id) {
-                await TripService.updateExpense(tripId, data.id, newExpense);
-                Alert.alert("Success", "Expense updated!");
-            } else {
-                await TripService.addExpense(tripId, newExpense);
-                Alert.alert("Success", "Expense added!");
-            }
-        } catch (error) {
-            Alert.alert("Error", "Failed to save expense.");
-        } finally {
-            setEditingExpense(null);
-        }
-    };
 
     const handleDeleteExpense = async (expenseId: string) => {
         closeRow(expenseId);
@@ -534,8 +502,10 @@ export default function TripDetailsScreen() {
 
     const handleEditExpensePress = (item: any) => {
         closeRow(item.id);
-        setEditingExpense(item);
-        setAddExpenseVisible(true);
+        router.push({
+            pathname: '/trip-details/expense',
+            params: { tripId: tripId, expense: JSON.stringify(item) }
+        });
     };
 
     const [isMapMaximized, setIsMapMaximized] = useState(false);
@@ -990,7 +960,10 @@ export default function TripDetailsScreen() {
                                 </View>
                             )}
 
-                            <TouchableOpacity onPress={() => setAddExpenseVisible(true)} style={[styles.addItemButton, { borderColor: colors.icon + '40', marginTop: 16 }]}>
+                            <TouchableOpacity
+                                onPress={() => router.push({ pathname: '/trip-details/expense', params: { tripId: tripId } })}
+                                style={[styles.addItemButton, { borderColor: colors.icon + '40', marginTop: 16 }]}
+                            >
                                 <IconSymbol name="plus" size={20} color={colors.text} />
                                 <ThemedText style={styles.addItemText}>Add Expense</ThemedText>
                             </TouchableOpacity>
@@ -1018,14 +991,7 @@ export default function TripDetailsScreen() {
 
                 {/* MODALS */}
                 <BalancesModal visible={balancesVisible} onClose={() => setBalancesVisible(false)} debts={[]} currentUser="u1" onSettle={() => { }} />
-                <AddExpenseModal
-                    visible={addExpenseVisible}
-                    onClose={() => { setAddExpenseVisible(false); setEditingExpense(null); }}
-                    onSave={handleSaveExpense}
-                    itineraryDays={trip.itinerary || []}
-                    tripStartDate={trip.startDate}
-                    initialData={editingExpense}
-                />
+
                 <ExpenseDetailModal visible={!!selectedExpense} onClose={() => setSelectedExpense(null)} expense={selectedExpense} />
                 <EditDayModal
                     visible={!!editingDay}
