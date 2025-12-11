@@ -9,6 +9,7 @@ import {
     Dimensions,
     FlatList,
     Image,
+    Keyboard,
     Platform,
     ScrollView,
     Share,
@@ -23,6 +24,15 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// --- BOTTOM SHEET IMPORTS ---
+import BottomSheet, {
+    BottomSheetBackdrop,
+    BottomSheetFooter,
+    BottomSheetFooterProps,
+    BottomSheetTextInput,
+    BottomSheetView
+} from '@gorhom/bottom-sheet';
 
 // --- SERVICE & CONTEXT ---
 import { GeoPoint, Trip } from '@/constants/types';
@@ -42,7 +52,6 @@ import { AddExpenseModal } from '@/components/ui/add-expense-modal';
 import { BalancesModal } from '@/components/ui/balances-modal';
 import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { ExpenseDetailModal } from '@/components/ui/expense-detail-modal';
-import { NotesModal } from '@/components/ui/notes-modal'; // <-- NEW IMPORT
 
 const { width, height } = Dimensions.get('window');
 const PARALLAX_HEADER_HEIGHT = 400;
@@ -173,9 +182,14 @@ export default function TripDetailsScreen() {
     const [editingExpense, setEditingExpense] = useState<any>(null);
     const [balancesVisible, setBalancesVisible] = useState(false);
 
-    // --- NEW STATE FOR NOTES/DAY EDITING ---
-    const [notesModalVisible, setNotesModalVisible] = useState(false); // <-- New State
+    // --- NEW STATE FOR DAY EDITING ---
     const [editingDay, setEditingDay] = useState<any>(null);
+
+    // --- BOTTOM SHEET REFS & STATE FOR NOTES ---
+    const notesSheetRef = useRef<BottomSheet>(null);
+    const [noteText, setNoteText] = useState('');
+    const notesSnapPoints = useMemo(() => ['45%', '45%'], []);
+
     // ---------------------------------
 
     const swipeableRows = useRef(new Map());
@@ -186,18 +200,65 @@ export default function TripDetailsScreen() {
         if (row) row.close();
     };
 
+    // --- Handle Open/Close Notes Sheet ---
+    const handleOpenNotes = () => {
+        setNoteText(trip?.notes || '');
+        notesSheetRef.current?.expand();
+    };
+
+    // --- Handle Sheet Changes (Dismiss Keyboard on Close) ---
+    const handleSheetChanges = useCallback((index: number) => {
+        // Index -1 means the sheet is closed/hidden
+        if (index === -1) {
+            Keyboard.dismiss();
+        }
+    }, []);
+
     // --- Handle Save Notes ---
-    const handleSaveNotes = async (newNotes: string) => {
+    const handleSaveNotes = async () => {
         if (!tripId) return;
-        setNotesModalVisible(false);
+
+        // Close sheet and dismiss keyboard
+        notesSheetRef.current?.close();
+        Keyboard.dismiss();
+
         try {
-            await TripService.updateTripNotes(tripId, newNotes);
+            await TripService.updateTripNotes(tripId, noteText);
             Alert.alert("Success", "Notes saved!");
         } catch (error) {
             Alert.alert("Error", "Failed to save notes.");
         }
     };
     // -------------------------
+
+    const renderBackdrop = useCallback(
+        (props: any) => (
+            <BottomSheetBackdrop
+                {...props}
+                disappearsOnIndex={-1}
+                appearsOnIndex={0}
+                opacity={0.5}
+            />
+        ),
+        []
+    );
+
+    // --- NEW: Render Footer for Notes Sheet ---
+    const renderFooter = useCallback(
+        (props: BottomSheetFooterProps) => (
+            <BottomSheetFooter {...props} bottomInset={insets.bottom || 24}>
+                <View style={{ paddingHorizontal: 24, paddingBottom: 10, backgroundColor: colors.background }}>
+                    <TouchableOpacity
+                        style={[styles.sheetSaveButton, { backgroundColor: colors.tint }]}
+                        onPress={handleSaveNotes}
+                    >
+                        <ThemedText style={styles.sheetSaveButtonText}>Save Notes</ThemedText>
+                    </TouchableOpacity>
+                </View>
+            </BottomSheetFooter>
+        ),
+        [colors.tint, colors.background, insets.bottom, handleSaveNotes]
+    );
 
     // --- NEW: Handle Day Edit Press ---
     const handleEditDayPress = (day: any) => {
@@ -863,7 +924,7 @@ export default function TripDetailsScreen() {
                             <ThemedText type="subtitle" style={styles.sectionTitle}>Trip Notes</ThemedText>
                             <TouchableOpacity
                                 style={[styles.noteCard, { borderColor: colors.icon + '20', backgroundColor: colors.background }]}
-                                onPress={() => setNotesModalVisible(true)}
+                                onPress={handleOpenNotes}
                                 activeOpacity={0.7}
                             >
                                 <View style={styles.noteContent}>
@@ -1047,14 +1108,36 @@ export default function TripDetailsScreen() {
                     </ScrollView>
                 </BottomSheetModal>
 
-                {/* --- NEW NOTES MODAL --- */}
-                <NotesModal
-                    visible={notesModalVisible}
-                    onClose={() => setNotesModalVisible(false)}
-                    initialNotes={trip?.notes}
-                    onSave={handleSaveNotes}
-                />
-                {/* --- END NEW NOTES MODAL --- */}
+                {/* --- NEW NOTES SHEET (Inline Implementation) --- */}
+                <BottomSheet
+                    ref={notesSheetRef}
+                    index={-1} // Starts closed
+                    snapPoints={notesSnapPoints}
+                    enablePanDownToClose={true}
+                    backdropComponent={renderBackdrop}
+                    keyboardBehavior="interactive"
+                    keyboardBlurBehavior="restore"
+                    enableBlurKeyboardOnGesture={true}
+                    backgroundStyle={{ backgroundColor: colors.background }}
+                    handleIndicatorStyle={{ backgroundColor: colors.icon }}
+                    onChange={handleSheetChanges}
+                    footerComponent={renderFooter} // <--- Added Footer
+                >
+                    <BottomSheetView style={styles.sheetContentContainer}>
+                        <ThemedText type="subtitle" style={styles.sheetTitle}>Trip Notes</ThemedText>
+
+                        {/* BottomSheetTextInput handles keyboard avoidance automatically */}
+                        <BottomSheetTextInput
+                            style={[styles.sheetInput, { color: colors.text, borderColor: colors.icon + '40' }]}
+                            placeholder="Write packing lists, reminders, or reservation codes here..."
+                            placeholderTextColor="#999"
+                            multiline
+                            value={noteText}
+                            onChangeText={setNoteText}
+                        />
+                    </BottomSheetView>
+                </BottomSheet>
+                {/* --- END NOTES SHEET --- */}
 
             </ThemedView>
         </GestureHandlerRootView>
@@ -1166,4 +1249,42 @@ const styles = StyleSheet.create({
     },
     saveButtonText: { color: '#fff', fontSize: 16, fontFamily: Fonts.bold },
     paramLabel: { fontSize: 14, color: '#666', fontFamily: Fonts.medium },
+
+    // --- BOTTOM SHEET STYLES ---
+    sheetContentContainer: {
+        flex: 1,
+        paddingHorizontal: 24,
+        paddingBottom: 30,
+    },
+    sheetTitle: {
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    sheetInput: {
+        flex: 1,
+        fontSize: 16,
+        lineHeight: 20,
+        padding: 16,
+        height: 200,
+        borderRadius: 12,
+        borderWidth: 1,
+        backgroundColor: 'rgba(150, 150, 150, 0.1)', // Subtle background
+        textAlignVertical: 'top',
+    },
+    sheetSaveButton: {
+        height: 48,
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    sheetSaveButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
 });
