@@ -1,4 +1,3 @@
-import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ReceiptCameraModal } from '@/components/ui/receipt-camera-modal';
 import { Colors, Fonts } from '@/constants/theme';
@@ -6,8 +5,6 @@ import React, { useEffect, useState } from 'react';
 import {
     Alert,
     Keyboard,
-    KeyboardAvoidingView,
-    Platform,
     Image as RNImage,
     ScrollView,
     StyleSheet,
@@ -17,6 +14,7 @@ import {
     TouchableWithoutFeedback,
     View
 } from 'react-native';
+import { SimpleDisplayModal } from './simple-display-modal';
 
 type Props = {
     visible: boolean;
@@ -135,194 +133,190 @@ export function AddExpenseModal({
 
     return (
         <>
-            <BottomSheetModal
+            <SimpleDisplayModal
                 isVisible={visible}
                 onClose={onClose}
                 // Dynamic Title
                 title={isEditing ? "Edit Expense" : "Add New Expense"}
                 height="90%"
             >
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    style={{ flex: 1 }}
-                >
-                    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                        <View style={{ flex: 1 }}>
-                            <ScrollView
-                                contentContainerStyle={styles.scrollContent}
-                                showsVerticalScrollIndicator={false}
-                            >
 
-                                {/* 1. HERO AMOUNT INPUT */}
-                                <View style={styles.amountContainer}>
-                                    <Text style={styles.currencySymbol}>$</Text>
+                <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                    <View style={{ flex: 1 }}>
+                        <ScrollView
+                            contentContainerStyle={styles.scrollContent}
+                            showsVerticalScrollIndicator={false}
+                        >
+
+                            {/* 1. HERO AMOUNT INPUT */}
+                            <View style={styles.amountContainer}>
+                                <Text style={styles.currencySymbol}>$</Text>
+                                <TextInput
+                                    style={styles.amountInput}
+                                    placeholder="0.00"
+                                    placeholderTextColor="#E0E0E0"
+                                    keyboardType="decimal-pad"
+                                    value={amount}
+                                    onChangeText={setAmount}
+                                    autoFocus={false} // Don't autofocus on edit to prevent jarring jumps
+                                />
+                            </View>
+
+                            {/* 2. CATEGORY SELECTOR */}
+                            <Text style={styles.sectionLabel}>Category</Text>
+                            <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.categoryScroll}
+                            >
+                                {CATEGORIES.map((cat) => (
+                                    <TouchableOpacity
+                                        key={cat.id}
+                                        style={[
+                                            styles.categoryCard,
+                                            selectedCategory === cat.id && {
+                                                backgroundColor: cat.color,
+                                                borderColor: cat.color
+                                            }
+                                        ]}
+                                        onPress={() => setSelectedCategory(cat.id)}
+                                        activeOpacity={0.8}
+                                    >
+                                        <View style={[
+                                            styles.iconCircle,
+                                            selectedCategory === cat.id
+                                                ? { backgroundColor: 'rgba(255,255,255,0.2)' }
+                                                : { backgroundColor: cat.color + '15' }
+                                        ]}>
+                                            <IconSymbol
+                                                name={cat.icon as any}
+                                                size={20}
+                                                color={selectedCategory === cat.id ? '#fff' : cat.color}
+                                            />
+                                        </View>
+                                        <Text style={[
+                                            styles.categoryText,
+                                            selectedCategory === cat.id && { color: '#fff', fontWeight: 'bold' }
+                                        ]}>
+                                            {cat.id}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+
+                            <View style={styles.divider} />
+
+                            {/* 3. DETAILS SECTION */}
+                            <View style={styles.formSection}>
+                                {/* Description */}
+                                <View style={styles.inputContainer}>
+                                    <IconSymbol name="pencil" size={20} color="#999" style={{ marginRight: 12 }} />
                                     <TextInput
-                                        style={styles.amountInput}
-                                        placeholder="0.00"
-                                        placeholderTextColor="#E0E0E0"
-                                        keyboardType="decimal-pad"
-                                        value={amount}
-                                        onChangeText={setAmount}
-                                        autoFocus={false} // Don't autofocus on edit to prevent jarring jumps
+                                        style={styles.textInput}
+                                        placeholder="Description (e.g. Starbucks)"
+                                        placeholderTextColor="#999"
+                                        value={title}
+                                        onChangeText={setTitle}
                                     />
                                 </View>
 
-                                {/* 2. CATEGORY SELECTOR */}
-                                <Text style={styles.sectionLabel}>Category</Text>
-                                <ScrollView
-                                    horizontal
-                                    showsHorizontalScrollIndicator={false}
-                                    contentContainerStyle={styles.categoryScroll}
-                                >
-                                    {CATEGORIES.map((cat) => (
-                                        <TouchableOpacity
-                                            key={cat.id}
-                                            style={[
-                                                styles.categoryCard,
-                                                selectedCategory === cat.id && {
-                                                    backgroundColor: cat.color,
-                                                    borderColor: cat.color
-                                                }
-                                            ]}
-                                            onPress={() => setSelectedCategory(cat.id)}
-                                            activeOpacity={0.8}
+                                {/* Day Selection - HIDDEN if currentDayIndex is provided AND we are NOT editing (or editing same day) */}
+                                {/* Logic: If adding new from DayView, hide day picker. If editing, maybe show it? For now following same logic: hide if context provided */}
+                                {currentDayIndex === undefined && (
+                                    <>
+                                        <Text style={[styles.sectionLabel, { marginTop: 24, marginBottom: 12 }]}>
+                                            Assign to Day
+                                        </Text>
+                                        <ScrollView
+                                            horizontal
+                                            showsHorizontalScrollIndicator={false}
+                                            contentContainerStyle={styles.dayScroll}
                                         >
-                                            <View style={[
-                                                styles.iconCircle,
-                                                selectedCategory === cat.id
-                                                    ? { backgroundColor: 'rgba(255,255,255,0.2)' }
-                                                    : { backgroundColor: cat.color + '15' }
-                                            ]}>
-                                                <IconSymbol
-                                                    name={cat.icon as any}
-                                                    size={20}
-                                                    color={selectedCategory === cat.id ? '#fff' : cat.color}
-                                                />
-                                            </View>
-                                            <Text style={[
-                                                styles.categoryText,
-                                                selectedCategory === cat.id && { color: '#fff', fontWeight: 'bold' }
-                                            ]}>
-                                                {cat.id}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
+                                            {itineraryDays.map((day) => {
+                                                const isSelected = selectedDay === day.day;
+                                                const dateStr = getFormattedDate(day.day);
 
-                                <View style={styles.divider} />
-
-                                {/* 3. DETAILS SECTION */}
-                                <View style={styles.formSection}>
-                                    {/* Description */}
-                                    <View style={styles.inputContainer}>
-                                        <IconSymbol name="pencil" size={20} color="#999" style={{ marginRight: 12 }} />
-                                        <TextInput
-                                            style={styles.textInput}
-                                            placeholder="Description (e.g. Starbucks)"
-                                            placeholderTextColor="#999"
-                                            value={title}
-                                            onChangeText={setTitle}
-                                        />
-                                    </View>
-
-                                    {/* Day Selection - HIDDEN if currentDayIndex is provided AND we are NOT editing (or editing same day) */}
-                                    {/* Logic: If adding new from DayView, hide day picker. If editing, maybe show it? For now following same logic: hide if context provided */}
-                                    {currentDayIndex === undefined && (
-                                        <>
-                                            <Text style={[styles.sectionLabel, { marginTop: 24, marginBottom: 12 }]}>
-                                                Assign to Day
-                                            </Text>
-                                            <ScrollView
-                                                horizontal
-                                                showsHorizontalScrollIndicator={false}
-                                                contentContainerStyle={styles.dayScroll}
-                                            >
-                                                {itineraryDays.map((day) => {
-                                                    const isSelected = selectedDay === day.day;
-                                                    const dateStr = getFormattedDate(day.day);
-
-                                                    return (
-                                                        <TouchableOpacity
-                                                            key={day.day}
-                                                            style={[
-                                                                styles.dayPill,
-                                                                isSelected && {
-                                                                    backgroundColor: Colors.light.tint,
-                                                                    borderColor: Colors.light.tint
-                                                                }
-                                                            ]}
-                                                            onPress={() => setSelectedDay(day.day)}
-                                                        >
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={day.day}
+                                                        style={[
+                                                            styles.dayPill,
+                                                            isSelected && {
+                                                                backgroundColor: Colors.light.tint,
+                                                                borderColor: Colors.light.tint
+                                                            }
+                                                        ]}
+                                                        onPress={() => setSelectedDay(day.day)}
+                                                    >
+                                                        <Text style={[
+                                                            styles.dayPillText,
+                                                            isSelected && { color: '#fff', fontWeight: 'bold' }
+                                                        ]}>
+                                                            Day {day.day}
+                                                        </Text>
+                                                        {dateStr && (
                                                             <Text style={[
-                                                                styles.dayPillText,
-                                                                isSelected && { color: '#fff', fontWeight: 'bold' }
+                                                                styles.dayPillDate,
+                                                                isSelected ? { color: 'rgba(255,255,255,0.8)' } : { color: '#999' }
                                                             ]}>
-                                                                Day {day.day}
+                                                                {dateStr}
                                                             </Text>
-                                                            {dateStr && (
-                                                                <Text style={[
-                                                                    styles.dayPillDate,
-                                                                    isSelected ? { color: 'rgba(255,255,255,0.8)' } : { color: '#999' }
-                                                                ]}>
-                                                                    {dateStr}
-                                                                </Text>
-                                                            )}
-                                                        </TouchableOpacity>
-                                                    );
-                                                })}
-                                            </ScrollView>
-                                        </>
-                                    )}
+                                                        )}
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
+                                        </ScrollView>
+                                    </>
+                                )}
 
-                                    {/* Receipt Button */}
-                                    <TouchableOpacity
-                                        style={[
-                                            styles.receiptButton,
-                                            receiptUri && styles.receiptButtonActive,
-                                            currentDayIndex !== undefined && { marginTop: 24 }
-                                        ]}
-                                        onPress={() => setCameraVisible(true)}
-                                        activeOpacity={0.7}
-                                    >
-                                        {receiptUri ? (
-                                            <View style={styles.receiptContent}>
-                                                <RNImage source={{ uri: receiptUri }} style={styles.receiptPreview} />
-                                                <Text style={styles.receiptTextActive}>Receipt Attached</Text>
-                                                <IconSymbol name="checkmark.circle.fill" size={22} color={Colors.light.tint} style={{ marginLeft: 'auto' }} />
-                                            </View>
-                                        ) : (
-                                            <View style={styles.receiptContent}>
-                                                <View style={[styles.iconCircle, { backgroundColor: '#F0F2F5' }]}>
-                                                    <IconSymbol name="camera.viewfinder" size={20} color={Colors.light.tint} />
-                                                </View>
-                                                <Text style={styles.receiptText}>Scan Receipt</Text>
-                                            </View>
-                                        )}
-                                    </TouchableOpacity>
-                                </View>
-
-                                <View style={{ height: 100 }} />
-                            </ScrollView>
-
-                            {/* Footer Button */}
-                            <View style={styles.footer}>
+                                {/* Receipt Button */}
                                 <TouchableOpacity
                                     style={[
-                                        styles.saveButton,
-                                        { backgroundColor: isValid ? Colors.light.tint : '#ccc' }
+                                        styles.receiptButton,
+                                        receiptUri && styles.receiptButtonActive,
+                                        currentDayIndex !== undefined && { marginTop: 24 }
                                     ]}
-                                    onPress={handleSave}
-                                    disabled={!isValid}
+                                    onPress={() => setCameraVisible(true)}
+                                    activeOpacity={0.7}
                                 >
-                                    <Text style={styles.saveButtonText}>
-                                        {isEditing ? "Update Expense" : "Save Expense"}
-                                    </Text>
+                                    {receiptUri ? (
+                                        <View style={styles.receiptContent}>
+                                            <RNImage source={{ uri: receiptUri }} style={styles.receiptPreview} />
+                                            <Text style={styles.receiptTextActive}>Receipt Attached</Text>
+                                            <IconSymbol name="checkmark.circle.fill" size={22} color={Colors.light.tint} style={{ marginLeft: 'auto' }} />
+                                        </View>
+                                    ) : (
+                                        <View style={styles.receiptContent}>
+                                            <View style={[styles.iconCircle, { backgroundColor: '#F0F2F5' }]}>
+                                                <IconSymbol name="camera.viewfinder" size={20} color={Colors.light.tint} />
+                                            </View>
+                                            <Text style={styles.receiptText}>Scan Receipt</Text>
+                                        </View>
+                                    )}
                                 </TouchableOpacity>
                             </View>
+
+                            <View style={{ height: 100 }} />
+                        </ScrollView>
+
+                        {/* Footer Button */}
+                        <View style={styles.footer}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.saveButton,
+                                    { backgroundColor: isValid ? Colors.light.tint : '#ccc' }
+                                ]}
+                                onPress={handleSave}
+                                disabled={!isValid}
+                            >
+                                <Text style={styles.saveButtonText}>
+                                    {isEditing ? "Update Expense" : "Save Expense"}
+                                </Text>
+                            </TouchableOpacity>
                         </View>
-                    </TouchableWithoutFeedback>
-                </KeyboardAvoidingView>
-            </BottomSheetModal>
+                    </View>
+                </TouchableWithoutFeedback>
+            </SimpleDisplayModal>
 
             <ReceiptCameraModal
                 visible={cameraVisible}
