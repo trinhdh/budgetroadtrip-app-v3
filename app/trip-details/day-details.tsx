@@ -14,6 +14,7 @@ import {
     Modal,
     Platform,
     StyleSheet,
+    Text,
     TextInput,
     TouchableOpacity,
     View
@@ -21,10 +22,10 @@ import {
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Callout, Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, {
     useAnimatedRef,
-    useAnimatedScrollHandler, // <--- IMPORT
+    useAnimatedScrollHandler,
     useAnimatedStyle,
     useSharedValue,
     withSpring
@@ -99,15 +100,24 @@ const RatingStars = ({ rating, count }: { rating?: number, count?: number }) => 
     );
 };
 
-const BudgetProgressBar = ({ current, total }: { current: number, total: number }) => {
-    const percentage = Math.min((current / total) * 100, 100);
-    let color = '#10B981';
-    if (percentage > 75) color = '#F59E0B';
-    if (percentage >= 100) color = '#EF4444';
+// --- ROUTE LEG INFO COMPONENT ---
+const RouteLegInfo = ({ leg }: { leg: any }) => {
+    if (!leg) return null;
+    const seconds = parseInt((leg.duration || "0s").replace('s', ''), 10);
+    const durationMin = Math.round(seconds / 60);
+    const distMiles = (leg.distanceMeters * 0.000621371).toFixed(1);
+    const timeDisplay = durationMin > 60
+        ? `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`
+        : `${durationMin} min`;
 
     return (
-        <View style={{ height: 8, backgroundColor: '#F3F4F6', borderRadius: 4, width: '100%', marginVertical: 10, overflow: 'hidden' }}>
-            <View style={{ height: '100%', width: `${percentage}%`, backgroundColor: color, borderRadius: 4 }} />
+        <View style={styles.legInfoContainer}>
+            <View style={styles.legPill}>
+                <IconSymbol name="car.fill" size={12} color="#666" />
+                <ThemedText style={styles.legText}>
+                    {timeDisplay} • {distMiles} mi
+                </ThemedText>
+            </View>
         </View>
     );
 };
@@ -186,6 +196,7 @@ export default function DayDetailsScreen() {
     const [expenses, setExpenses] = useState<any[]>([]);
 
     const [dayRouteCoordinates, setDayRouteCoordinates] = useState<GeoPoint[]>([]);
+    const [dayRouteLegs, setDayRouteLegs] = useState<any[]>([]);
     const [dayStats, setDayStats] = useState({ miles: '0', time: '0h 0m' });
 
     const [paramsModalVisible, setParamsModalVisible] = useState(false);
@@ -199,52 +210,41 @@ export default function DayDetailsScreen() {
 
     const routeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // --- ANIMATIONS ---
     const translateY = useSharedValue(-SCREEN_HEIGHT * 0.55);
     const context = useSharedValue({ y: 0 });
     const listScrollY = useSharedValue(0);
     const listRef = useAnimatedRef<any>();
 
-    // Scroll Handler to track list position
     const scrollHandler = useAnimatedScrollHandler((event) => {
         listScrollY.value = event.contentOffset.y;
     });
 
     const gesture = Gesture.Pan()
-        .simultaneousWithExternalGesture(listRef) // Allow simultaneous gesture with List
+        .simultaneousWithExternalGesture(listRef)
         .onStart(() => { context.value = { y: translateY.value }; })
         .onUpdate((event) => {
-            // Logic: If list is at top (scrollY <= 0) AND dragging down, Move Sheet
-            // Otherwise, normal sheet drag behavior or list scrolls
             if (listScrollY.value <= 0 && event.translationY > 0) {
                 translateY.value = event.translationY + context.value.y;
                 translateY.value = Math.max(translateY.value, MAX_TRANSLATE_Y);
             } else if (listScrollY.value <= 0) {
-                // If at top and dragging up, we usually want to expand sheet
                 translateY.value = event.translationY + context.value.y;
                 translateY.value = Math.max(translateY.value, MAX_TRANSLATE_Y);
             }
-            // If listScrollY > 0, we let the list handle the scroll (Pan effectively ignores)
         })
         .onEnd((event) => {
-            // SNAP POINTS
-            const MINIMIZED = -SCREEN_HEIGHT * 0.12; // Show map
+            const MINIMIZED = -SCREEN_HEIGHT * 0.12;
             const HALF = -SCREEN_HEIGHT * 0.55;
             const EXPANDED = MAX_TRANSLATE_Y;
 
-            // Velocity Logic for smooth flick
             if (event.velocityY > 500) {
-                // Swiping DOWN fast -> Minimize
                 translateY.value = withSpring(MINIMIZED, { damping: 20, stiffness: 90 });
             } else if (event.velocityY < -500) {
-                // Swiping UP fast -> Expand
                 if (translateY.value > HALF) {
                     translateY.value = withSpring(HALF, { damping: 20, stiffness: 90 });
                 } else {
                     translateY.value = withSpring(EXPANDED, { damping: 20, stiffness: 90 });
                 }
             } else {
-                // Position Logic
                 if (translateY.value > -SCREEN_HEIGHT * 0.3) {
                     translateY.value = withSpring(MINIMIZED, { damping: 20, stiffness: 90 });
                 } else if (translateY.value < -SCREEN_HEIGHT * 0.75) {
@@ -351,6 +351,7 @@ export default function DayDetailsScreen() {
 
             if (!startPoint || mapItems.length === 0) {
                 setDayRouteCoordinates([]);
+                setDayRouteLegs([]);
                 setDayStats({ miles: '0', time: '0h 0m' });
                 return;
             }
@@ -363,6 +364,8 @@ export default function DayDetailsScreen() {
 
             if (result && result.points) {
                 setDayRouteCoordinates(result.points);
+                setDayRouteLegs(result.legs);
+
                 const miles = (result.totalDistanceMeters * 0.000621371).toFixed(1);
                 const totalSeconds = result.totalDurationSeconds;
                 const hours = Math.floor(totalSeconds / 3600);
@@ -382,7 +385,6 @@ export default function DayDetailsScreen() {
             }
         };
 
-        // --- DEBOUNCE IMPLEMENTATION ---
         if (routeTimeout.current) clearTimeout(routeTimeout.current);
         routeTimeout.current = setTimeout(() => {
             fetchDayRoute();
@@ -400,21 +402,8 @@ export default function DayDetailsScreen() {
             Alert.alert("Error", "Location coordinates not found.");
             return;
         }
-
-        // Use address for "Exact" navigation, fallback to coordinates
-        const destination = item.address
-            ? encodeURIComponent(item.address)
-            : `${coords.latitude},${coords.longitude}`;
-
-        let url = '';
-        if (Platform.OS === 'ios') {
-            // Apple Maps
-            url = `http://maps.apple.com/?daddr=${destination}`;
-        } else {
-            // Google Maps
-            url = `https://www.google.com/maps/dir/?api=1&destination=${destination}`;
-        }
-
+        const destination = item.address ? encodeURIComponent(item.address) : `${coords.latitude},${coords.longitude}`;
+        let url = Platform.OS === 'ios' ? `http://maps.apple.com/?daddr=${destination}` : `https://www.google.com/maps/dir/?api=1&destination=${destination}`;
         Linking.openURL(url).catch(err => {
             console.error("Failed to open map:", err);
             Alert.alert("Error", "Could not open map application.");
@@ -521,14 +510,24 @@ export default function DayDetailsScreen() {
         });
     };
 
-    // --- BLOCKING DRAG END ---
     const handleDragEnd = async ({ data }: { data: any[] }) => {
         if (!tripId || !trip) return;
+
+        const currentTimeline = trip.itinerary[dayIndex].timeline || [];
+
+        // CHECK: Did the order actually change?
+        const hasChanged = data.some((item, index) => item.id !== currentTimeline[index]?.id);
+
+        if (!hasChanged) return; // Exit if no change
+
         setIsUpdatingOrder(true);
         const reorderedData = data.map((item, index) => ({ ...item, order: index + 1 }));
+
+        // Optimistic update
         const updatedTrip = { ...trip };
         updatedTrip.itinerary[dayIndex].timeline = reorderedData;
         setTrip(updatedTrip);
+
         try {
             await TripService.updateDayTimeline(tripId, dayIndex, reorderedData);
         } catch (e) {
@@ -539,19 +538,22 @@ export default function DayDetailsScreen() {
         }
     };
 
-    // Render Items
     const renderActivityItem = ({ item, getIndex, drag, isActive }: RenderItemParams<any>) => {
         const index = getIndex();
         if (index === undefined) return null;
         const { icon, color } = getCategoryDetails(item.type);
 
-        const photoUrl = item.photo_reference
-            ? GoogleMapsService.getPhotoUrl(item.photo_reference, 400)
-            : null;
-
+        const photoUrl = item.photo_reference ? GoogleMapsService.getPhotoUrl(item.photo_reference, 400) : null;
         const priceString = item.price_level ? '$'.repeat(item.price_level) : '';
         const displayPrice = item.price > 0 ? `$${item.price}` : priceString;
         const typeLabel = item.type ? item.type.charAt(0).toUpperCase() + item.type.slice(1) : 'Place';
+
+        const mapItems = (trip?.itinerary?.[dayIndex]?.timeline || [])
+            .filter((t: any) => toGeoPoint(t.coordinates))
+            .sort((a: any, b: any) => a.order - b.order);
+
+        const mapIndex = mapItems.findIndex((m: any) => m.id === item.id);
+        const leg = mapIndex >= 0 ? dayRouteLegs[mapIndex] : null;
 
         const renderLeftActions = () => (
             <View style={styles.leftActionContainer}>
@@ -590,6 +592,8 @@ export default function DayDetailsScreen() {
         return (
             <ScaleDecorator>
                 <View style={styles.timelineWrapper}>
+                    {leg && <RouteLegInfo leg={leg} />}
+
                     <Swipeable
                         ref={(ref) => { if (ref && item.id) swipeableRows.current.set(item.id, ref); }}
                         renderLeftActions={renderLeftActions}
@@ -603,9 +607,11 @@ export default function DayDetailsScreen() {
                             activeOpacity={0.9}
                             onPress={() => handleOpenExternalLink(item)}
                         >
-                            {/* --- DRAG HANDLE --- */}
-                            <View style={{ justifyContent: 'center', alignSelf: 'center', marginRight: 8 }}>
-                                <IconSymbol name="line.3.horizontal" size={20} color={colors.icon + '60'} />
+                            {/* --- ORDER NUMBER BADGE (Instead of Hamburger) --- */}
+                            <View style={{ justifyContent: 'center', alignSelf: 'center', marginRight: 12 }}>
+                                <View style={[styles.numberBadge, { backgroundColor: color }]}>
+                                    <ThemedText style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>{index + 1}</ThemedText>
+                                </View>
                             </View>
 
                             <View style={{ flex: 1, paddingVertical: 4 }}>
@@ -629,6 +635,16 @@ export default function DayDetailsScreen() {
                                 <ThemedText style={[styles.addressText, { marginTop: 6 }]} numberOfLines={1}>
                                     {item.address || item.desc}
                                 </ThemedText>
+
+                                <TouchableOpacity
+                                    style={styles.navigateButton}
+                                    onPress={() => handleNavigateToItem(item)}
+                                    onLongPress={() => { }} // <--- ADD THIS: Prevents triggering parent drag
+                                    delayLongPress={200}   // <--- OPTIONAL: Makes it less sensitive
+                                >
+                                    <IconSymbol name="paperplane.fill" size={12} color="#fff" />
+                                    <ThemedText style={styles.navigateButtonText}>Navigate</ThemedText>
+                                </TouchableOpacity>
                             </View>
 
                             {photoUrl ? (
@@ -757,18 +773,33 @@ export default function DayDetailsScreen() {
                             {mapMarkers.map((item: any, idx: number) => {
                                 const coords = toLatLng(item.coordinates);
                                 const { color } = getCategoryDetails(item.type);
+
+                                // Find correct index in the original timeline to match card number
+                                const listIndex = timeline.findIndex((t: any) => t.id === item.id);
+                                const displayNum = listIndex >= 0 ? listIndex + 1 : idx + 1;
+
                                 if (!coords) return null;
                                 return (
-                                    <Marker
-                                        key={`m-${idx}-${item.id}`}
-                                        coordinate={coords}
-                                        title={item.title}
-                                        description={item.address}
-                                        zIndex={5}
-                                    >
-                                        <View style={[styles.markerPill, { backgroundColor: color, borderColor: '#fff', borderWidth: 2 }]}>
-                                            <ThemedText style={styles.markerText} numberOfLines={1}>{item.title}</ThemedText>
+                                    <Marker key={`m-${idx}-${item.id}`} coordinate={coords} title={item.title} zIndex={5}>
+                                        {/* --- NUMBERED PIN --- */}
+                                        <View style={[styles.markerCircle, { backgroundColor: color, borderColor: '#fff', borderWidth: 2 }]}>
+                                            <ThemedText style={styles.markerNumber}>{displayNum}</ThemedText>
                                         </View>
+
+                                        {/* --- CUSTOM CALLOUT --- */}
+                                        <Callout tooltip onPress={() => handleNavigateToItem(item)}>
+                                            <View style={styles.calloutContainer}>
+                                                <View style={styles.calloutCard}>
+                                                    <Text style={styles.calloutTitle}>{item.title}</Text>
+                                                    <Text style={styles.calloutAddress} numberOfLines={2}>{item.address}</Text>
+                                                    <View style={styles.calloutButton}>
+                                                        <Text style={styles.calloutButtonText}>Navigate</Text>
+                                                        <IconSymbol name="arrow.triangle.turn.up.right.diamond.fill" size={12} color="#fff" />
+                                                    </View>
+                                                </View>
+                                                <View style={styles.calloutArrow} />
+                                            </View>
+                                        </Callout>
                                     </Marker>
                                 );
                             })}
@@ -1043,5 +1074,131 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 10,
         elevation: 10,
-    }
+    },
+    // --- CALLOUT STYLES ---
+    calloutContainer: {
+        width: 200,
+        backgroundColor: 'transparent',
+        alignItems: 'center',
+    },
+    calloutCard: {
+        width: '100%',
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+        elevation: 5,
+        alignItems: 'center',
+    },
+    calloutTitle: {
+        fontSize: 14,
+        fontFamily: Fonts.bold,
+        color: '#333',
+        marginBottom: 4,
+        textAlign: 'center',
+    },
+    calloutAddress: {
+        fontSize: 12,
+        color: '#666',
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    calloutButton: {
+        backgroundColor: '#10B981', // Green like the 'Go' button in swipe
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    calloutButtonText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold',
+    },
+    calloutArrow: {
+        width: 0,
+        height: 0,
+        backgroundColor: 'transparent',
+        borderStyle: 'solid',
+        borderLeftWidth: 8,
+        borderRightWidth: 8,
+        borderTopWidth: 8,
+        borderLeftColor: 'transparent',
+        borderRightColor: 'transparent',
+        borderTopColor: '#fff', // Match card background
+        marginTop: -1, // Overlap slightly
+    },
+    // --- MARKER STYLES ---
+    markerCircle: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 3,
+        elevation: 4
+    },
+    markerNumber: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold',
+    },
+    // --- LIST BADGE ---
+    numberBadge: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    // --- LEG INFO ---
+    legInfoContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 12,
+        marginTop: -8,
+    },
+
+    legPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F3F4F6',
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+        gap: 6,
+    },
+    legText: {
+        fontSize: 11,
+        color: '#666',
+        fontWeight: '600',
+    },
+    // --- CARD BUTTON ---
+    navigateButton: {
+        marginTop: 10,
+        backgroundColor: '#333',
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        alignSelf: 'flex-start',
+        gap: 6
+    },
+    navigateButtonText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold'
+    },
 });
