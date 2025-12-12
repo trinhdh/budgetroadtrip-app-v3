@@ -4,13 +4,13 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { Trip } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
-import { storage } from '@/firebaseConfig'; // <--- 1. Import Storage
+import { storage } from '@/firebaseConfig';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { TripService } from '@/services/trip-service';
 import { Image as ExpoImage } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'; // <--- 2. Storage methods
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -27,11 +27,11 @@ import {
 } from 'react-native';
 
 const CATEGORIES = [
-    { id: 'Fuel', icon: 'speedometer', color: '#FF9F1C' },
-    { id: 'Food', icon: 'leaf', color: '#E71D36' },
-    { id: 'Hotel', icon: 'bed.double.fill', color: '#2EC4B6' },
-    { id: 'Activities', icon: 'camera.fill', color: '#7209B7' },
-    { id: 'Other', icon: 'circle.grid.2x2.fill', color: '#808080' },
+    { id: 'food', label: 'Food', icon: 'fork.knife', color: '#E71D36' },
+    { id: 'hotel', label: 'Hotel', icon: 'bed.double.fill', color: '#2EC4B6' },
+    { id: 'activities', label: 'Activity', icon: 'camera.fill', color: '#7209B7' },
+    { id: 'fuel', label: 'Fuel', icon: 'fuelpump.fill', color: '#FF9F1C' },
+    { id: 'other', label: 'Other', icon: 'circle.grid.2x2.fill', color: '#808080' },
 ];
 
 export default function ExpenseScreen() {
@@ -42,14 +42,18 @@ export default function ExpenseScreen() {
     const colors = Colors[theme];
 
     const initialData = expense ? JSON.parse(Array.isArray(expense) ? expense[0] : expense) : null;
-    const isEditing = !!initialData;
+
+    // 1. IMPROVED LOGIC: Check for ID to determine if it's truly editing
+    const isEditing = !!initialData?.id;
+    // 2. CHECK: If it's a new expense but 'day' is passed, it means we are in Day Details view
+    const isDayFixed = !isEditing && !!initialData?.day;
 
     const [trip, setTrip] = useState<Trip | null>(null);
     const [loadingTrip, setLoadingTrip] = useState(true);
 
     const [amount, setAmount] = useState('');
     const [title, setTitle] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState('Food');
+    const [selectedCategory, setSelectedCategory] = useState('food');
     const [selectedDay, setSelectedDay] = useState(1);
     const [receiptUri, setReceiptUri] = useState<string | null>(null);
 
@@ -71,10 +75,8 @@ export default function ExpenseScreen() {
         if (initialData) {
             setAmount(initialData.amount ? String(initialData.amount) : '');
             setTitle(initialData.title || '');
-            const cat = initialData.category
-                ? initialData.category.charAt(0).toUpperCase() + initialData.category.slice(1).toLowerCase()
-                : 'Food';
-            setSelectedCategory(CATEGORIES.some(c => c.id === cat) ? cat : 'Food');
+            const cat = initialData.category ? initialData.category.toLowerCase() : 'food';
+            setSelectedCategory(CATEGORIES.some(c => c.id === cat) ? cat : 'food');
             setReceiptUri(initialData.receiptImage || initialData.receiptUri || null);
             setSelectedDay(initialData.day || 1);
         }
@@ -106,20 +108,15 @@ export default function ExpenseScreen() {
         }
     };
 
-    // --- 3. HELPER: Upload Image to Firebase Storage ---
     const uploadReceipt = async (uri: string) => {
         if (!tripId) return null;
         try {
             const response = await fetch(uri);
             const blob = await response.blob();
-
-            // Create a unique filename: receipts/{tripId}/{timestamp}.jpg
             const filename = `receipts/${Array.isArray(tripId) ? tripId[0] : tripId}/${Date.now()}.jpg`;
             const storageRef = ref(storage, filename);
-
             await uploadBytes(storageRef, blob);
-            const downloadUrl = await getDownloadURL(storageRef);
-            return downloadUrl;
+            return await getDownloadURL(storageRef);
         } catch (error) {
             console.error("Upload failed", error);
             throw error;
@@ -139,8 +136,6 @@ export default function ExpenseScreen() {
 
         try {
             let finalReceiptUrl = receiptUri;
-
-            // --- 4. Logic: If URI is local (starts with file://), upload it first ---
             if (receiptUri && (receiptUri.startsWith('file://') || receiptUri.startsWith('content://'))) {
                 finalReceiptUrl = await uploadReceipt(receiptUri);
             }
@@ -152,7 +147,7 @@ export default function ExpenseScreen() {
                 title: title || 'Expense',
                 category: selectedCategory,
                 day: selectedDay,
-                receiptImage: finalReceiptUrl, // Save the remote URL
+                receiptImage: finalReceiptUrl,
                 date: getFormattedDate(selectedDay) || `Day ${selectedDay}`,
                 addedBy: initialData?.addedBy || {
                     uid: user.uid,
@@ -265,7 +260,7 @@ export default function ExpenseScreen() {
                                                     selected && { color: '#fff', fontWeight: '600' }
                                                 ]}
                                             >
-                                                {cat.id}
+                                                {cat.label}
                                             </ThemedText>
                                         </TouchableOpacity>
                                     );
@@ -284,45 +279,49 @@ export default function ExpenseScreen() {
                                 />
                             </View>
 
-                            {/* DAY SELECTOR */}
-                            <ThemedText style={[styles.sectionLabel, { marginTop: 28 }]}>
-                                Assign to Day
-                            </ThemedText>
-                            <ScrollView
-                                horizontal
-                                showsHorizontalScrollIndicator={false}
-                                contentContainerStyle={styles.dayScroll}
-                            >
-                                {trip?.itinerary?.map(day => {
-                                    const selected = selectedDay === day.day;
-                                    const dateStr = getFormattedDate(day.day);
-                                    return (
-                                        <TouchableOpacity
-                                            key={day.day}
-                                            onPress={() => setSelectedDay(day.day)}
-                                            style={[
-                                                styles.dayChip,
-                                                selected && { backgroundColor: colors.tint, borderColor: colors.tint }
-                                            ]}
-                                        >
-                                            <ThemedText style={[styles.dayChipText, selected && { color: '#fff' }]}>
-                                                Day {day.day}
-                                            </ThemedText>
-
-                                            {dateStr && (
-                                                <ThemedText
+                            {/* DAY SELECTOR - Hidden if day is fixed (New Expense from Day Details) */}
+                            {!isDayFixed && (
+                                <>
+                                    <ThemedText style={[styles.sectionLabel, { marginTop: 28 }]}>
+                                        Assign to Day
+                                    </ThemedText>
+                                    <ScrollView
+                                        horizontal
+                                        showsHorizontalScrollIndicator={false}
+                                        contentContainerStyle={styles.dayScroll}
+                                    >
+                                        {trip?.itinerary?.map(day => {
+                                            const selected = selectedDay === day.day;
+                                            const dateStr = getFormattedDate(day.day);
+                                            return (
+                                                <TouchableOpacity
+                                                    key={day.day}
+                                                    onPress={() => setSelectedDay(day.day)}
                                                     style={[
-                                                        styles.dayChipDate,
-                                                        selected ? { color: 'rgba(255,255,255,0.8)' } : { color: '#888' }
+                                                        styles.dayChip,
+                                                        selected && { backgroundColor: colors.tint, borderColor: colors.tint }
                                                     ]}
                                                 >
-                                                    {dateStr}
-                                                </ThemedText>
-                                            )}
-                                        </TouchableOpacity>
-                                    );
-                                })}
-                            </ScrollView>
+                                                    <ThemedText style={[styles.dayChipText, selected && { color: '#fff' }]}>
+                                                        Day {day.day}
+                                                    </ThemedText>
+
+                                                    {dateStr && (
+                                                        <ThemedText
+                                                            style={[
+                                                                styles.dayChipDate,
+                                                                selected ? { color: 'rgba(255,255,255,0.8)' } : { color: '#888' }
+                                                            ]}
+                                                        >
+                                                            {dateStr}
+                                                        </ThemedText>
+                                                    )}
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </ScrollView>
+                                </>
+                            )}
 
                             {/* RECEIPT */}
                             <TouchableOpacity
