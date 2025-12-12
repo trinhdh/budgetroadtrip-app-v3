@@ -268,11 +268,12 @@ export default function ExpenseScreen() {
                             </ScrollView>
 
                             {/* DESCRIPTION */}
-                            <View style={styles.inputRow}>
+                            <ThemedText style={[styles.sectionLabel, { marginTop: 24 }]}>Description</ThemedText>
+                            <View style={[styles.inputRow, { marginTop: 0 }]}>
                                 <IconSymbol name="pencil" size={18} color="#999" style={{ marginRight: 12 }} />
                                 <TextInput
                                     style={styles.textInput}
-                                    placeholder="Description (e.g. Starbucks)"
+                                    placeholder="Ex: Starbucks..."
                                     placeholderTextColor="#999"
                                     value={title}
                                     onChangeText={setTitle}
