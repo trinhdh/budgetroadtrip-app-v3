@@ -23,15 +23,22 @@ import {
 
 // Import Types
 import { GeoPoint, ItineraryItem, Trip, TripMember, TripPayload } from '@/constants/types';
-
+/**
+ * HELPER: Removes 'undefined' values from an object or array to make it Firestore-safe.
+ * Firestore throws an error if a field is undefined. We replace them with null or remove keys.
+ * Using JSON stringify/parse is a robust, fast way to strip undefineds for complex nested objects.
+ */
+const firestoreSanitize = <T>(obj: T): T => {
+    return JSON.parse(JSON.stringify(obj, (k, v) => v === undefined ? null : v));
+};
 export const TripService = {
     /**
      * Saves a newly generated trip to Firestore
      */
     async saveTrip(userId: string, tripData: TripPayload) {
         try {
-            // 1. Data Sanitization to ensure no undefined values are passed to Firestore
-            const cleanData = {
+            // 1. Data Sanitization
+            const rawData = {
                 ...tripData,
                 // Nested object safety
                 vehicle: {
@@ -47,6 +54,10 @@ export const TripService = {
                     lat: tripData.originCoordinates.lat,
                     lng: tripData.originCoordinates.lng
                 } : null,
+
+                // Explicitly handle aiNote to ensure it's null if undefined
+                aiNote: tripData.aiNote || null,
+
                 // Ensure dates are Date objects
                 startDate: tripData.startDate ? new Date(tripData.startDate) : null,
                 endDate: tripData.endDate ? new Date(tripData.endDate) : null,
@@ -54,7 +65,11 @@ export const TripService = {
                 userId: userId,
             };
 
-            // 2. Create the document
+            // 2. DEEP SANITIZE: This fixes the "Itinerary" containing undefined optional fields
+            // (like rating, user_ratings_total in GooglePlace objects)
+            const cleanData = firestoreSanitize(rawData);
+
+            // 3. Create the document
             const docRef = await addDoc(collection(db, 'trips'), cleanData);
 
             console.log("Trip saved with ID: ", docRef.id);
