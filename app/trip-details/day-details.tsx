@@ -193,7 +193,7 @@ export default function DayDetailsScreen() {
 
     const [editingDay, setEditingDay] = useState<any>(null);
 
-    // --- NEW: Loading State for Drag ---
+    // --- Loading State for Drag ---
     const [isUpdatingOrder, setIsUpdatingOrder] = useState(false);
 
     const routeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -349,7 +349,7 @@ export default function DayDetailsScreen() {
         if (routeTimeout.current) clearTimeout(routeTimeout.current);
         routeTimeout.current = setTimeout(() => {
             fetchDayRoute();
-        }, 1000); // 1 second debounce for route calculation
+        }, 1000);
 
         return () => {
             if (routeTimeout.current) clearTimeout(routeTimeout.current);
@@ -378,22 +378,10 @@ export default function DayDetailsScreen() {
 
     const handleOpenExternalLink = async (item: any) => {
         let url = '';
-        const query = encodeURIComponent(`${item.title} ${item.address || ''}`);
 
-        if (item.type === 'hotel' || item.type === 'lodging') {
-            let dateParams = '';
-            if (trip?.startDate) {
-                const checkIn = new Date(trip.startDate);
-                checkIn.setDate(checkIn.getDate() + dayIndex);
-                const checkOut = new Date(checkIn);
-                checkOut.setDate(checkIn.getDate() + 1);
-                const fmt = (d: Date) => d.toISOString().split('T')[0];
-                dateParams = `&q-check-in=${fmt(checkIn)}&q-check-out=${fmt(checkOut)}`;
-            }
-            url = `https://www.hotels.com/search.do?q-destination=${encodeURIComponent(item.title)}${dateParams}`;
-        } else {
-            url = `https://www.google.com/search?q=${query}`;
-        }
+        const exactLocationQuery = encodeURIComponent(`${item.title}, ${item.address || ''}`);
+
+        url = `https://www.google.com/search?q=${exactLocationQuery}`;
 
         try {
             await WebBrowser.openBrowserAsync(url, {
@@ -488,9 +476,6 @@ export default function DayDetailsScreen() {
         try {
             // 3. Perform Update
             await TripService.updateDayTimeline(tripId, dayIndex, reorderedData);
-
-            // Optional: small delay to let user see "Updating" feedback if API is too fast
-            // await new Promise(resolve => setTimeout(resolve, 500));
         } catch (e) {
             console.log("Error saving drag order", e);
             Alert.alert("Error", "Failed to update order.");
@@ -564,6 +549,11 @@ export default function DayDetailsScreen() {
                             activeOpacity={0.9}
                             onPress={() => handleOpenExternalLink(item)}
                         >
+                            {/* --- DRAG HANDLE --- */}
+                            <View style={{ justifyContent: 'center', alignSelf: 'center', marginRight: 8 }}>
+                                <IconSymbol name="line.3.horizontal" size={20} color={colors.icon + '60'} />
+                            </View>
+
                             <View style={{ flex: 1, paddingVertical: 4 }}>
                                 <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ fontSize: 16 }}>
                                     {item.title}
@@ -851,7 +841,7 @@ export default function DayDetailsScreen() {
                 </View>
             </BottomSheetModal>
 
-            {/* --- NEW: Blocking Processing Modal --- */}
+            {/* --- BLOCKING LOADING MODAL --- */}
             <Modal transparent visible={isUpdatingOrder} animationType="fade">
                 <View style={styles.processingOverlay}>
                     <View style={[styles.processingBox, { backgroundColor: colors.background }]}>
@@ -972,7 +962,7 @@ const styles = StyleSheet.create({
         fontFamily: Fonts.medium,
         marginBottom: 4,
     },
-    // --- NEW STYLES FOR PROCESSING MODAL ---
+    // --- STYLES FOR LOADING MODAL ---
     processingOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.5)',
