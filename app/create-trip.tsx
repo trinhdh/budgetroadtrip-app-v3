@@ -42,18 +42,19 @@ export default function CreateTripScreen() {
     const headerHeight = useHeaderHeight();
 
     const [step, setStep] = useState(1);
-    // Total steps is dynamic: 5 for AI, 3 for Manual
     const [isLoading, setIsLoading] = useState(false);
 
-    // --- WARNING STATE ---
+    // --- WARNING / ERROR STATE ---
     const [warningVisible, setWarningVisible] = useState(false);
     const [warningMessage, setWarningMessage] = useState('');
+    const [isCriticalError, setIsCriticalError] = useState(false); // [NEW] Track if it's an error or just a warning
 
     // We store the partial data here waiting for confirmation
     const [pendingTripData, setPendingTripData] = useState<{
         itinerary: ItineraryItem[],
         estimatedCost: number,
         estimatedBreakdown: any[],
+        aiNote?: string, // [NEW] Added AI Note
         image: string
     } | null>(null);
 
@@ -110,9 +111,9 @@ export default function CreateTripScreen() {
             }
         }
 
-        // --- NEW LOGIC: Skip steps 3 and 4 in manual mode and jump to the final step (Step 3) ---
+        // Skip steps 3 and 4 in manual mode
         if (form.mode === 'manual' && step === 2) {
-            setStep(3); // Jump to the new final step (Budget)
+            setStep(3);
             return;
         }
 
@@ -130,18 +131,19 @@ export default function CreateTripScreen() {
             return;
         }
 
-        if (form.mode === 'ai') setIsLoading(true); // Only show spinner for AI mode
+        if (form.mode === 'ai') setIsLoading(true);
 
         try {
             let generatedData = {
                 itinerary: [] as ItineraryItem[],
                 estimatedCost: 0,
                 estimatedBreakdown: [] as any[],
+                aiNote: undefined as string | undefined, // [NEW]
                 warning: undefined as string | undefined
             };
             let coverImage = '';
 
-            // 1. Fetch Image (Runs for both AI and Manual)
+            // 1. Fetch Image
             try {
                 const fetchedImage = await ImageService.getPlaceImage(form.destination);
                 if (fetchedImage) coverImage = fetchedImage;
@@ -150,11 +152,9 @@ export default function CreateTripScreen() {
             }
 
             if (form.mode === 'manual') {
-                // 2a. MANUAL MODE: Create empty placeholder days
+                // 2a. MANUAL MODE
                 const manualItinerary: ItineraryItem[] = Array.from({ length: form.duration }, (_, i) => {
-                    // Define coords once to use in both fields
                     const coords = form.destinationCoordinates || { lat: 0, lng: 0 };
-
                     return {
                         id: Crypto.randomUUID(),
                         order: i,
@@ -165,11 +165,8 @@ export default function CreateTripScreen() {
                         drive_time: "0h",
                         start_city: form.destination,
                         end_city: form.destination,
-
-                        // FIX: Set both coordinates AND stopLocation
                         coordinates: coords,
                         stopLocation: coords,
-
                         hotel_options: [],
                         food_options: [],
                         activity_options: [],
@@ -178,19 +175,19 @@ export default function CreateTripScreen() {
                 });
 
                 generatedData.itinerary = manualItinerary;
-                generatedData.estimatedCost = 0; // Manual mode has no AI estimate
-                generatedData.estimatedBreakdown = []; // Manual mode has no breakdown
+                generatedData.estimatedCost = 0;
+                generatedData.estimatedBreakdown = [];
 
-                // Since there is no warning from AI, proceed directly to save for manual
                 await finalizeTripCreation({
                     itinerary: generatedData.itinerary,
                     estimatedCost: generatedData.estimatedCost,
                     estimatedBreakdown: generatedData.estimatedBreakdown,
-                    image: coverImage
+                    image: coverImage,
+                    aiNote: undefined
                 });
 
             } else {
-                // 2b. AI MODE: Call Gemini Service
+                // 2b. AI MODE
                 const aiResult = await AiPlannerService.generateTripPlan({
                     origin: form.origin,
                     destination: form.destination,
@@ -204,34 +201,46 @@ export default function CreateTripScreen() {
                     isRoundTrip: form.isRoundTrip
                 });
 
+                // [NEW] CHECK FOR CRITICAL ERROR
+                if (aiResult.error) {
+                    setIsLoading(false);
+                    setWarningMessage(aiResult.error);
+                    setIsCriticalError(true); // Mark as critical
+                    setWarningVisible(true);
+                    return; // Stop execution
+                }
+
                 generatedData.itinerary = aiResult.itinerary || [];
                 generatedData.estimatedCost = aiResult.estimatedCost || 0;
                 generatedData.estimatedBreakdown = aiResult.estimatedBreakdown || [];
+                generatedData.aiNote = aiResult.aiNote;
                 generatedData.warning = aiResult.warning;
 
-                // 3. Check for AI Warnings
+                // 3. Check for Warnings (Non-critical)
                 if (generatedData.warning) {
                     setIsLoading(false);
                     setWarningMessage(generatedData.warning);
+                    setIsCriticalError(false); // Not critical
                     setPendingTripData({
                         itinerary: generatedData.itinerary,
                         estimatedCost: generatedData.estimatedCost,
                         estimatedBreakdown: generatedData.estimatedBreakdown,
+                        aiNote: generatedData.aiNote,
                         image: coverImage
                     });
-                    setWarningVisible(true); // SHOW MODAL
-                    return; // STOP HERE
+                    setWarningVisible(true);
+                    return; // Wait for user confirmation
                 }
 
-                // 4. If no warning, proceed directly to save
+                // 4. Proceed if no issues
                 await finalizeTripCreation({
                     itinerary: generatedData.itinerary,
                     estimatedCost: generatedData.estimatedCost,
                     estimatedBreakdown: generatedData.estimatedBreakdown,
+                    aiNote: generatedData.aiNote,
                     image: coverImage
                 });
             }
-
 
         } catch (error: any) {
             setIsLoading(false);
@@ -245,12 +254,12 @@ export default function CreateTripScreen() {
         itinerary: ItineraryItem[],
         estimatedCost: number,
         estimatedBreakdown: any[],
+        aiNote?: string, // [NEW]
         image: string
     }) => {
         if (!user) return;
 
-        // Ensure loading spinner is visible (in case we came from the modal)
-        if (!isLoading && form.mode === 'ai') setIsLoading(true); // Only show for AI generation confirmation
+        if (!isLoading && form.mode === 'ai') setIsLoading(true);
 
         try {
             let endDateObj = null;
@@ -266,7 +275,6 @@ export default function CreateTripScreen() {
                 role: 'owner'
             };
 
-            // Conditionally set values based on mode
             const isManual = form.mode === 'manual';
 
             const finalTripData: TripPayload = {
@@ -278,19 +286,18 @@ export default function CreateTripScreen() {
                 duration: form.duration,
                 budget: form.budget,
                 mode: form.mode,
-                // Omitted/Defaulted fields for Manual mode
-                vibe: isManual ? null : form.vibe, // FIX: Use null instead of undefined for Firestore
+                vibe: isManual ? null : form.vibe,
                 people: isManual ? 1 : (form.adults + form.children),
-                estimatedCost: isManual ? 0 : data.estimatedCost, // Set to 0 for manual
-                estimatedBreakdown: isManual ? [] : data.estimatedBreakdown, // Set to empty for manual
+                estimatedCost: isManual ? 0 : data.estimatedCost,
+                estimatedBreakdown: isManual ? [] : data.estimatedBreakdown,
+
+                aiNote: isManual ? undefined : data.aiNote, // [NEW] Save note
 
                 itinerary: data.itinerary,
                 image: data.image,
                 members: [ownerMember],
                 originCoordinates: form.originCoordinates || undefined,
 
-                // Nested objects
-                // For manual mode, set to safe default/empty values that Firestore accepts (0, '', or null)
                 travelers: isManual ? { adults: 1, children: 0 } : {
                     adults: form.adults,
                     children: form.children
@@ -305,7 +312,7 @@ export default function CreateTripScreen() {
             const tripId = await TripService.saveTrip(user.uid, finalTripData);
 
             setIsLoading(false);
-            setWarningVisible(false); // Close modal if open
+            setWarningVisible(false);
 
             router.replace({
                 pathname: '/trip-details/[id]',
@@ -315,13 +322,12 @@ export default function CreateTripScreen() {
         } catch (error: any) {
             setIsLoading(false);
             Alert.alert("Save Error", "Could not save your trip.");
-            console.error("Error adding trip: ", error); // Log the error for better debugging
+            console.error("Error adding trip: ", error);
         }
     };
 
     const handleBack = () => {
         if (step === 1) router.back();
-        // New logic: If in manual mode and on step 3, going back should go to step 2.
         else if (form.mode === 'manual' && step === 3) setStep(2);
         else setStep(step - 1);
     };
@@ -330,17 +336,23 @@ export default function CreateTripScreen() {
         <ThemedView style={styles.container}>
             <ProcessingModal visible={isLoading} />
 
-            {/* --- WARNING MODAL --- */}
+            {/* --- WARNING / ERROR MODAL --- */}
             <BottomSheetModal
                 isVisible={warningVisible}
                 onClose={() => setWarningVisible(false)}
-                title="Trip Feasibility Check"
-                height="45%"
+                title={isCriticalError ? "Plan Impossible" : "Trip Feasibility Check"}
+                height="auto" // [UPDATED] Auto height
             >
-                <View style={{ padding: 20, flex: 1 }}>
-                    <View style={styles.warningBox}>
-                        <IconSymbol name="exclamationmark.triangle.fill" size={32} color="#FF9500" />
-                        <ThemedText style={styles.warningTitle}>Heads Up!</ThemedText>
+                <View style={{ paddingBottom: 20 }}>
+                    <View style={[styles.warningBox, isCriticalError && { backgroundColor: '#FFEBEE' }]}>
+                        <IconSymbol
+                            name={isCriticalError ? "xmark" : "exclamationmark.triangle.fill"}
+                            size={32}
+                            color={isCriticalError ? "#D32F2F" : "#FF9500"}
+                        />
+                        <ThemedText style={[styles.warningTitle, isCriticalError && { color: "#D32F2F" }]}>
+                            {isCriticalError ? "Cannot Create Trip" : "Heads Up!"}
+                        </ThemedText>
                         <ThemedText style={styles.warningText}>
                             {warningMessage}
                         </ThemedText>
@@ -351,19 +363,24 @@ export default function CreateTripScreen() {
                             style={[styles.modalBtn, { backgroundColor: '#f0f0f0' }]}
                             onPress={() => setWarningVisible(false)}
                         >
-                            <ThemedText style={{ color: '#333' }}>Edit Plan</ThemedText>
+                            <ThemedText style={{ color: '#333' }}>
+                                {isCriticalError ? "Adjust Plan" : "Edit Plan"}
+                            </ThemedText>
                         </TouchableOpacity>
 
-                        <TouchableOpacity
-                            style={[styles.modalBtn, { backgroundColor: colors.tint }]}
-                            onPress={() => {
-                                if (pendingTripData) {
-                                    finalizeTripCreation(pendingTripData);
-                                }
-                            }}
-                        >
-                            <ThemedText style={styles.buttonText}>Proceed Anyway</ThemedText>
-                        </TouchableOpacity>
+                        {/* [UPDATED] Only show Proceed if NOT a critical error */}
+                        {!isCriticalError && (
+                            <TouchableOpacity
+                                style={[styles.modalBtn, { backgroundColor: colors.tint }]}
+                                onPress={() => {
+                                    if (pendingTripData) {
+                                        finalizeTripCreation(pendingTripData);
+                                    }
+                                }}
+                            >
+                                <ThemedText style={styles.buttonText}>Proceed Anyway</ThemedText>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </View>
             </BottomSheetModal>
@@ -395,16 +412,10 @@ export default function CreateTripScreen() {
                     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                         <View>
                             {step === 1 && <StepOne form={form} setForm={setForm} />}
-
-                            {/* Step 2 is for both */}
                             {step === 2 && <StepTwo form={form} setForm={setForm} />}
-
-                            {/* AI MODE STEPS (3, 4, 5) */}
                             {form.mode === 'ai' && step === 3 && <StepThree form={form} setForm={setForm} />}
                             {form.mode === 'ai' && step === 4 && <StepFour form={form} setForm={setForm} />}
                             {form.mode === 'ai' && step === 5 && <StepFive form={form} setForm={setForm} />}
-
-                            {/* MANUAL MODE FINAL STEP (Step 3) - Uses StepFive content, passing mode for conditional rendering */}
                             {form.mode === 'manual' && step === 3 && <StepFive form={{ ...form, mode: 'manual' }} setForm={setForm} />}
                         </View>
                     </TouchableWithoutFeedback>
@@ -475,7 +486,7 @@ const styles = StyleSheet.create({
         gap: 10,
     },
 
-    // --- NEW WARNING MODAL STYLES ---
+    // --- WARNING MODAL STYLES ---
     warningBox: {
         alignItems: 'center',
         marginBottom: 30,

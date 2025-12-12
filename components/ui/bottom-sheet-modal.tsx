@@ -21,7 +21,7 @@ type BottomSheetModalProps = {
     onClose: () => void;
     children: React.ReactNode;
     title?: string;
-    height?: string | number;
+    height?: string | number | "auto"; // [UPDATED] Support "auto"
 };
 
 export const BottomSheetModal = ({
@@ -32,47 +32,45 @@ export const BottomSheetModal = ({
     height = "40%",
 }: BottomSheetModalProps) => {
     const [showModal, setShowModal] = useState(isVisible);
+    const [contentHeight, setContentHeight] = useState(0); // [NEW] Track content height
 
     const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const keyboardOffsetAnim = useRef(new Animated.Value(0)).current;
 
-    const dragY = useRef(new Animated.Value(0)).current; // drag offset
+    const dragY = useRef(new Animated.Value(0)).current;
     const lastDragValue = useRef(0);
 
-    const sheetHeight = useMemo(() => {
+    const isAutoHeight = height === "auto";
+
+    const targetHeight = useMemo(() => {
+        if (isAutoHeight) return contentHeight > 0 ? contentHeight : SCREEN_HEIGHT;
         if (typeof height === "string" && height.includes("%")) {
             const pct = parseFloat(height.replace("%", "")) / 100;
             return SCREEN_HEIGHT * pct;
         }
         return typeof height === "number" ? height : SCREEN_HEIGHT * 0.4;
-    }, [height]);
+    }, [height, contentHeight, isAutoHeight]);
 
     // PAN RESPONDER (SWIPE DOWN)
     const panResponder = useRef(
         PanResponder.create({
             onMoveShouldSetPanResponder: (_, gesture) => {
-                return gesture.dy > 5; // detect downward movement
+                return gesture.dy > 5;
             },
-
             onPanResponderMove: (_, gesture) => {
                 if (gesture.dy > 0) {
-                    dragY.setValue(gesture.dy); // track drag
+                    dragY.setValue(gesture.dy);
                 }
                 lastDragValue.current = gesture.dy;
             },
-
             onPanResponderRelease: (_, gesture) => {
-                const SWIPE_CLOSE_DISTANCE = 120; // px
-                const SWIPE_CLOSE_SPEED = 1.2; // velocity threshold
+                const SWIPE_CLOSE_DISTANCE = 100;
+                const SWIPE_CLOSE_SPEED = 1.0;
 
-                if (
-                    gesture.dy > SWIPE_CLOSE_DISTANCE || // dragged far
-                    gesture.vy > SWIPE_CLOSE_SPEED // fast swipe
-                ) {
+                if (gesture.dy > SWIPE_CLOSE_DISTANCE || gesture.vy > SWIPE_CLOSE_SPEED) {
                     closeSheet();
                 } else {
-                    // Snap back
                     Animated.spring(dragY, {
                         toValue: 0,
                         useNativeDriver: true,
@@ -83,6 +81,9 @@ export const BottomSheetModal = ({
     ).current;
 
     const closeSheet = () => {
+        // Slide down to the height of the sheet (effectively off-screen)
+        const offScreenValue = targetHeight || SCREEN_HEIGHT;
+
         Animated.parallel([
             Animated.timing(fadeAnim, {
                 toValue: 0,
@@ -90,7 +91,7 @@ export const BottomSheetModal = ({
                 useNativeDriver: true,
             }),
             Animated.timing(slideAnim, {
-                toValue: sheetHeight,
+                toValue: offScreenValue, // Slide down by the height amount
                 duration: 250,
                 easing: Easing.out(Easing.quad),
                 useNativeDriver: true,
@@ -102,30 +103,38 @@ export const BottomSheetModal = ({
         });
     };
 
-    // OPEN / CLOSE ANIMATIONS
+    const openSheet = () => {
+        setShowModal(true);
+        // Animate TO 0 (anchored at bottom)
+        Animated.parallel([
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+            }),
+            Animated.spring(slideAnim, {
+                toValue: 0,
+                damping: 15,
+                stiffness: 100,
+                useNativeDriver: true,
+            }),
+        ]).start();
+    };
+
     useEffect(() => {
         if (isVisible) {
-            setShowModal(true);
-
-            Animated.parallel([
-                Animated.timing(fadeAnim, {
-                    toValue: 1,
-                    duration: 300,
-                    useNativeDriver: true,
-                }),
-                Animated.spring(slideAnim, {
-                    toValue: 0,
-                    damping: 15,
-                    stiffness: 100,
-                    useNativeDriver: true,
-                }),
-            ]).start();
+            // For auto height, we wait for layout before animating in
+            if (!isAutoHeight || contentHeight > 0) {
+                openSheet();
+            } else {
+                setShowModal(true); // Show it invisibly first to measure
+            }
         } else {
             closeSheet();
         }
-    }, [isVisible]);
+    }, [isVisible, contentHeight]); // Re-run open animation when contentHeight is ready
 
-    // KEYBOARD LISTENERS
+    // Keyboard listeners...
     useEffect(() => {
         const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
         const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
@@ -137,7 +146,6 @@ export const BottomSheetModal = ({
                 useNativeDriver: true,
             }).start();
         });
-
         const hideSub = Keyboard.addListener(hideEvent, () => {
             Animated.timing(keyboardOffsetAnim, {
                 toValue: 0,
@@ -145,14 +153,13 @@ export const BottomSheetModal = ({
                 useNativeDriver: true,
             }).start();
         });
-
         return () => {
             showSub.remove();
             hideSub.remove();
         };
     }, []);
 
-    if (!showModal) return null;
+    if (!showModal && !isVisible) return null;
 
     return (
         <Modal transparent visible={showModal} animationType="none" onRequestClose={closeSheet}>
@@ -165,16 +172,21 @@ export const BottomSheetModal = ({
                 {/* BOTTOM SHEET */}
                 <Animated.View
                     {...panResponder.panHandlers}
+                    onLayout={(event) => {
+                        if (isAutoHeight) {
+                            setContentHeight(event.nativeEvent.layout.height);
+                        }
+                    }}
                     style={[
                         styles.sheetContainer,
                         {
-                            height: sheetHeight,
+                            // If auto, don't set fixed height, just max-height
+                            ...(isAutoHeight ? { maxHeight: SCREEN_HEIGHT * 0.9 } : { height: targetHeight }),
+
                             transform: [
-                                { translateY: slideAnim },
+                                { translateY: slideAnim }, // Animates from targetHeight -> 0
                                 { translateY: dragY },
-                                {
-                                    translateY: Animated.multiply(keyboardOffsetAnim, -1),
-                                },
+                                { translateY: Animated.multiply(keyboardOffsetAnim, -1) },
                             ],
                         },
                     ]}
@@ -209,6 +221,7 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 24,
         overflow: "hidden",
         elevation: 10,
+        width: '100%',
     },
     header: {
         flexDirection: "row",
@@ -237,7 +250,7 @@ const styles = StyleSheet.create({
         color: "#666",
     },
     content: {
-        flex: 1,
         padding: 20,
+        // Removed flex: 1 to allow auto height
     },
 });
