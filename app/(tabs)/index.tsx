@@ -24,7 +24,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 // --- INTERNAL IMPORTS ---
-import { Trip } from '@/constants/types';
+import { Trip, TripMember } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { TripService } from '@/services/trip-service';
 
@@ -78,6 +78,38 @@ const HeroImageCard = ({
   );
 };
 
+// --- HELPER COMPONENT: AVATAR STACK ---
+const MemberAvatarStack = ({ members }: { members: TripMember[] }) => {
+  // Only show up to 3 avatars
+  const displayMembers = members.slice(0, 3);
+  const remainingCount = members.length - 3;
+
+  return (
+    <View style={styles.avatarStack}>
+      {displayMembers.map((member, index) => (
+        <Image
+          key={member.uid || index}
+          source={{ uri: member.avatar || `https://ui-avatars.com/api/?name=${member.name}&background=random` }}
+          style={[
+            styles.stackAvatar,
+            {
+              zIndex: 10 - index,
+              marginLeft: index > 0 ? -12 : 0 // Overlap effect
+            }
+          ]}
+          contentFit="cover"
+        />
+      ))}
+
+      {remainingCount > 0 && (
+        <View style={[styles.moreBadge, { marginLeft: -12, zIndex: 0 }]}>
+          <ThemedText style={styles.moreText}>+{remainingCount}</ThemedText>
+        </View>
+      )}
+    </View>
+  );
+};
+
 // --- 2. SWIPEABLE TRIP CARD COMPONENT ---
 const TripCard = ({
   trip,
@@ -94,7 +126,7 @@ const TripCard = ({
 }) => {
 
   const isOwner = trip.userId === currentUserId;
-
+  const hasMultipleMembers = trip.members && trip.members.length > 1;
   const renderRightActions = (_progress: any, _dragX: any) => {
     return (
       <View style={styles.actionsContainer}>
@@ -173,13 +205,16 @@ const TripCard = ({
         />
 
         <View style={styles.cardTopRow}>
-          {!isOwner ? (
+          {/* LEFT SIDE: Avatars OR Joined Badge OR Empty */}
+          {hasMultipleMembers ? (
+            <MemberAvatarStack members={trip.members} />
+          ) : !isOwner ? (
             <View style={styles.joinedBadge}>
               <IconSymbol name="person.2.fill" size={14} color="#fff" />
               <ThemedText style={styles.joinedText}>Joined</ThemedText>
             </View>
           ) : (
-            <View />
+            <View /> // Spacer if owner and alone
           )}
 
           <View style={styles.budgetBadge}>
@@ -477,6 +512,36 @@ const styles = StyleSheet.create({
     backgroundColor: '#5856D6'
   },
   joinedText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+
+  // --- AVATAR STACK STYLES ---
+  avatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 4, // slight offset for the first avatar
+  },
+  stackAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#fff',
+    backgroundColor: '#ddd',
+  },
+  moreBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  moreText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
 
   cardBottomContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   cardTextContainer: { flex: 1, paddingRight: 12 },

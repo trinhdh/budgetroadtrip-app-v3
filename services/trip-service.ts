@@ -22,7 +22,7 @@ import {
 } from 'firebase/firestore';
 
 // Import Types
-import { GeoPoint, ItineraryItem, Trip, TripPayload } from '@/constants/types';
+import { GeoPoint, ItineraryItem, Trip, TripMember, TripPayload } from '@/constants/types';
 
 export const TripService = {
     /**
@@ -116,15 +116,20 @@ export const TripService = {
         }
     },
 
-    // ... (Rest of the service remains the same) ...
-    async joinTrip(tripId: string, userId: string): Promise<void> {
+
+    /**
+ * Adds a full member object to the trip's members array.
+ */
+    async addMemberToTrip(tripId: string, member: TripMember): Promise<void> {
         try {
             const tripRef = doc(db, 'trips', tripId);
+
+            // Use arrayUnion to append the object only if it doesn't already exist
             await updateDoc(tripRef, {
-                members: arrayUnion(userId)
+                members: arrayUnion(member)
             });
         } catch (error) {
-            console.error("Error joining trip:", error);
+            console.error("Error adding member to trip:", error);
             throw error;
         }
     },

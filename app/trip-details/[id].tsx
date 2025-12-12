@@ -27,7 +27,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- SERVICE & CONTEXT ---
-import { GeoPoint, Trip } from '@/constants/types';
+import { GeoPoint, Trip, TripMember } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { RouteService } from '@/services/route-service';
 import { TripService } from '@/services/trip-service';
@@ -408,6 +408,37 @@ export default function TripDetailsScreen() {
         fetchRoute();
     }, [trip]);
 
+    useEffect(() => {
+        const joinTripIfNeeded = async () => {
+            // 1. Wait for trip and user to be loaded
+            if (!trip || !user || !tripId) return;
+
+            // 2. Check if current user is already a member
+            // We compare UIDs to be safe
+            const isAlreadyMember = trip.members?.some((m: TripMember) => m.uid === user.uid);
+
+            if (!isAlreadyMember) {
+                try {
+                    // 3. Construct Member Object
+                    const newMember: TripMember = {
+                        uid: user.uid,
+                        name: user.displayName || 'Traveler',
+                        avatar: user.photoURL || undefined,
+                        role: 'viewer' // Default role for joiners
+                    };
+
+                    // 4. Add to Database
+                    await TripService.addMemberToTrip(Array.isArray(tripId) ? tripId[0] : tripId, newMember);
+
+                    Alert.alert("Welcome!", `You've joined the trip to ${trip.destination}.`);
+                } catch (error) {
+                    console.error("Auto-join failed:", error);
+                }
+            }
+        };
+
+        joinTripIfNeeded();
+    }, [trip, user, tripId]);
     const totalSpent = useMemo(() => {
         return expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
     }, [expenses]);

@@ -10,12 +10,11 @@ import {
 } from '@expo-google-fonts/rubik';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { SplashScreen, Stack, useRouter } from 'expo-router';
+import { SplashScreen, Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { doc, setDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
-
 // IMPORTANT: only do this once in _layout.tsx
 SplashScreen.preventAutoHideAsync();
 
@@ -23,7 +22,7 @@ function RootLayoutNav() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-
+  const segments = useSegments();
   const [isOnboardingChecked, setIsOnboardingChecked] = useState(false);
   const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
   const [isAppReady, setIsAppReady] = useState(false); // Track if we've handled the initial load
@@ -74,11 +73,18 @@ function RootLayoutNav() {
   useEffect(() => {
     if (!isAppReady) return;
 
+    const inAuthGroup = segments[0] === '(tabs)' || segments[0] === 'trip-details';
+    // ^^^ Check if user is already in the "App" part
+
     if (!user) {
+      // If not logged in, always go to login
       router.replace('/login');
     } else if (hasOnboarded === false) {
       router.replace('/onboarding');
-    } else {
+    } else if (!inAuthGroup) {
+      // ONLY redirect to Tabs if they are currently in a public area (Login/Onboarding)
+      // If they opened a Deep Link to '/trip-details/123', 'inAuthGroup' will be true, 
+      // so we DO NOT redirect, letting the Deep Link work!
       router.replace('/(tabs)');
     }
   }, [isAppReady, user, hasOnboarded]);
