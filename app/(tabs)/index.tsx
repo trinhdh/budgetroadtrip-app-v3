@@ -219,7 +219,7 @@ const TripCard = ({
 
           <View style={styles.budgetBadge}>
             <ThemedText style={styles.budgetText}>
-              ~${Math.round(trip.estimatedCost > 0 ? trip.estimatedCost : trip.budget)}
+              ${Math.round(trip.estimatedCost > 0 ? trip.estimatedCost : trip.budget)}
             </ThemedText>
           </View>
         </View>
@@ -492,7 +492,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     marginTop: 4,
-    fontWeight: 'bold'
+    fontFamily: Fonts.bold
   },
 
   immersiveCard: { height: 220, borderRadius: 24, overflow: 'hidden', justifyContent: 'space-between', padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 8, backgroundColor: '#333' },
@@ -500,7 +500,7 @@ const styles = StyleSheet.create({
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
 
   budgetBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#fff' },
-  budgetText: { color: '#000', fontSize: 13, fontWeight: 'bold' },
+  budgetText: { color: '#000', fontSize: 13, fontFamily: Fonts.bold },
 
   joinedBadge: {
     flexDirection: 'row',
@@ -511,7 +511,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#5856D6'
   },
-  joinedText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  joinedText: { color: '#fff', fontSize: 12, fontFamily: Fonts.bold },
 
   // --- AVATAR STACK STYLES ---
   avatarStack: {
@@ -540,12 +540,12 @@ const styles = StyleSheet.create({
   moreText: {
     color: '#fff',
     fontSize: 10,
-    fontWeight: 'bold',
+    fontFamily: Fonts.bold,
   },
 
   cardBottomContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   cardTextContainer: { flex: 1, paddingRight: 12 },
-  dateText: { color: 'rgba(255,255,255,0.9)', fontSize: 14, marginBottom: 4, fontWeight: '500' },
+  dateText: { color: 'rgba(255,255,255,0.9)', fontSize: 14, marginBottom: 4 },
   destinationTitle: { color: '#fff', fontSize: 24, fontFamily: Fonts.bold, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   arrowButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
 });

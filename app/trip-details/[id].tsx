@@ -1073,7 +1073,7 @@ export default function TripDetailsScreen() {
                             </TouchableOpacity>
                             <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>Trip Notes</ThemedText>
                             <TouchableOpacity onPress={handleSaveNotes}>
-                                <ThemedText style={{ fontWeight: 'bold', color: colors.tint, fontSize: 16 }}>Save</ThemedText>
+                                <ThemedText style={{ fontFamily: Fonts.bold, color: colors.tint, fontSize: 16 }}>Save</ThemedText>
                             </TouchableOpacity>
                         </View>
 

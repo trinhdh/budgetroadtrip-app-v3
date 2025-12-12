@@ -178,6 +178,7 @@ export default function StepTwo({ form, setForm }: Props) {
                                     minimumDate={new Date()}
                                     accentColor={colors.tint}
                                     textColor={colors.text}
+                                    themeVariant="light"
                                 />
                             </View>
                         </View>
