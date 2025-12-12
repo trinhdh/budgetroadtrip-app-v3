@@ -2,6 +2,7 @@ import { db } from '@/firebaseConfig';
 import { decode } from "@googlemaps/polyline-codec";
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser'; // <--- NEW IMPORT
 import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -12,6 +13,7 @@ import {
     Linking,
     Platform,
     StyleSheet,
+    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
@@ -29,18 +31,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { GeoPoint, Trip } from '@/constants/types';
 import { useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { GoogleMapsService } from '@/services/google-map-service';
 import { RouteService } from '@/services/route-service';
 import { TripService } from '@/services/trip-service';
-// --- NEW IMPORT ---
-import { GoogleMapsService } from '@/services/google-map-service';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT, width } = Dimensions.get('window');
 const MAX_TRANSLATE_Y = -SCREEN_HEIGHT + 100;
+const PARALLAX_HEADER_HEIGHT = 400;
 
 // --- HELPERS ---
 const toLatLng = (point?: any) => {
@@ -59,6 +62,20 @@ const toGeoPoint = (point?: any): GeoPoint | null => {
     return { lat, lng };
 };
 
+const getNormalizedPoint = (point: any): { lat: number, lng: number } | null => {
+    if (!point) return null;
+    const lat = point.lat ?? point.latitude;
+    const lng = point.lng ?? point.longitude;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    if (lat === 0 && lng === 0) return null;
+    return { lat, lng };
+};
+
+const formatVibe = (vibe?: string) => {
+    if (!vibe) return 'Standard';
+    return vibe.charAt(0).toUpperCase() + vibe.slice(1);
+};
+
 const getCategoryDetails = (type: string) => {
     switch (type.toLowerCase()) {
         case 'food': return { icon: 'fork.knife', color: '#E71D36' };
@@ -71,7 +88,7 @@ const getCategoryDetails = (type: string) => {
     }
 };
 
-// --- NEW HELPER: Rating Stars ---
+// --- RATING HELPER ---
 const RatingStars = ({ rating, count }: { rating?: number, count?: number }) => {
     if (!rating) return null;
     return (
@@ -89,6 +106,74 @@ const RatingStars = ({ rating, count }: { rating?: number, count?: number }) => 
             </View>
             {count && <ThemedText style={{ fontSize: 12, color: '#888' }}>({count})</ThemedText>}
         </View>
+    );
+};
+
+const BudgetProgressBar = ({ current, total }: { current: number, total: number }) => {
+    const percentage = Math.min((current / total) * 100, 100);
+    let color = '#10B981';
+    if (percentage > 75) color = '#F59E0B';
+    if (percentage >= 100) color = '#EF4444';
+
+    return (
+        <View style={{ height: 8, backgroundColor: '#F3F4F6', borderRadius: 4, width: '100%', marginVertical: 10, overflow: 'hidden' }}>
+            <View style={{ height: '100%', width: `${percentage}%`, backgroundColor: color, borderRadius: 4 }} />
+        </View>
+    );
+};
+
+// --- Edit Day Modal ---
+type EditDayModalProps = {
+    visible: boolean;
+    onClose: () => void;
+    day: any;
+    onSave: (dayIndex: number, newTitle: string) => void;
+};
+
+const EditDayModal = ({ visible, onClose, day, onSave }: EditDayModalProps) => {
+    const [title, setTitle] = useState(day?.title || '');
+    const tintColor = Colors.light.tint;
+
+    useEffect(() => {
+        if (visible && day) {
+            setTitle(day.title);
+        }
+    }, [visible, day]);
+
+    const handleSave = () => {
+        if (!day || !title.trim()) {
+            Alert.alert("Invalid Input", "Title cannot be empty.");
+            return;
+        }
+        onSave(day.dayIndex, title.trim());
+    };
+
+    return (
+        <BottomSheetModal
+            isVisible={visible}
+            onClose={onClose}
+            title={`Edit Day ${day?.day}`}
+            height="35%"
+        >
+            <View style={{ padding: 20, flex: 1, justifyContent: 'space-between' }}>
+                <View style={{ gap: 15 }}>
+                    <ThemedText style={styles.paramLabel}>Day Title</ThemedText>
+                    <TextInput
+                        style={[styles.input, { borderColor: Colors.light.icon, color: Colors.light.text }]}
+                        value={title}
+                        onChangeText={setTitle}
+                        placeholder={`Day ${day?.day} Title...`}
+                    />
+                </View>
+
+                <TouchableOpacity
+                    style={[styles.saveButton, { backgroundColor: tintColor }]}
+                    onPress={handleSave}
+                >
+                    <ThemedText style={styles.saveButtonText}>Save Changes</ThemedText>
+                </TouchableOpacity>
+            </View>
+        </BottomSheetModal>
     );
 };
 
@@ -111,7 +196,6 @@ export default function DayDetailsScreen() {
     const [expenses, setExpenses] = useState<any[]>([]);
 
     const [dayRouteCoordinates, setDayRouteCoordinates] = useState<GeoPoint[]>([]);
-
     const [dayStats, setDayStats] = useState({ miles: '0', time: '0h 0m' });
 
     const translateY = useSharedValue(-SCREEN_HEIGHT * 0.55);
@@ -143,7 +227,7 @@ export default function DayDetailsScreen() {
         if (row) row.close();
     };
 
-    // --- 1. FETCH TRIP DATA ---
+    // --- FETCH TRIP DATA ---
     useEffect(() => {
         if (!tripId) return;
         const unsubscribe = TripService.subscribeToTrip(tripId, (data) => {
@@ -154,7 +238,7 @@ export default function DayDetailsScreen() {
         return () => unsubscribe();
     }, [tripId]);
 
-    // --- 2. FETCH EXPENSES ---
+    // --- FETCH EXPENSES ---
     useEffect(() => {
         if (!tripId) return;
         const q = query(
@@ -172,7 +256,7 @@ export default function DayDetailsScreen() {
         return () => unsubscribe();
     }, [tripId, dayIndex]);
 
-    // --- 3. ROUTE LOGIC ---
+    // --- ROUTE LOGIC ---
     useEffect(() => {
         const fetchDayRoute = async () => {
             if (!trip || !trip.itinerary || !trip.itinerary[dayIndex]) return;
@@ -284,6 +368,41 @@ export default function DayDetailsScreen() {
         });
     };
 
+    // --- NEW: Handle opening external websites (Hotels.com or Google) ---
+    const handleOpenExternalLink = async (item: any) => {
+        let url = '';
+        const query = encodeURIComponent(`${item.title} ${item.address || ''}`);
+
+        if (item.type === 'hotel' || item.type === 'lodging') {
+            // Calculate Dates
+            let dateParams = '';
+            if (trip?.startDate) {
+                const checkIn = new Date(trip.startDate);
+                checkIn.setDate(checkIn.getDate() + dayIndex); // Current day
+
+                const checkOut = new Date(checkIn);
+                checkOut.setDate(checkIn.getDate() + 1); // Next day (1 night stay)
+
+                const fmt = (d: Date) => d.toISOString().split('T')[0]; // YYYY-MM-DD
+                dateParams = `&q-check-in=${fmt(checkIn)}&q-check-out=${fmt(checkOut)}`;
+            }
+
+            // Append dates to Hotels.com URL
+            url = `https://www.hotels.com/search.do?q-destination=${encodeURIComponent(item.title)}${dateParams}`;
+        } else {
+            // Default to Google Search for other activities
+            url = `https://www.google.com/search?q=${query}`;
+        }
+
+        try {
+            await WebBrowser.openBrowserAsync(url, {
+                presentationStyle: WebBrowser.WebBrowserPresentationStyle.AUTOMATIC
+            });
+        } catch (e) {
+            Alert.alert("Error", "Could not open link.");
+        }
+    };
+
     const handleDeleteExpense = async (expenseId: string) => {
         Alert.alert("Delete Expense", "Are you sure you want to delete this expense?", [
             { text: "Cancel", style: "cancel", onPress: () => closeRow(expenseId) },
@@ -361,25 +480,18 @@ export default function DayDetailsScreen() {
         try { await TripService.updateDayTimeline(tripId, dayIndex, reorderedData); } catch (e) { }
     };
 
-    // --- RENDER ITEMS ---
-
-    // [UPDATED] Render Activity Item with RICH CARD style
+    // Render Items
     const renderActivityItem = ({ item, getIndex, drag, isActive }: RenderItemParams<any>) => {
         const index = getIndex();
         if (index === undefined) return null;
         const { icon, color } = getCategoryDetails(item.type);
 
-        // --- PREPARE DATA ---
-        // Convert the raw photo_reference to a valid URL using our service helper
         const photoUrl = item.photo_reference
             ? GoogleMapsService.getPhotoUrl(item.photo_reference, 400)
             : null;
 
-        // Construct price string (either $$$ or $50)
         const priceString = item.price_level ? '$'.repeat(item.price_level) : '';
         const displayPrice = item.price > 0 ? `$${item.price}` : priceString;
-
-        // Capitalize Type (restaurant -> Restaurant)
         const typeLabel = item.type ? item.type.charAt(0).toUpperCase() + item.type.slice(1) : 'Place';
 
         const renderLeftActions = () => (
@@ -428,22 +540,18 @@ export default function DayDetailsScreen() {
                         <TouchableOpacity
                             onLongPress={drag}
                             disabled={isActive}
-                            // --- NEW STYLE: richCard ---
                             style={[styles.richCard, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
                             activeOpacity={0.9}
-                            onPress={() => handleEditActivityPress(item)}
+                            // --- CHANGED: Open External Link on Press ---
+                            onPress={() => handleOpenExternalLink(item)}
                         >
-                            {/* Left Side: Content */}
                             <View style={{ flex: 1, paddingVertical: 4 }}>
-                                {/* Title */}
                                 <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ fontSize: 16 }}>
                                     {item.title}
                                 </ThemedText>
 
-                                {/* Rating */}
                                 <RatingStars rating={item.rating} count={item.user_ratings_total} />
 
-                                {/* Meta Row: Type • Price */}
                                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
                                     <ThemedText style={styles.metaText}>{typeLabel}</ThemedText>
                                     {displayPrice ? (
@@ -452,17 +560,14 @@ export default function DayDetailsScreen() {
                                             <ThemedText style={styles.metaText}>{displayPrice}</ThemedText>
                                         </>
                                     ) : null}
+                                    <IconSymbol name="arrow.up.right" size={12} color="#999" style={{ marginLeft: 6 }} />
                                 </View>
 
-                                {/* Address / Desc */}
                                 <ThemedText style={[styles.addressText, { marginTop: 6 }]} numberOfLines={1}>
                                     {item.address || item.desc}
                                 </ThemedText>
-
-
                             </View>
 
-                            {/* Right Side: Image or Icon Fallback */}
                             {photoUrl ? (
                                 <Image source={{ uri: photoUrl }} style={styles.cardImage} />
                             ) : (
@@ -799,4 +904,29 @@ const styles = StyleSheet.create({
     sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
     dashedButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed' },
     dashedButtonText: { fontSize: 16, fontFamily: Fonts.medium },
+    input: {
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 14,
+        fontSize: 16,
+        fontFamily: Fonts.regular,
+    },
+    saveButton: {
+        height: 50,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 20,
+    },
+    saveButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontFamily: Fonts.bold,
+    },
+    paramLabel: {
+        fontSize: 14,
+        color: '#666',
+        fontFamily: Fonts.medium,
+        marginBottom: 4,
+    },
 });
