@@ -201,7 +201,7 @@ export default function ExpenseScreen() {
                         <ThemedText
                             style={{
                                 color: isValid ? colors.tint : '#ccc',
-                                fontWeight: 'bold'
+                                fontFamily: Fonts.bold
                             }}>
                             Save
                         </ThemedText>

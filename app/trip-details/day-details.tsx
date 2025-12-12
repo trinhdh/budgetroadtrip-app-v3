@@ -23,10 +23,11 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-g
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, {
-    Easing,
+    useAnimatedRef,
+    useAnimatedScrollHandler, // <--- IMPORT
     useAnimatedStyle,
     useSharedValue,
-    withTiming
+    withSpring
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -198,23 +199,59 @@ export default function DayDetailsScreen() {
 
     const routeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // --- ANIMATIONS ---
     const translateY = useSharedValue(-SCREEN_HEIGHT * 0.55);
     const context = useSharedValue({ y: 0 });
+    const listScrollY = useSharedValue(0);
+    const listRef = useAnimatedRef<any>();
+
+    // Scroll Handler to track list position
+    const scrollHandler = useAnimatedScrollHandler((event) => {
+        listScrollY.value = event.contentOffset.y;
+    });
 
     const gesture = Gesture.Pan()
+        .simultaneousWithExternalGesture(listRef) // Allow simultaneous gesture with List
         .onStart(() => { context.value = { y: translateY.value }; })
         .onUpdate((event) => {
-            translateY.value = event.translationY + context.value.y;
-            translateY.value = Math.max(translateY.value, MAX_TRANSLATE_Y);
+            // Logic: If list is at top (scrollY <= 0) AND dragging down, Move Sheet
+            // Otherwise, normal sheet drag behavior or list scrolls
+            if (listScrollY.value <= 0 && event.translationY > 0) {
+                translateY.value = event.translationY + context.value.y;
+                translateY.value = Math.max(translateY.value, MAX_TRANSLATE_Y);
+            } else if (listScrollY.value <= 0) {
+                // If at top and dragging up, we usually want to expand sheet
+                translateY.value = event.translationY + context.value.y;
+                translateY.value = Math.max(translateY.value, MAX_TRANSLATE_Y);
+            }
+            // If listScrollY > 0, we let the list handle the scroll (Pan effectively ignores)
         })
-        .onEnd(() => {
-            const timingConfig = { duration: 250, easing: Easing.out(Easing.quad) };
-            if (translateY.value > -SCREEN_HEIGHT * 0.3) {
-                translateY.value = withTiming(-SCREEN_HEIGHT * 0.15, timingConfig);
-            } else if (translateY.value < -SCREEN_HEIGHT * 0.7) {
-                translateY.value = withTiming(MAX_TRANSLATE_Y, timingConfig);
+        .onEnd((event) => {
+            // SNAP POINTS
+            const MINIMIZED = -SCREEN_HEIGHT * 0.12; // Show map
+            const HALF = -SCREEN_HEIGHT * 0.55;
+            const EXPANDED = MAX_TRANSLATE_Y;
+
+            // Velocity Logic for smooth flick
+            if (event.velocityY > 500) {
+                // Swiping DOWN fast -> Minimize
+                translateY.value = withSpring(MINIMIZED, { damping: 20, stiffness: 90 });
+            } else if (event.velocityY < -500) {
+                // Swiping UP fast -> Expand
+                if (translateY.value > HALF) {
+                    translateY.value = withSpring(HALF, { damping: 20, stiffness: 90 });
+                } else {
+                    translateY.value = withSpring(EXPANDED, { damping: 20, stiffness: 90 });
+                }
             } else {
-                translateY.value = withTiming(-SCREEN_HEIGHT * 0.55, timingConfig);
+                // Position Logic
+                if (translateY.value > -SCREEN_HEIGHT * 0.3) {
+                    translateY.value = withSpring(MINIMIZED, { damping: 20, stiffness: 90 });
+                } else if (translateY.value < -SCREEN_HEIGHT * 0.75) {
+                    translateY.value = withSpring(EXPANDED, { damping: 20, stiffness: 90 });
+                } else {
+                    translateY.value = withSpring(HALF, { damping: 20, stiffness: 90 });
+                }
             }
         });
 
@@ -363,13 +400,21 @@ export default function DayDetailsScreen() {
             Alert.alert("Error", "Location coordinates not found.");
             return;
         }
-        const destStr = `${coords.latitude},${coords.longitude}`;
-        let url = "";
+
+        // Use address for "Exact" navigation, fallback to coordinates
+        const destination = item.address
+            ? encodeURIComponent(item.address)
+            : `${coords.latitude},${coords.longitude}`;
+
+        let url = '';
         if (Platform.OS === 'ios') {
-            url = `http://maps.apple.com/?daddr=${destStr}`;
+            // Apple Maps
+            url = `http://maps.apple.com/?daddr=${destination}`;
         } else {
-            url = `https://www.google.com/maps/dir/?api=1&destination=${destStr}`;
+            // Google Maps
+            url = `https://www.google.com/maps/dir/?api=1&destination=${destination}`;
         }
+
         Linking.openURL(url).catch(err => {
             console.error("Failed to open map:", err);
             Alert.alert("Error", "Could not open map application.");
@@ -377,11 +422,27 @@ export default function DayDetailsScreen() {
     };
 
     const handleOpenExternalLink = async (item: any) => {
+        const exactQuery = encodeURIComponent(`${item.title}, ${item.address || ''}`);
         let url = '';
 
-        const exactLocationQuery = encodeURIComponent(`${item.title}, ${item.address || ''}`);
+        if (item.type === 'hotel' || item.type === 'lodging') {
+            let dateParams = '';
+            if (trip?.startDate) {
+                const checkIn = new Date(trip.startDate);
+                checkIn.setDate(checkIn.getDate() + dayIndex);
+                const checkOut = new Date(checkIn);
+                checkOut.setDate(checkIn.getDate() + 1);
+                const fmt = (d: Date) => d.toISOString().split('T')[0];
 
-        url = `https://www.google.com/search?q=${exactLocationQuery}`;
+                const adults = trip.travelers?.adults || 2;
+                const children = trip.travelers?.children || 0;
+
+                dateParams = `&q-check-in=${fmt(checkIn)}&q-check-out=${fmt(checkOut)}&q-rooms=1&q-room-0-adults=${adults}&q-room-0-children=${children}`;
+            }
+            url = `https://www.hotels.com/search.do?q-destination=${exactQuery}${dateParams}`;
+        } else {
+            url = `https://www.google.com/search?q=${exactQuery}`;
+        }
 
         try {
             await WebBrowser.openBrowserAsync(url, {
@@ -460,27 +521,20 @@ export default function DayDetailsScreen() {
         });
     };
 
-    // --- UPDATED: Blocking Drag End ---
+    // --- BLOCKING DRAG END ---
     const handleDragEnd = async ({ data }: { data: any[] }) => {
         if (!tripId || !trip) return;
-
-        // 1. Show Processing Spinner IMMEDIATELY to block further interaction
         setIsUpdatingOrder(true);
-
-        // 2. Optimistic Update
         const reorderedData = data.map((item, index) => ({ ...item, order: index + 1 }));
         const updatedTrip = { ...trip };
         updatedTrip.itinerary[dayIndex].timeline = reorderedData;
         setTrip(updatedTrip);
-
         try {
-            // 3. Perform Update
             await TripService.updateDayTimeline(tripId, dayIndex, reorderedData);
         } catch (e) {
             console.log("Error saving drag order", e);
             Alert.alert("Error", "Failed to update order.");
         } finally {
-            // 4. Release Block
             setIsUpdatingOrder(false);
         }
     };
@@ -705,7 +759,13 @@ export default function DayDetailsScreen() {
                                 const { color } = getCategoryDetails(item.type);
                                 if (!coords) return null;
                                 return (
-                                    <Marker key={`m-${idx}-${item.id}`} coordinate={coords} title={item.title} zIndex={5}>
+                                    <Marker
+                                        key={`m-${idx}-${item.id}`}
+                                        coordinate={coords}
+                                        title={item.title}
+                                        description={item.address}
+                                        zIndex={5}
+                                    >
                                         <View style={[styles.markerPill, { backgroundColor: color, borderColor: '#fff', borderWidth: 2 }]}>
                                             <ThemedText style={styles.markerText} numberOfLines={1}>{item.title}</ThemedText>
                                         </View>
@@ -761,6 +821,7 @@ export default function DayDetailsScreen() {
                         </View>
 
                         <DraggableFlatList
+                            ref={listRef}
                             data={timeline}
                             onDragEnd={handleDragEnd}
                             keyExtractor={(item) => item.id}
@@ -768,6 +829,8 @@ export default function DayDetailsScreen() {
                             contentContainerStyle={{ paddingBottom: 150, paddingHorizontal: 20 }}
                             showsVerticalScrollIndicator={false}
                             bounces={false}
+                            onScroll={scrollHandler}
+                            scrollEventThrottle={16}
                             ListHeaderComponent={
                                 <View style={[styles.sectionHeader, { marginTop: 10 }]}>
                                     <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>Activities</ThemedText>
