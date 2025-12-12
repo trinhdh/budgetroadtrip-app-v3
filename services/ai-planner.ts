@@ -141,8 +141,14 @@ export const AiPlannerService = {
                     type: 'activities',
                     coordinates: act.geometry.location,
                     address: act.formatted_address || act.vicinity,
-                    price: 0, // AI doesn't give price, user can edit
-                    order: order++
+                    price: 0,
+                    order: order++,
+                    // --- NEW MAPS ---
+                    photo_reference: act.photos?.[0]?.photo_reference,
+                    rating: act.rating,
+                    user_ratings_total: act.user_ratings_total,
+                    price_level: act.price_level,
+                    // ----------------
                 });
             }
 
@@ -156,7 +162,13 @@ export const AiPlannerService = {
                     coordinates: f.geometry.location,
                     address: f.formatted_address || f.vicinity,
                     price: 0,
-                    order: order++
+                    order: order++,
+                    // --- NEW MAPS ---
+                    photo_reference: f.photos?.[0]?.photo_reference,
+                    rating: f.rating,
+                    user_ratings_total: f.user_ratings_total,
+                    price_level: f.price_level,
+                    // ----------------
                 });
             }
 
@@ -170,7 +182,13 @@ export const AiPlannerService = {
                     coordinates: h.geometry.location,
                     address: h.formatted_address || h.vicinity,
                     price: 0,
-                    order: order++
+                    order: order++,
+                    // --- NEW MAPS ---
+                    photo_reference: h.photos?.[0]?.photo_reference,
+                    rating: h.rating,
+                    user_ratings_total: h.user_ratings_total,
+                    price_level: h.price_level,
+                    // ----------------
                 });
             }
             // -----------------------------------

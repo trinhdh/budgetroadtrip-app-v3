@@ -36,6 +36,8 @@ import { useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { RouteService } from '@/services/route-service';
 import { TripService } from '@/services/trip-service';
+// --- NEW IMPORT ---
+import { GoogleMapsService } from '@/services/google-map-service';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MAX_TRANSLATE_Y = -SCREEN_HEIGHT + 100;
@@ -67,6 +69,27 @@ const getCategoryDetails = (type: string) => {
         case 'other': return { icon: 'circle.grid.2x2.fill', color: '#808080' };
         default: return { icon: 'mappin.circle.fill', color: '#808080' };
     }
+};
+
+// --- NEW HELPER: Rating Stars ---
+const RatingStars = ({ rating, count }: { rating?: number, count?: number }) => {
+    if (!rating) return null;
+    return (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+            <ThemedText style={{ fontSize: 12, fontWeight: 'bold' }}>{rating}</ThemedText>
+            <View style={{ flexDirection: 'row' }}>
+                {[1, 2, 3, 4, 5].map((i) => (
+                    <IconSymbol
+                        key={i}
+                        name="star.fill"
+                        size={10}
+                        color={i <= Math.round(rating) ? "#F5A623" : "#E0E0E0"}
+                    />
+                ))}
+            </View>
+            {count && <ThemedText style={{ fontSize: 12, color: '#888' }}>({count})</ThemedText>}
+        </View>
+    );
 };
 
 export default function DayDetailsScreen() {
@@ -338,11 +361,26 @@ export default function DayDetailsScreen() {
         try { await TripService.updateDayTimeline(tripId, dayIndex, reorderedData); } catch (e) { }
     };
 
-    // Render Items
+    // --- RENDER ITEMS ---
+
+    // [UPDATED] Render Activity Item with RICH CARD style
     const renderActivityItem = ({ item, getIndex, drag, isActive }: RenderItemParams<any>) => {
         const index = getIndex();
         if (index === undefined) return null;
         const { icon, color } = getCategoryDetails(item.type);
+
+        // --- PREPARE DATA ---
+        // Convert the raw photo_reference to a valid URL using our service helper
+        const photoUrl = item.photo_reference
+            ? GoogleMapsService.getPhotoUrl(item.photo_reference, 400)
+            : null;
+
+        // Construct price string (either $$$ or $50)
+        const priceString = item.price_level ? '$'.repeat(item.price_level) : '';
+        const displayPrice = item.price > 0 ? `$${item.price}` : priceString;
+
+        // Capitalize Type (restaurant -> Restaurant)
+        const typeLabel = item.type ? item.type.charAt(0).toUpperCase() + item.type.slice(1) : 'Place';
 
         const renderLeftActions = () => (
             <View style={styles.leftActionContainer}>
@@ -390,28 +428,48 @@ export default function DayDetailsScreen() {
                         <TouchableOpacity
                             onLongPress={drag}
                             disabled={isActive}
-                            style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
+                            // --- NEW STYLE: richCard ---
+                            style={[styles.richCard, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
                             activeOpacity={0.9}
+                            onPress={() => handleEditActivityPress(item)}
                         >
-                            <View style={styles.cardContent}>
-                                <View style={[styles.cardIconBox, { backgroundColor: color + '15' }]}>
-                                    <IconSymbol name={icon as any} size={20} color={color} />
-                                </View>
-                                <View style={{ flex: 1, justifyContent: 'center', gap: 4 }}>
-                                    <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ fontSize: 16 }}>{item.title}</ThemedText>
-                                    <ThemedText style={styles.addressText} numberOfLines={1}>{item.address || item.desc || item.type}</ThemedText>
+                            {/* Left Side: Content */}
+                            <View style={{ flex: 1, paddingVertical: 4 }}>
+                                {/* Title */}
+                                <ThemedText type="defaultSemiBold" numberOfLines={1} style={{ fontSize: 16 }}>
+                                    {item.title}
+                                </ThemedText>
+
+                                {/* Rating */}
+                                <RatingStars rating={item.rating} count={item.user_ratings_total} />
+
+                                {/* Meta Row: Type • Price */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                                    <ThemedText style={styles.metaText}>{typeLabel}</ThemedText>
+                                    {displayPrice ? (
+                                        <>
+                                            <View style={styles.dotSeparator} />
+                                            <ThemedText style={styles.metaText}>{displayPrice}</ThemedText>
+                                        </>
+                                    ) : null}
                                 </View>
 
-                                {item.price > 0 && (
-                                    <ThemedText style={{ fontSize: 14, fontWeight: '600', color: '#333', marginRight: 8 }}>
-                                        ${item.price}
-                                    </ThemedText>
-                                )}
+                                {/* Address / Desc */}
+                                <ThemedText style={[styles.addressText, { marginTop: 6 }]} numberOfLines={1}>
+                                    {item.address || item.desc}
+                                </ThemedText>
 
-                                <View style={styles.dragHandle}>
-                                    <IconSymbol name="line.3.horizontal" size={16} color={colors.icon + '40'} />
-                                </View>
+
                             </View>
+
+                            {/* Right Side: Image or Icon Fallback */}
+                            {photoUrl ? (
+                                <Image source={{ uri: photoUrl }} style={styles.cardImage} />
+                            ) : (
+                                <View style={[styles.cardImagePlaceholder, { backgroundColor: color + '15' }]}>
+                                    <IconSymbol name={icon as any} size={24} color={color} />
+                                </View>
+                            )}
                         </TouchableOpacity>
                     </Swipeable>
                 </View>
@@ -668,13 +726,66 @@ const styles = StyleSheet.create({
     sheetHandleContainer: { alignItems: 'center', paddingTop: 12, paddingBottom: 8 },
     sheetHandle: { width: 40, height: 4, borderRadius: 2 },
     timelineWrapper: { marginBottom: 20 },
+
+    // --- OLD CARD STYLES (Still used for Expenses) ---
     card: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
     cardContent: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
     cardIconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-    addressText: { fontSize: 12, color: '#888', flex: 1 },
     priceText: { fontSize: 14, fontFamily: Fonts.bold },
     avatar: { width: 24, height: 24, borderRadius: 12, marginLeft: 6 },
     dragHandle: { marginTop: 0 },
+
+    // --- NEW RICH CARD STYLES (For Activities) ---
+    richCard: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'flex-start', // Top align
+        borderRadius: 16,
+        borderWidth: 1,
+        padding: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+        elevation: 3,
+        gap: 12,
+        minHeight: 100
+    },
+    cardImage: {
+        width: 80,
+        height: 80,
+        borderRadius: 12,
+        backgroundColor: '#eee'
+    },
+    cardImagePlaceholder: {
+        width: 80,
+        height: 80,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    metaText: {
+        fontSize: 12,
+        color: '#666',
+        fontFamily: Fonts.medium
+    },
+    dotSeparator: {
+        width: 3,
+        height: 3,
+        borderRadius: 1.5,
+        backgroundColor: '#999',
+        marginHorizontal: 6
+    },
+    openStatus: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginTop: 4
+    },
+    addressText: {
+        fontSize: 12,
+        color: '#888',
+        flex: 1
+    },
 
     // --- ACTIONS ---
     leftActionContainer: { flexDirection: 'row', height: '100%', paddingRight: 8 },

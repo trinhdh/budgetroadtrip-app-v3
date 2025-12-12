@@ -69,6 +69,13 @@ export default function ActivityScreen() {
                 name: initialData.title,
                 address: initialData.address || initialData.desc,
                 coordinates: initialData.coordinates,
+                // Load existing rich data if editing
+                photoRef: initialData.photo_reference,
+                rating: initialData.rating,
+                user_ratings_total: initialData.user_ratings_total,
+                price_level: initialData.price_level,
+                types: initialData.types,
+                opening_hours: initialData.is_open_now !== undefined ? { open_now: initialData.is_open_now } : undefined
             });
             setStep('details');
         }
@@ -84,10 +91,25 @@ export default function ActivityScreen() {
 
         const placeName = data.structured_formatting?.main_text || details?.name || data.description?.split(',')[0] || 'New Activity';
 
+        // --- EXTRACT RICH DETAILS ---
+        const photoRef = details?.photos?.[0]?.photo_reference;
+        const rating = details?.rating;
+        const user_ratings_total = details?.user_ratings_total;
+        const price_level = details?.price_level;
+        const types = details?.types;
+        const opening_hours = details?.opening_hours;
+
         setSelectedPlace({
             name: placeName,
             address: data.description,
             coordinates: coords,
+            // Store rich details in state
+            photoRef,
+            rating,
+            user_ratings_total,
+            price_level,
+            types,
+            opening_hours
         });
 
         setName(placeName);
@@ -111,6 +133,16 @@ export default function ActivityScreen() {
             price: Number(price) || 0,
             coordinates: selectedPlace.coordinates,
             order: initialData?.order || currentTimeline.length + 1,
+
+            // --- FIXED: Use (value ?? null) to prevent 'undefined' errors ---
+            photo_reference: (selectedPlace.photoRef ?? initialData?.photo_reference) ?? null,
+            rating: (selectedPlace.rating ?? initialData?.rating) ?? null,
+            user_ratings_total: (selectedPlace.user_ratings_total ?? initialData?.user_ratings_total) ?? null,
+            price_level: (selectedPlace.price_level ?? initialData?.price_level) ?? null,
+            types: (selectedPlace.types ?? initialData?.types) ?? null,
+
+            // Handle opening hours safely
+            is_open_now: (selectedPlace.opening_hours?.open_now ?? initialData?.is_open_now) ?? null,
         };
 
         if (isEditing) {
@@ -124,7 +156,8 @@ export default function ActivityScreen() {
         try {
             await TripService.updateDayTimeline(tripId, dayIndex, updatedTimeline);
             router.back();
-        } catch {
+        } catch (error) {
+            console.error(error); // Log the actual error
             Alert.alert("Error", "Failed to save activity.");
         } finally {
             setLoading(false);
