@@ -2,7 +2,7 @@ import { db } from '@/firebaseConfig';
 import { decode } from "@googlemaps/polyline-codec";
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser'; // <--- NEW IMPORT
+import * as WebBrowser from 'expo-web-browser';
 import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -11,6 +11,7 @@ import {
     Dimensions,
     Image,
     Linking,
+    Modal,
     Platform,
     StyleSheet,
     TextInput,
@@ -41,9 +42,11 @@ import { GoogleMapsService } from '@/services/google-map-service';
 import { RouteService } from '@/services/route-service';
 import { TripService } from '@/services/trip-service';
 
+import { BalancesModal } from '@/components/ui/balances-modal';
+import { ExpenseDetailModal } from '@/components/ui/expense-detail-modal';
+
 const { height: SCREEN_HEIGHT, width } = Dimensions.get('window');
 const MAX_TRANSLATE_Y = -SCREEN_HEIGHT + 100;
-const PARALLAX_HEADER_HEIGHT = 400;
 
 // --- HELPERS ---
 const toLatLng = (point?: any) => {
@@ -60,20 +63,6 @@ const toGeoPoint = (point?: any): GeoPoint | null => {
     const lng = point.lng ?? point.longitude;
     if (typeof lat !== 'number' || typeof lng !== 'number') return null;
     return { lat, lng };
-};
-
-const getNormalizedPoint = (point: any): { lat: number, lng: number } | null => {
-    if (!point) return null;
-    const lat = point.lat ?? point.latitude;
-    const lng = point.lng ?? point.longitude;
-    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
-    if (lat === 0 && lng === 0) return null;
-    return { lat, lng };
-};
-
-const formatVibe = (vibe?: string) => {
-    if (!vibe) return 'Standard';
-    return vibe.charAt(0).toUpperCase() + vibe.slice(1);
 };
 
 const getCategoryDetails = (type: string) => {
@@ -197,6 +186,17 @@ export default function DayDetailsScreen() {
 
     const [dayRouteCoordinates, setDayRouteCoordinates] = useState<GeoPoint[]>([]);
     const [dayStats, setDayStats] = useState({ miles: '0', time: '0h 0m' });
+
+    const [paramsModalVisible, setParamsModalVisible] = useState(false);
+    const [selectedExpense, setSelectedExpense] = useState<any>(null);
+    const [balancesVisible, setBalancesVisible] = useState(false);
+
+    const [editingDay, setEditingDay] = useState<any>(null);
+
+    // --- NEW: Loading State for Drag ---
+    const [isUpdatingOrder, setIsUpdatingOrder] = useState(false);
+
+    const routeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const translateY = useSharedValue(-SCREEN_HEIGHT * 0.55);
     const context = useSharedValue({ y: 0 });
@@ -345,7 +345,15 @@ export default function DayDetailsScreen() {
             }
         };
 
-        fetchDayRoute();
+        // --- DEBOUNCE IMPLEMENTATION ---
+        if (routeTimeout.current) clearTimeout(routeTimeout.current);
+        routeTimeout.current = setTimeout(() => {
+            fetchDayRoute();
+        }, 1000); // 1 second debounce for route calculation
+
+        return () => {
+            if (routeTimeout.current) clearTimeout(routeTimeout.current);
+        };
     }, [trip, dayIndex]);
 
     // --- HANDLERS ---
@@ -368,29 +376,22 @@ export default function DayDetailsScreen() {
         });
     };
 
-    // --- NEW: Handle opening external websites (Hotels.com or Google) ---
     const handleOpenExternalLink = async (item: any) => {
         let url = '';
         const query = encodeURIComponent(`${item.title} ${item.address || ''}`);
 
         if (item.type === 'hotel' || item.type === 'lodging') {
-            // Calculate Dates
             let dateParams = '';
             if (trip?.startDate) {
                 const checkIn = new Date(trip.startDate);
-                checkIn.setDate(checkIn.getDate() + dayIndex); // Current day
-
+                checkIn.setDate(checkIn.getDate() + dayIndex);
                 const checkOut = new Date(checkIn);
-                checkOut.setDate(checkIn.getDate() + 1); // Next day (1 night stay)
-
-                const fmt = (d: Date) => d.toISOString().split('T')[0]; // YYYY-MM-DD
+                checkOut.setDate(checkIn.getDate() + 1);
+                const fmt = (d: Date) => d.toISOString().split('T')[0];
                 dateParams = `&q-check-in=${fmt(checkIn)}&q-check-out=${fmt(checkOut)}`;
             }
-
-            // Append dates to Hotels.com URL
             url = `https://www.hotels.com/search.do?q-destination=${encodeURIComponent(item.title)}${dateParams}`;
         } else {
-            // Default to Google Search for other activities
             url = `https://www.google.com/search?q=${query}`;
         }
 
@@ -471,13 +472,32 @@ export default function DayDetailsScreen() {
         });
     };
 
+    // --- UPDATED: Blocking Drag End ---
     const handleDragEnd = async ({ data }: { data: any[] }) => {
         if (!tripId || !trip) return;
+
+        // 1. Show Processing Spinner IMMEDIATELY to block further interaction
+        setIsUpdatingOrder(true);
+
+        // 2. Optimistic Update
         const reorderedData = data.map((item, index) => ({ ...item, order: index + 1 }));
         const updatedTrip = { ...trip };
         updatedTrip.itinerary[dayIndex].timeline = reorderedData;
         setTrip(updatedTrip);
-        try { await TripService.updateDayTimeline(tripId, dayIndex, reorderedData); } catch (e) { }
+
+        try {
+            // 3. Perform Update
+            await TripService.updateDayTimeline(tripId, dayIndex, reorderedData);
+
+            // Optional: small delay to let user see "Updating" feedback if API is too fast
+            // await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (e) {
+            console.log("Error saving drag order", e);
+            Alert.alert("Error", "Failed to update order.");
+        } finally {
+            // 4. Release Block
+            setIsUpdatingOrder(false);
+        }
     };
 
     // Render Items
@@ -542,7 +562,6 @@ export default function DayDetailsScreen() {
                             disabled={isActive}
                             style={[styles.richCard, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
                             activeOpacity={0.9}
-                            // --- CHANGED: Open External Link on Press ---
                             onPress={() => handleOpenExternalLink(item)}
                         >
                             <View style={{ flex: 1, paddingVertical: 4 }}>
@@ -671,7 +690,7 @@ export default function DayDetailsScreen() {
                     options={{
                         headerShown: false,
                         gestureEnabled: true,
-                        fullScreenGestureEnabled: true // <--- ENABLE FULL SCREEN SWIPE BACK
+                        fullScreenGestureEnabled: true
                     }}
                 />
 
@@ -811,6 +830,37 @@ export default function DayDetailsScreen() {
                 </GestureDetector>
 
             </ThemedView>
+            <BalancesModal visible={balancesVisible} onClose={() => setBalancesVisible(false)} debts={[]} currentUser="u1" onSettle={() => { }} />
+            <ExpenseDetailModal visible={!!selectedExpense} onClose={() => setSelectedExpense(null)} expense={selectedExpense} />
+            <EditDayModal
+                visible={!!editingDay}
+                onClose={() => setEditingDay(null)}
+                day={editingDay}
+                onSave={(dayIndex, newTitle) => {
+                    // Logic to save day title if needed
+                }}
+            />
+            <BottomSheetModal
+                isVisible={paramsModalVisible}
+                onClose={() => setParamsModalVisible(false)}
+                title="Trip Details"
+                height="65%"
+            >
+                <View>
+                    {/* Trip details content */}
+                </View>
+            </BottomSheetModal>
+
+            {/* --- NEW: Blocking Processing Modal --- */}
+            <Modal transparent visible={isUpdatingOrder} animationType="fade">
+                <View style={styles.processingOverlay}>
+                    <View style={[styles.processingBox, { backgroundColor: colors.background }]}>
+                        <ActivityIndicator size="large" color={colors.tint} />
+                        <ThemedText style={{ marginTop: 12, fontWeight: '600' }}>Updating Itinerary...</ThemedText>
+                    </View>
+                </View>
+            </Modal>
+
         </GestureHandlerRootView>
     );
 }
@@ -831,16 +881,12 @@ const styles = StyleSheet.create({
     sheetHandleContainer: { alignItems: 'center', paddingTop: 12, paddingBottom: 8 },
     sheetHandle: { width: 40, height: 4, borderRadius: 2 },
     timelineWrapper: { marginBottom: 20 },
-
-    // --- OLD CARD STYLES (Still used for Expenses) ---
     card: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
     cardContent: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
     cardIconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
     priceText: { fontSize: 14, fontFamily: Fonts.bold },
     avatar: { width: 24, height: 24, borderRadius: 12, marginLeft: 6 },
     dragHandle: { marginTop: 0 },
-
-    // --- NEW RICH CARD STYLES (For Activities) ---
     richCard: {
         flex: 1,
         flexDirection: 'row',
@@ -891,13 +937,10 @@ const styles = StyleSheet.create({
         color: '#888',
         flex: 1
     },
-
-    // --- ACTIONS ---
     leftActionContainer: { flexDirection: 'row', height: '100%', paddingRight: 8 },
     rightActionContainer: { flexDirection: 'row', height: '100%', paddingLeft: 8 },
     actionButton: { width: 70, height: '100%', justifyContent: 'center', alignItems: 'center', borderRadius: 16, marginLeft: 8 },
     actionText: { color: '#fff', fontSize: 12, fontWeight: 'bold', marginTop: 4 },
-
     emptyState: { alignItems: 'center', padding: 30 },
     footerContainer: { gap: 12, marginTop: 10, paddingBottom: 100 },
     expensesSection: { marginTop: 10, marginBottom: 20 },
@@ -929,4 +972,23 @@ const styles = StyleSheet.create({
         fontFamily: Fonts.medium,
         marginBottom: 4,
     },
+    // --- NEW STYLES FOR PROCESSING MODAL ---
+    processingOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    processingBox: {
+        padding: 24,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 150,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+        elevation: 10,
+    }
 });
