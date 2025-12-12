@@ -15,7 +15,7 @@ import { GoogleMapsService } from './google-map-service';
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const genAI = new GoogleGenAI({ apiKey: API_KEY });
 
-// ... (Schema remains the same) ...
+// ... (AiDailyPlanSchema and AiResponseSchema remain the same) ...
 const AiDailyPlanSchema = z.object({
     day: z.number(),
     title: z.string(),
@@ -26,9 +26,9 @@ const AiDailyPlanSchema = z.object({
     end_city: z.string(),
     dest_lat: z.number(),
     dest_lng: z.number(),
-    hotel_queries: z.array(z.string()),
-    food_queries: z.array(z.string()),
-    activity_queries: z.array(z.string()),
+    hotel_queries: z.array(z.string()).describe("3 specific search queries for accommodation"),
+    food_queries: z.array(z.string()).describe("3 specific search queries for food"),
+    activity_queries: z.array(z.string()).describe("3 specific search queries for activities"),
 });
 
 const AiResponseSchema = z.object({
@@ -40,10 +40,10 @@ const AiResponseSchema = z.object({
     note: z.string().describe("A helpful summary including weather, packing tips, or budget advice."),
     itinerary: z.array(AiDailyPlanSchema),
     warning: z.string().optional().describe("If budget is tight but possible, explain here."),
-    error: z.string().optional().describe("If the trip is IMPOSSIBLE with the given constraints, explain why here."),
+    error: z.string().optional().describe("If the trip is IMPOSSIBLE, explain here."),
 });
 
-// Helper to remove duplicate places based on Google's 'place_id'
+// ... (deduplicatePlaces helper remains the same) ...
 const deduplicatePlaces = (places: GooglePlace[]): GooglePlace[] => {
     const seen = new Set();
     return places.filter(place => {
@@ -53,22 +53,16 @@ const deduplicatePlaces = (places: GooglePlace[]): GooglePlace[] => {
     });
 };
 
+// ... (fetchRealPlaces helper remains the same) ...
 const fetchRealPlaces = async (queries: string[], type: "lodging" | "restaurant" | "tourist_attraction"): Promise<GooglePlace[]> => {
     const searchPromises = queries.map(query =>
         GoogleMapsService.searchPlaces(query, type)
     );
-
     const responses = await Promise.all(searchPromises);
     const rawResults: GooglePlace[] = [];
-
-    // Flatten results
     responses.forEach(places => {
-        if (places && places.length > 0) {
-            rawResults.push(places[0]); // Take the top result for each query
-        }
+        if (places && places.length > 0) rawResults.push(places[0]);
     });
-
-    // FIX: Remove duplicates if Google returns the same place for different queries
     return deduplicatePlaces(rawResults);
 };
 
@@ -89,10 +83,9 @@ export const AiPlannerService = {
             - Type: ${isRoundTrip ? 'ROUND TRIP' : 'ONE WAY'}.
 
             **CRITICAL INSTRUCTIONS:**
-            1. **FEASIBILITY CHECK:** If $${budget} is clearly too low or if route is geographically impossible, fill 'error' and stop.
-            2. If $${budget} is slightly lower than needed, fill 'warning' with a suggestion to raise the budget.
+            1. **FEASIBILITY CHECK:** If budget is too low, fill 'warning'. If impossible, fill 'error'.
             2. **SEARCH QUERIES:** Generate specific Google Maps queries.
-            3. **NOTE:** Provide a single helpful 'note' paragraph. Include expected weather, a few essential packing items, and a tip to match the '${vibe}' vibe. Keep it friendly and concise.
+            3. **NOTE:** Provide a single helpful 'note' paragraph.
             
             Return purely JSON data matching the schema.
         `;
@@ -127,15 +120,60 @@ export const AiPlannerService = {
                 fetchRealPlaces(dayItem.activity_queries, 'tourist_attraction'),
             ]);
 
-            // FIX: If AI coordinates are weird (0,0), fallback to the first activity's location or keep AI's
+            // Coordinate logic
             let finalCoords = { lat: dayItem.dest_lat, lng: dayItem.dest_lng };
-
-            // If we found activities, use the first one as the "anchor" for the map to ensure it's real
             if (activities.length > 0 && activities[0].geometry?.location) {
                 finalCoords = activities[0].geometry.location;
             } else if (hotels.length > 0 && hotels[0].geometry?.location) {
                 finalCoords = hotels[0].geometry.location;
             }
+
+            // --- NEW: AUTO-POPULATE TIMELINE ---
+            const timeline = [];
+            let order = 1;
+
+            // 1. Add Best Activity (if any)
+            if (activities.length > 0) {
+                const act = activities[0];
+                timeline.push({
+                    id: Crypto.randomUUID(),
+                    title: act.name,
+                    type: 'activities',
+                    coordinates: act.geometry.location,
+                    address: act.formatted_address || act.vicinity,
+                    price: 0, // AI doesn't give price, user can edit
+                    order: order++
+                });
+            }
+
+            // 2. Add Best Food (if any)
+            if (food.length > 0) {
+                const f = food[0];
+                timeline.push({
+                    id: Crypto.randomUUID(),
+                    title: f.name,
+                    type: 'food',
+                    coordinates: f.geometry.location,
+                    address: f.formatted_address || f.vicinity,
+                    price: 0,
+                    order: order++
+                });
+            }
+
+            // 3. Add Hotel (if any)
+            if (hotels.length > 0) {
+                const h = hotels[0];
+                timeline.push({
+                    id: Crypto.randomUUID(),
+                    title: h.name,
+                    type: 'hotel',
+                    coordinates: h.geometry.location,
+                    address: h.formatted_address || h.vicinity,
+                    price: 0,
+                    order: order++
+                });
+            }
+            // -----------------------------------
 
             const item: ItineraryItem = {
                 id: Crypto.randomUUID(),
@@ -147,13 +185,16 @@ export const AiPlannerService = {
                 drive_time: dayItem.drive_time,
                 start_city: dayItem.start_city,
                 end_city: dayItem.end_city,
-                coordinates: finalCoords, // <--- Using smarter coordinates
+                coordinates: finalCoords,
                 hotel_options: hotels,
                 food_options: food,
                 activity_options: activities,
-                selected_hotel_id: undefined,
-                selected_food_id: undefined,
-                selected_activity_id: undefined
+                selected_hotel_id: hotels.length > 0 ? hotels[0].place_id : undefined,
+                selected_food_id: food.length > 0 ? food[0].place_id : undefined,
+                selected_activity_id: activities.length > 0 ? activities[0].place_id : undefined,
+
+                // Assign the populated timeline
+                timeline: timeline
             };
 
             return item;
@@ -164,8 +205,8 @@ export const AiPlannerService = {
         return {
             estimatedCost: parsed.estimatedCost,
             estimatedBreakdown: parsed.budgetBreakdown as BudgetCategory[],
-            itinerary: finalItinerary,
             aiNote: parsed.note,
+            itinerary: finalItinerary,
             warning: parsed.warning,
             error: parsed.error
         };
