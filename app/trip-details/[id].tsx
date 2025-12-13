@@ -10,7 +10,7 @@ import {
     FlatList,
     Image,
     Keyboard,
-    Modal, // <--- Ensure Modal is imported
+    Modal,
     Platform,
     ScrollView,
     Share,
@@ -71,8 +71,8 @@ const formatVibe = (vibe?: string) => {
 
 const getCategoryDetails = (category: string) => {
     switch (category.toLowerCase()) {
-        case 'fuel': return { icon: 'speedometer', color: '#FF9F1C' };
-        case 'food': return { icon: 'leaf', color: '#E71D36' };
+        case 'fuel': return { icon: 'fuelpump.fill', color: '#FF9F1C' };
+        case 'food': return { icon: 'fork.knife', color: '#E71D36' };
         case 'hotel': return { icon: 'bed.double.fill', color: '#2EC4B6' };
         case 'activities': return { icon: 'camera.fill', color: '#7209B7' };
         default: return { icon: 'circle.grid.2x2.fill', color: '#808080' };
@@ -177,6 +177,9 @@ export default function TripDetailsScreen() {
     // --- REPLACED: Simple Modal State for Notes ---
     const [isNotesModalVisible, setNotesModalVisible] = useState(false);
     const [noteText, setNoteText] = useState('');
+
+    // --- TAB STATE ---
+    const [activeTab, setActiveTab] = useState<'itinerary' | 'expenses'>('itinerary');
 
     // ---------------------------------
 
@@ -874,7 +877,7 @@ export default function TripDetailsScreen() {
                             </View>
                         </View>
 
-                        {/* --- NEW: NOTES SECTION --- */}
+                        {/* --- MOVED HERE: TRIP NOTES SECTION (OUTSIDE TABS) --- */}
                         <View style={styles.section}>
                             <ThemedText type="subtitle" style={styles.sectionTitle}>Trip Notes</ThemedText>
                             <TouchableOpacity
@@ -896,81 +899,111 @@ export default function TripDetailsScreen() {
                                 </View>
                             </TouchableOpacity>
                         </View>
-                        {/* --- END NOTES SECTION --- */}
 
-                        {/* Budget Breakdown */}
-                        {trip.estimatedBreakdown && trip.estimatedBreakdown.length > 0 && (
+                        {/* --- TAB SELECTOR --- */}
+                        <View style={styles.tabContainer}>
+                            <TouchableOpacity
+                                style={[styles.tabButton, activeTab === 'itinerary' && { borderBottomColor: colors.tint, borderBottomWidth: 2 }]}
+                                onPress={() => setActiveTab('itinerary')}
+                            >
+                                <ThemedText style={[styles.tabText, activeTab === 'itinerary' && { color: colors.tint, fontFamily: Fonts.bold }]}>Itinerary</ThemedText>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.tabButton, activeTab === 'expenses' && { borderBottomColor: colors.tint, borderBottomWidth: 2 }]}
+                                onPress={() => setActiveTab('expenses')}
+                            >
+                                <ThemedText style={[styles.tabText, activeTab === 'expenses' && { color: colors.tint, fontFamily: Fonts.bold }]}>Expenses</ThemedText>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* =======================================================
+                            TAB 1: ITINERARY CONTENT
+                           ======================================================= */}
+                        {activeTab === 'itinerary' && (
                             <View style={styles.section}>
-                                <ThemedText type="subtitle" style={styles.sectionTitle}>Budget Breakdown</ThemedText>
-                                <View style={styles.budgetGrid}>
-                                    {trip.estimatedBreakdown.map((item, index) => {
-                                        const { icon, color } = getCategoryDetails(item.category);
-                                        return (
-                                            <View key={index} style={[styles.budgetCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
-                                                <View style={[styles.budgetIconContainer, { backgroundColor: color + '20' }]}>
-                                                    <IconSymbol name={icon as any} size={18} color={color} />
-                                                </View>
-                                                <View>
-                                                    <ThemedText style={styles.budgetAmount}>${item.amount}</ThemedText>
-                                                    <ThemedText style={styles.budgetLabel}>{item.category}</ThemedText>
-                                                </View>
-                                            </View>
-                                        );
-                                    })}
+                                <ThemedText type="subtitle" style={styles.sectionTitle}>Daily Plan</ThemedText>
+                                <View style={styles.timelineList}>
+                                    {trip.itinerary?.map((day, index) => renderItineraryItem(day, index))}
                                 </View>
+
+                                {/* ADD NEW DAY BUTTON */}
+                                <TouchableOpacity
+                                    style={[styles.addItemButton, { borderColor: colors.tint, backgroundColor: colors.tint + '10', marginTop: 16 }]}
+                                    onPress={handleAddDay}
+                                >
+                                    <IconSymbol name="plus" size={20} color={colors.tint} />
+                                    <ThemedText style={[styles.addItemText, { color: colors.tint }]}>Add New Day</ThemedText>
+                                </TouchableOpacity>
                             </View>
                         )}
 
-                        {/* Expenses Section */}
-                        <View style={styles.section}>
-                            <View style={styles.sectionHeaderRow}>
-                                <ThemedText type="subtitle" style={[styles.sectionTitle, { marginBottom: 0 }]}>Expenses</ThemedText>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
-                                    <ThemedText style={{ color: '#FF3B30', fontFamily: Fonts.bold, fontSize: 16 }}>-${totalSpent.toFixed(2)}</ThemedText>
+                        {/* =======================================================
+                            TAB 2: EXPENSES CONTENT
+                           ======================================================= */}
+                        {activeTab === 'expenses' && (
+                            <>
+                                {/* Budget Breakdown */}
+                                {trip.estimatedBreakdown && trip.estimatedBreakdown.length > 0 && (
+                                    <View style={styles.section}>
+                                        <ThemedText type="subtitle" style={styles.sectionTitle}>Budget Breakdown</ThemedText>
+                                        <View style={styles.budgetGrid}>
+                                            {trip.estimatedBreakdown.map((item, index) => {
+                                                const { icon, color } = getCategoryDetails(item.category);
+                                                return (
+                                                    <View key={index} style={[styles.budgetCard, { backgroundColor: colors.background, borderColor: colors.icon + '20' }]}>
+                                                        <View style={[styles.budgetIconContainer, { backgroundColor: color + '20' }]}>
+                                                            <IconSymbol name={icon as any} size={18} color={color} />
+                                                        </View>
+                                                        <View>
+                                                            <ThemedText style={styles.budgetAmount}>${item.amount}</ThemedText>
+                                                            <ThemedText style={styles.budgetLabel}>{item.category}</ThemedText>
+                                                        </View>
+                                                    </View>
+                                                );
+                                            })}
+                                        </View>
+                                    </View>
+                                )}
+
+                                {/* Expenses Section */}
+                                <View style={styles.section}>
+                                    <View style={styles.sectionHeaderRow}>
+                                        <ThemedText type="subtitle" style={[styles.sectionTitle, { marginBottom: 0 }]}>Transactions</ThemedText>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
+                                            <ThemedText style={{ color: '#FF3B30', fontFamily: Fonts.bold, fontSize: 16 }}>-${totalSpent.toFixed(2)}</ThemedText>
+                                        </View>
+                                    </View>
+
+                                    {(isOverBudget || isNearBudget) && (
+                                        <View style={[styles.warningBanner, { backgroundColor: isOverBudget ? '#FFEBEE' : '#FFF3E0' }]}>
+                                            <IconSymbol name="exclamationmark.triangle.fill" size={18} color={isOverBudget ? '#C62828' : '#EF6C00'} />
+                                            <ThemedText style={[styles.warningText, { color: isOverBudget ? '#C62828' : '#EF6C00' }]}>
+                                                {isOverBudget ? `Over Budget by $${(totalSpent - trip.budget).toFixed(0)}!` : `Approaching limit: ${budgetPercent.toFixed(0)}% spent`}
+                                            </ThemedText>
+                                        </View>
+                                    )}
+
+                                    {expenses.length > 0 ? (
+                                        <View style={{ gap: 0 }}>
+                                            {expenses.map((item, index) => renderExpenseItem(item, index))}
+                                        </View>
+                                    ) : (
+                                        <View style={{ alignItems: 'center', padding: 20 }}>
+                                            <ThemedText style={{ color: '#999' }}>No expenses recorded yet.</ThemedText>
+                                        </View>
+                                    )}
+
+                                    <TouchableOpacity
+                                        onPress={() => router.push({ pathname: '/trip-details/expense', params: { tripId: tripId } })}
+                                        style={[styles.addItemButton, { borderColor: colors.icon + '40', marginTop: 16 }]}
+                                    >
+                                        <IconSymbol name="plus" size={20} color={colors.text} />
+                                        <ThemedText style={styles.addItemText}>Add Expense</ThemedText>
+                                    </TouchableOpacity>
                                 </View>
-                            </View>
+                            </>
+                        )}
 
-                            {(isOverBudget || isNearBudget) && (
-                                <View style={[styles.warningBanner, { backgroundColor: isOverBudget ? '#FFEBEE' : '#FFF3E0' }]}>
-                                    <IconSymbol name="exclamationmark.triangle.fill" size={18} color={isOverBudget ? '#C62828' : '#EF6C00'} />
-                                    <ThemedText style={[styles.warningText, { color: isOverBudget ? '#C62828' : '#EF6C00' }]}>
-                                        {isOverBudget ? `Over Budget by $${(totalSpent - trip.budget).toFixed(0)}!` : `Approaching limit: ${budgetPercent.toFixed(0)}% spent`}
-                                    </ThemedText>
-                                </View>
-                            )}
-
-                            {expenses.length > 0 && (
-                                <View style={{ gap: 0 }}>
-                                    {expenses.map((item, index) => renderExpenseItem(item, index))}
-                                </View>
-                            )}
-
-                            <TouchableOpacity
-                                onPress={() => router.push({ pathname: '/trip-details/expense', params: { tripId: tripId } })}
-                                style={[styles.addItemButton, { borderColor: colors.icon + '40', marginTop: 16 }]}
-                            >
-                                <IconSymbol name="plus" size={20} color={colors.text} />
-                                <ThemedText style={styles.addItemText}>Add Expense</ThemedText>
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Itinerary */}
-                        <View style={styles.section}>
-                            <ThemedText type="subtitle" style={styles.sectionTitle}>Itinerary</ThemedText>
-                            <View style={styles.timelineList}>
-                                {trip.itinerary?.map((day, index) => renderItineraryItem(day, index))}
-                            </View>
-
-                            {/* ADD NEW DAY BUTTON */}
-                            <TouchableOpacity
-                                style={[styles.addItemButton, { borderColor: colors.tint, backgroundColor: colors.tint + '10', marginTop: 16 }]}
-                                onPress={handleAddDay}
-                            >
-                                <IconSymbol name="plus" size={20} color={colors.tint} />
-                                <ThemedText style={[styles.addItemText, { color: colors.tint }]}>Add New Day</ThemedText>
-                            </TouchableOpacity>
-
-                        </View>
                     </View>
                 </Animated.ScrollView>
 
@@ -1118,7 +1151,7 @@ const styles = StyleSheet.create({
     mapCardTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' },
     mapCardSubtitle: { fontSize: 14, color: '#888', marginTop: 2 },
     cardArrow: { padding: 8 },
-    titleSection: { paddingHorizontal: 20, marginBottom: 20 },
+    titleSection: { paddingHorizontal: 20, marginBottom: 10 },
     tripLabel: { color: '#666', fontSize: 14, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1, fontFamily: Fonts.medium },
     destinationTitle: { fontSize: 32, fontFamily: Fonts.bold, marginBottom: 10, color: '#1a1a1a', lineHeight: 32 },
     subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -1163,6 +1196,11 @@ const styles = StyleSheet.create({
     rightActionContainer: { flexDirection: 'row', height: '100%', paddingLeft: 8 },
     actionButton: { width: 70, height: '100%', justifyContent: 'center', alignItems: 'center', borderRadius: 16, marginLeft: 8 },
     actionText: { color: '#fff', fontSize: 12, fontWeight: 'bold', marginTop: 4 },
+
+    // --- TAB STYLES ---
+    tabContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#eee', marginHorizontal: 20, marginBottom: 20 },
+    tabButton: { flex: 1, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+    tabText: { fontSize: 16, color: '#666', fontFamily: Fonts.medium },
 
     // --- NEW NOTE CARD STYLES ---
     noteCard: {

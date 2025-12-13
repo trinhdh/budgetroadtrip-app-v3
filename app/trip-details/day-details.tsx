@@ -694,6 +694,8 @@ export default function DayDetailsScreen() {
                     <TouchableOpacity
                         style={[styles.card, { backgroundColor: colors.background, borderColor: colors.icon + '15' }]}
                         activeOpacity={0.7}
+                        // 👇 ADD THIS LINE HERE
+                        onPress={() => setSelectedExpense(item)}
                     >
                         <View style={styles.cardContent}>
                             <View style={[styles.cardIconBox, { backgroundColor: color + '15' }]}>
