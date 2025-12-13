@@ -113,7 +113,7 @@ const RouteLegInfo = ({ leg }: { leg: any }) => {
     return (
         <View style={styles.legInfoContainer}>
             <View style={styles.legPill}>
-                <IconSymbol name="car.fill" size={12} color="#666" />
+                <IconSymbol name="car" size={12} color="#666" />
                 <ThemedText style={styles.legText}>
                     {timeDisplay} • {distMiles} mi
                 </ThemedText>

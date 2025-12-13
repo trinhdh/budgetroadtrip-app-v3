@@ -67,7 +67,8 @@ const MAPPING = createMapping({
   'exclamationmark.triangle.fill': 'warning',
   'circle.grid.2x2.fill': 'grid-view',
   'mappin.and.ellipse': 'add-location',
-  'arrow.up.right': 'arrow-outward'
+  'arrow.up.right': 'arrow-outward',
+  'arrow.triangle.turn.up.right.diamond.fill': 'directions',
 
 });
 
