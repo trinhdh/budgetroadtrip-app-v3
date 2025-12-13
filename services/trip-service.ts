@@ -355,6 +355,27 @@ export const TripService = {
             });
         }
     },
+    async updateDayTimelineOrder(tripId: string, dayIndex: number, newOrder: string[]): Promise<void> {
+        try {
+            const tripRef = doc(db, 'trips', tripId);
+            const tripSnap = await getDoc(tripRef);
+
+            if (tripSnap.exists()) {
+                const tripData = tripSnap.data();
+                const itinerary = tripData.itinerary || [];
+
+                if (itinerary[dayIndex]) {
+                    // Update specifically the order array
+                    itinerary[dayIndex].timelineOrder = newOrder;
+
+                    await updateDoc(tripRef, { itinerary });
+                }
+            }
+        } catch (error) {
+            console.error("Error updating timeline order:", error);
+            throw error;
+        }
+    },
 
     subscribeToExpenses(tripId: string, onUpdate: (expenses: any[]) => void): Unsubscribe {
         const expensesRef = collection(db, 'trips', tripId, 'expenses');

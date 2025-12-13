@@ -133,6 +133,7 @@ export type ItineraryItem = {
 
     // NEW: Flexible timeline for drag-and-drop activities
     timeline?: any[];
+    timelineOrder?: string[];
     stopLocation?: GeoPoint;
     distance?: string;
 };
