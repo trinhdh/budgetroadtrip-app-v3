@@ -21,6 +21,7 @@ interface AuthContextType {
     signInWithGoogle: (() => Promise<void>) | null; // Make it nullable
     logout: () => Promise<void>;
     sendPasswordReset: (email: string) => Promise<void>;
+    refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -31,6 +32,7 @@ const AuthContext = createContext<AuthContextType>({
     signInWithGoogle: null,
     sendPasswordReset: async () => { },
     logout: async () => { },
+    refreshUser: async () => { },
 });
 
 // 3. Comment out configuration
@@ -52,6 +54,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return unsubscribe;
     }, []);
 
+    const refreshUser = async () => {
+        if (auth.currentUser) {
+            await auth.currentUser.reload();
+            setUser(auth.currentUser);
+        }
+    };
     const signIn = async (email: string, pass: string) => {
         await signInWithEmailAndPassword(auth, email, pass);
     };
@@ -60,12 +68,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
 
         if (displayName) {
-            // Immediately update the profile with the display name
             await updateProfile(userCredential.user, { displayName });
-
-            // Optional: Force update local user state if needed immediately, 
-            // though onAuthStateChanged handles the session.
-            setUser({ ...userCredential.user, displayName });
+            setUser(userCredential.user);
         }
     };
 
@@ -95,7 +99,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, signIn, signUp, signInWithGoogle, logout, sendPasswordReset }}>
+        <AuthContext.Provider value={{ user, loading, signIn, signUp, signInWithGoogle, logout, sendPasswordReset, refreshUser }}>
             {children}
         </AuthContext.Provider>
     );

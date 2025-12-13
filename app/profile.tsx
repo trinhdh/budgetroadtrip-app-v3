@@ -4,7 +4,7 @@ import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { storage } from '@/firebaseConfig';
+import { auth, storage } from '@/firebaseConfig';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { TripService } from '@/services/trip-service';
 import { Image } from 'expo-image';
@@ -17,6 +17,7 @@ import {
     updatePassword,
     updateProfile
 } from 'firebase/auth';
+
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
@@ -35,7 +36,7 @@ const defaultAvatarUrl = (email: string | null) =>
     `https://ui-avatars.com/api/?name=${email || 'User'}&background=random`;
 
 export default function ProfileScreen() {
-    const { user, logout } = useAuth();
+    const { user, logout, refreshUser } = useAuth();
     const router = useRouter();
     const navigation = useNavigation();
     const theme = useColorScheme() ?? 'light';
@@ -99,31 +100,45 @@ export default function ProfileScreen() {
     };
 
     // --- LOGIC: Update Display Name and Avatar ---
+    // --- LOGIC: Update Display Name and Avatar ---
     const handleUpdateProfile = async () => {
-        if (!user || displayName.trim() === '') return;
+        // 1. CRITICAL FIX: Get the SDK user object directly.
+        // The 'user' from Context might be a plain object (missing methods), 
+        // but 'auth.currentUser' is always the real class instance.
+        const currentUser = auth.currentUser;
+
+        if (!currentUser || displayName.trim() === '') return;
+
         setLoading(true);
-        let newPhotoURL = user.photoURL;
+        let newPhotoURL = currentUser.photoURL;
 
         try {
+            // 2. Upload new image if selected
             if (localAvatarUri) {
-                newPhotoURL = await uploadAvatarToFirebase(localAvatarUri, user.uid);
+                newPhotoURL = await uploadAvatarToFirebase(localAvatarUri, currentUser.uid);
             }
 
-            // 1. Update Auth
-            await updateProfile(user, {
+            // 3. Update Firebase Auth (Cloud)
+            // valid because we are using 'currentUser' which has the method
+            await updateProfile(currentUser, {
                 displayName: displayName.trim(),
                 photoURL: newPhotoURL,
             });
 
-            // 2. Sync to Database (Trips & Expenses)
+            // 4. Update Context (Local App State)
+            // This makes the new name/image appear instantly in your app
+            await refreshUser();
+
+            // 5. Sync to Database (Trips & Expenses)
+            // This updates your historical data in Firestore
             await TripService.syncUserProfile(
-                user.uid,
+                currentUser.uid,
                 displayName.trim(),
                 newPhotoURL
             );
 
             Alert.alert("Success", "Profile updated successfully!");
-            router.back(); // Close screen
+            router.back();
         } catch (error) {
             console.error("Profile update failed:", error);
             Alert.alert("Error", "Failed to update profile or upload avatar.");
