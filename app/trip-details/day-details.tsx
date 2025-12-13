@@ -205,6 +205,9 @@ export default function DayDetailsScreen() {
 
     const [editingDay, setEditingDay] = useState<any>(null);
 
+    // --- TAB STATE ---
+    const [activeTab, setActiveTab] = useState<'activities' | 'expenses'>('activities');
+
     // --- Loading State for Drag ---
     const [isUpdatingOrder, setIsUpdatingOrder] = useState(false);
 
@@ -682,7 +685,7 @@ export default function DayDetailsScreen() {
             </View>
         );
         return (
-            <View key={`${item.id}-${index}`} style={{ marginBottom: 12 }}>
+            <View key={`${item.id}-${index}`} style={{ marginBottom: 12, paddingHorizontal: 20 }}>
                 <Swipeable
                     ref={(ref) => { if (ref && item.id) swipeableRows.current.set(item.id, ref); }}
                     renderRightActions={renderRightActions}
@@ -864,65 +867,96 @@ export default function DayDetailsScreen() {
                             <View style={[styles.sheetHandle, { backgroundColor: colors.icon + '40' }]} />
                         </View>
 
-                        <DraggableFlatList
-                            ref={listRef}
-                            data={timeline}
-                            onDragEnd={handleDragEnd}
-                            keyExtractor={(item) => item.id}
-                            renderItem={renderActivityItem}
-                            contentContainerStyle={{ paddingBottom: 150, paddingHorizontal: 20 }}
-                            showsVerticalScrollIndicator={false}
-                            bounces={false}
-                            onScroll={scrollHandler}
-                            scrollEventThrottle={16}
-                            ListHeaderComponent={
-                                <View style={[styles.sectionHeader, { marginTop: 10 }]}>
-                                    <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>Activities</ThemedText>
-                                </View>
-                            }
-                            ListEmptyComponent={
-                                <View style={styles.emptyState}>
-                                    <IconSymbol name="map.fill" size={40} color={colors.icon + '40'} />
-                                    <ThemedText style={{ color: colors.icon, marginTop: 10 }}>Start your day plan below.</ThemedText>
-                                </View>
-                            }
-                            ListFooterComponent={
-                                <View style={styles.footerContainer}>
-                                    <TouchableOpacity
-                                        style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
-                                        onPress={handleAddActivityPress}
-                                    >
-                                        <IconSymbol name="mappin.and.ellipse" size={20} color={colors.text} />
-                                        <ThemedText style={[styles.dashedButtonText, { color: colors.text }]}>Add Activity</ThemedText>
-                                    </TouchableOpacity>
+                        {/* --- TAB SELECTOR --- */}
+                        <View style={styles.tabContainer}>
+                            <TouchableOpacity
+                                style={[styles.tabButton, activeTab === 'activities' && { borderBottomColor: colors.tint, borderBottomWidth: 2 }]}
+                                onPress={() => setActiveTab('activities')}
+                            >
+                                <ThemedText style={[styles.tabText, activeTab === 'activities' && { color: colors.tint, fontFamily: Fonts.bold }]}>Activities</ThemedText>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.tabButton, activeTab === 'expenses' && { borderBottomColor: colors.tint, borderBottomWidth: 2 }]}
+                                onPress={() => setActiveTab('expenses')}
+                            >
+                                <ThemedText style={[styles.tabText, activeTab === 'expenses' && { color: colors.tint, fontFamily: Fonts.bold }]}>Expenses</ThemedText>
+                            </TouchableOpacity>
+                        </View>
 
-                                    {expenses.length > 0 && (
-                                        <View style={styles.expensesSection}>
-                                            <View style={styles.sectionHeader}>
-                                                <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>Expenses</ThemedText>
-                                                <ThemedText style={{ color: '#FF3B30', fontWeight: 'bold' }}>
-                                                    -${expenses.reduce((sum, e) => sum + (e.amount || 0), 0).toFixed(2)}
-                                                </ThemedText>
-                                            </View>
+                        {/* --- ACTIVITIES TAB --- */}
+                        {activeTab === 'activities' && (
+                            <DraggableFlatList
+                                ref={listRef}
+                                data={timeline}
+                                onDragEnd={handleDragEnd}
+                                keyExtractor={(item) => item.id}
+                                renderItem={renderActivityItem}
+                                contentContainerStyle={{ paddingBottom: 150, paddingHorizontal: 20 }}
+                                showsVerticalScrollIndicator={false}
+                                bounces={false}
+                                onScroll={scrollHandler}
+                                scrollEventThrottle={16}
+                                ListEmptyComponent={
+                                    <View style={styles.emptyState}>
+                                        <IconSymbol name="map.fill" size={40} color={colors.icon + '40'} />
+                                        <ThemedText style={{ color: colors.icon, marginTop: 10 }}>Start your day plan below.</ThemedText>
+                                    </View>
+                                }
+                                ListFooterComponent={
+                                    <View style={styles.footerContainer}>
+                                        <TouchableOpacity
+                                            style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
+                                            onPress={handleAddActivityPress}
+                                        >
+                                            <IconSymbol name="mappin.and.ellipse" size={20} color={colors.text} />
+                                            <ThemedText style={[styles.dashedButtonText, { color: colors.text }]}>Add Activity</ThemedText>
+                                        </TouchableOpacity>
+                                    </View>
+                                }
+                            />
+                        )}
 
-                                            {expenses.map((expense, index) => (
-                                                <View key={`${expense.id}-${index}`}>
-                                                    {renderExpenseItem({ item: expense, index })}
-                                                </View>
-                                            ))}
+                        {/* --- EXPENSES TAB --- */}
+                        {activeTab === 'expenses' && (
+                            <Animated.FlatList
+                                ref={listRef} // Attach same ref for scroll syncing if compatible, or just rely on scrollHandler
+                                data={expenses}
+                                keyExtractor={(item) => item.id}
+                                renderItem={({ item, index }) => renderExpenseItem({ item, index })}
+                                contentContainerStyle={{ paddingBottom: 150 }}
+                                showsVerticalScrollIndicator={false}
+                                bounces={false}
+                                onScroll={scrollHandler}
+                                scrollEventThrottle={16}
+                                ListHeaderComponent={
+                                    expenses.length > 0 ? (
+                                        <View style={[styles.sectionHeader, { paddingHorizontal: 20, marginBottom: 10 }]}>
+                                            <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>Summary</ThemedText>
+                                            <ThemedText style={{ color: '#FF3B30', fontWeight: 'bold', fontSize: 18 }}>
+                                                -${expenses.reduce((sum, e) => sum + (e.amount || 0), 0).toFixed(2)}
+                                            </ThemedText>
                                         </View>
-                                    )}
+                                    ) : (
+                                        <View style={styles.emptyState}>
+                                            <IconSymbol name="banknote" size={40} color={colors.icon + '40'} />
+                                            <ThemedText style={{ color: colors.icon, marginTop: 10 }}>No expenses yet.</ThemedText>
+                                        </View>
+                                    )
+                                }
+                                ListFooterComponent={
+                                    <View style={[styles.footerContainer, { paddingHorizontal: 20 }]}>
+                                        <TouchableOpacity
+                                            style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
+                                            onPress={handleAddExpensePress}
+                                        >
+                                            <IconSymbol name="banknote" size={20} color={colors.text} />
+                                            <ThemedText style={[styles.dashedButtonText, { color: colors.text }]}>Add Expense</ThemedText>
+                                        </TouchableOpacity>
+                                    </View>
+                                }
+                            />
+                        )}
 
-                                    <TouchableOpacity
-                                        style={[styles.dashedButton, { borderColor: colors.icon + '60' }]}
-                                        onPress={handleAddExpensePress}
-                                    >
-                                        <IconSymbol name="banknote" size={20} color={colors.text} />
-                                        <ThemedText style={[styles.dashedButtonText, { color: colors.text }]}>Add Expense</ThemedText>
-                                    </TouchableOpacity>
-                                </View>
-                            }
-                        />
                     </Animated.View>
                 </GestureDetector>
 
@@ -977,6 +1011,12 @@ const styles = StyleSheet.create({
     sheetContainer: { position: 'absolute', left: 0, right: 0, height: SCREEN_HEIGHT, borderTopLeftRadius: 24, borderTopRightRadius: 24, shadowColor: "#000", shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.1, shadowRadius: 5, elevation: 5 },
     sheetHandleContainer: { alignItems: 'center', paddingTop: 12, paddingBottom: 8 },
     sheetHandle: { width: 40, height: 4, borderRadius: 2 },
+
+    // --- TAB STYLES ---
+    tabContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#eee', marginBottom: 10 },
+    tabButton: { flex: 1, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+    tabText: { fontSize: 16, color: '#666', fontFamily: Fonts.medium },
+
     timelineWrapper: { marginBottom: 20 },
     card: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
     cardContent: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -1041,7 +1081,7 @@ const styles = StyleSheet.create({
     emptyState: { alignItems: 'center', padding: 30 },
     footerContainer: { gap: 12, marginTop: 10, paddingBottom: 100 },
     expensesSection: { marginTop: 10, marginBottom: 20 },
-    sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
+    sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
     dashedButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed' },
     dashedButtonText: { fontSize: 16, fontFamily: Fonts.medium },
     input: {
