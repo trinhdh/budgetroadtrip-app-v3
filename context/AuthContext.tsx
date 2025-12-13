@@ -45,7 +45,7 @@ GoogleSignin.configure({
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
-    const [refreshKey, setRefreshKey] = useState(0);
+
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             setUser(user);
@@ -54,13 +54,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return unsubscribe;
     }, []);
 
+    // --- SIMPLER FIX: Force React re-render by creating a new object reference ---
     const refreshUser = async () => {
         if (auth.currentUser) {
             await auth.currentUser.reload();
-            setUser(auth.currentUser);
-            setRefreshKey(prev => prev + 1);
+            // Spreading the object ({...user}) creates a shallow copy. 
+            // React sees this as a "new" object and updates the UI immediately.
+            setUser({ ...auth.currentUser } as User);
         }
     };
+
     const signIn = async (email: string, pass: string) => {
         await signInWithEmailAndPassword(auth, email, pass);
     };
@@ -70,7 +73,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (displayName) {
             await updateProfile(userCredential.user, { displayName });
-            setUser(userCredential.user);
+            // We can also use the spread trick here to ensure immediate update
+            setUser({ ...userCredential.user } as User);
         }
     };
 

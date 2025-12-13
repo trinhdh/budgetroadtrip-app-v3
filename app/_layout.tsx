@@ -15,6 +15,7 @@ import { StatusBar } from 'expo-status-bar';
 import { doc, setDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
+
 // IMPORTANT: only do this once in _layout.tsx
 SplashScreen.preventAutoHideAsync();
 
@@ -71,23 +72,35 @@ function RootLayoutNav() {
 
   // 2. NAVIGATION (Run whenever auth state or readiness changes)
   useEffect(() => {
-    if (!isAppReady) return;
+    if (!isAppReady || authLoading) return;
 
-    const inAuthGroup = segments[0] === '(tabs)' || segments[0] === 'trip-details';
-    // ^^^ Check if user is already in the "App" part
+    // Define routes that are "Public" (Login/Signup flow)
+    const inPublicRoute =
+      segments[0] === 'login' ||
+      segments[0] === 'email-login' ||
+      segments[0] === 'onboarding';
 
     if (!user) {
-      // If not logged in, always go to login
-      router.replace('/login');
+      // If NOT logged in, and NOT on a public route, send to login
+      // (This protects Profile, Tabs, etc.)
+      if (!inPublicRoute) {
+        router.replace('/login');
+      }
     } else if (hasOnboarded === false) {
-      router.replace('/onboarding');
-    } else if (!inAuthGroup) {
-      // ONLY redirect to Tabs if they are currently in a public area (Login/Onboarding)
-      // If they opened a Deep Link to '/trip-details/123', 'inAuthGroup' will be true, 
-      // so we DO NOT redirect, letting the Deep Link work!
+      // If logged in but hasn't finished onboarding
+      if (segments[0] !== 'onboarding') {
+        router.replace('/onboarding');
+      }
+    } else if (inPublicRoute) {
+      // If Logged In + Onboarded + Sitting on Login/Onboarding screen -> Go to Tabs
       router.replace('/(tabs)');
     }
-  }, [isAppReady, user, hasOnboarded]);
+
+    // IMPLICIT ELSE: 
+    // If User is Logged In and on a Protected Route (Profile, Tabs, Trip Details),
+    // we do NOTHING. This ensures you stay on Profile after an update.
+
+  }, [isAppReady, authLoading, user, hasOnboarded, segments]);
 
   if (!ready) return null;
 
@@ -107,7 +120,7 @@ function RootLayoutNav() {
           name="profile"
           options={{
             presentation: 'modal',
-            headerShown: true,
+            headerShown: true, // Keep header for the "Cancel" button in Profile
           }}
         />
       </Stack>
