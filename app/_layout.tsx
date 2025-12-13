@@ -103,7 +103,13 @@ function RootLayoutNav() {
         <Stack.Screen name="trip-details/day-details" options={{ headerShown: false }} />
         <Stack.Screen name="trip-details/expense" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="trip-details/activity" options={{ presentation: 'modal', headerShown: false }} />
-
+        <Stack.Screen
+          name="profile"
+          options={{
+            presentation: 'modal',
+            headerShown: true,
+          }}
+        />
       </Stack>
 
       <StatusBar style="auto" />

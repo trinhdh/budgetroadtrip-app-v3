@@ -1,11 +1,15 @@
+// app/profile.tsx
 import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { storage } from '@/firebaseConfig';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { TripService } from '@/services/trip-service';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { useNavigation, useRouter } from 'expo-router';
 import {
     EmailAuthProvider,
     reauthenticateWithCredential,
@@ -14,7 +18,7 @@ import {
     updateProfile
 } from 'firebase/auth';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -27,23 +31,27 @@ import {
     View
 } from 'react-native';
 
-// Import the reusable component
-import { BottomSheetModal } from '@/components/ui/bottom-sheet-modal';
-import { TripService } from '@/services/trip-service';
-
-type Props = {
-    visible: boolean;
-    onClose: () => void;
-};
-
-// Placeholder URL
 const defaultAvatarUrl = (email: string | null) =>
     `https://ui-avatars.com/api/?name=${email || 'User'}&background=random`;
 
-export function EditProfileModal({ visible, onClose }: Props) {
+export default function ProfileScreen() {
     const { user, logout } = useAuth();
+    const router = useRouter();
+    const navigation = useNavigation();
     const theme = useColorScheme() ?? 'light';
     const colors = Colors[theme];
+
+    // --- 1. SETUP HEADER BUTTONS ---
+    useEffect(() => {
+        navigation.setOptions({
+            headerTitle: 'Edit Profile',
+            headerLeft: () => (
+                <TouchableOpacity onPress={() => router.back()}>
+                    <ThemedText style={{ color: colors.tint, fontSize: 17 }}>Cancel</ThemedText>
+                </TouchableOpacity>
+            ),
+        });
+    }, [navigation, colors.tint]);
 
     // Profile States
     const [displayName, setDisplayName] = useState(user?.displayName || '');
@@ -70,7 +78,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
         }
 
         let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ["images"],
+            mediaTypes: ['images'],
             allowsEditing: true,
             aspect: [1, 1],
             quality: 0.5,
@@ -107,8 +115,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
                 photoURL: newPhotoURL,
             });
 
-            // 2. Update Database (Trips & Expenses)
-            // We await this so the user sees the spinner while we fix their data
+            // 2. Sync to Database (Trips & Expenses)
             await TripService.syncUserProfile(
                 user.uid,
                 displayName.trim(),
@@ -116,7 +123,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
             );
 
             Alert.alert("Success", "Profile updated successfully!");
-            onClose();
+            router.back(); // Close screen
         } catch (error) {
             console.error("Profile update failed:", error);
             Alert.alert("Error", "Failed to update profile or upload avatar.");
@@ -138,7 +145,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
             await reauthenticateWithCredential(user, credential);
             await updateEmail(user, newEmail);
             Alert.alert("Success", `Email updated to ${newEmail}!`);
-            onClose();
+            router.back();
         } catch (error: any) {
             Alert.alert("Error", "Failed to update email address.");
         } finally {
@@ -160,6 +167,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
             await updatePassword(user, newPassword);
             Alert.alert("Success", "Password changed! You will be logged out.");
             await logout();
+            router.replace('/login');
         } catch (error: any) {
             Alert.alert("Error", "Failed to change password.");
         } finally {
@@ -173,20 +181,15 @@ export function EditProfileModal({ visible, onClose }: Props) {
     const displayAvatar = localAvatarUri || user.photoURL || defaultAvatarUrl(user.email);
 
     return (
-        <BottomSheetModal
-            isVisible={visible}
-            onClose={onClose}
-            title="Edit Profile"
-            height="90%"
-        >
+        <ThemedView style={styles.container}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 style={{ flex: 1 }}
-                keyboardVerticalOffset={100} // Adjust based on header height
+                keyboardVerticalOffset={100}
             >
                 <ScrollView
                     showsVerticalScrollIndicator={false}
-                    contentContainerStyle={{ paddingBottom: 40 }}
+                    contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
                 >
                     {/* --- 1. DISPLAY NAME & AVATAR SECTION --- */}
                     <ThemedText style={styles.sectionTitle}>User Info</ThemedText>
@@ -198,7 +201,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
                             contentFit="cover"
                         />
                         <View style={[styles.cameraIcon, { backgroundColor: colors.tint }]}>
-                            <IconSymbol name="camera" size={20} color="#fff" />
+                            <IconSymbol name="camera.fill" size={20} color="#fff" />
                         </View>
                     </TouchableOpacity>
 
@@ -227,10 +230,10 @@ export function EditProfileModal({ visible, onClose }: Props) {
 
                     <View style={styles.separator} />
 
-                    {/* --- CONDITIONAL SECTIONS (EMAIL & PASSWORD) --- */}
+                    {/* --- CONDITIONAL SECTIONS --- */}
                     {hasPasswordCredential ? (
                         <>
-                            {/* 2. CHANGE EMAIL SECTION */}
+                            {/* 2. CHANGE EMAIL */}
                             <ThemedText style={styles.sectionTitle}>Change Email</ThemedText>
                             <ThemedText style={styles.warningText}>
                                 Enter your current password to change your login email.
@@ -275,7 +278,7 @@ export function EditProfileModal({ visible, onClose }: Props) {
 
                             <View style={styles.separator} />
 
-                            {/* 3. CHANGE PASSWORD SECTION */}
+                            {/* 3. CHANGE PASSWORD */}
                             <ThemedText style={styles.sectionTitle}>Change Password</ThemedText>
                             <ThemedText style={styles.warningText}>
                                 Re-enter your current password and set a new one.
@@ -327,18 +330,14 @@ export function EditProfileModal({ visible, onClose }: Props) {
                             </ThemedText>
                         </View>
                     )}
-
-                    <View style={{ height: 40 }} />
                 </ScrollView>
             </KeyboardAvoidingView>
-        </BottomSheetModal>
+        </ThemedView>
     );
 }
 
 const styles = StyleSheet.create({
-    // Removed old modalOverlay, modalBackdrop, modalContent, modalHeader styles 
-    // as they are handled by BottomSheetModal now.
-
+    container: { flex: 1 },
     sectionTitle: { fontSize: 18, fontFamily: Fonts.bold, marginTop: 10, marginBottom: 15 },
     warningText: { color: '#808080', marginBottom: 15, fontSize: 13, paddingHorizontal: 5 },
     inputGroup: { marginBottom: 15 },
@@ -361,7 +360,6 @@ const styles = StyleSheet.create({
         height: 1,
         backgroundColor: '#E0E0E0',
         marginVertical: 30,
-        marginHorizontal: -24
     },
     socialPasswordMessage: {
         backgroundColor: '#F2F2F7',
@@ -390,5 +388,6 @@ const styles = StyleSheet.create({
         borderRadius: 20,
         borderWidth: 2,
         borderColor: '#fff',
+        overflow: 'hidden'
     }
 });

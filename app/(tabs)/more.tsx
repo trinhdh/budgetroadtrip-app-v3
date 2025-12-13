@@ -15,7 +15,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencySelectionModal } from '@/components/profile/currency-selection-modal'; // <--- NEW IMPORT
-import { EditProfileModal } from '@/components/profile/edit-profile-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
@@ -199,8 +198,8 @@ export default function MoreScreen() {
             <ThemedText style={styles.userEmail}>{user?.email}</ThemedText>
           </View>
           {/* --- EDIT BUTTON: Opens Modal --- */}
-          <TouchableOpacity style={styles.editBtn} onPress={() => setIsEditModalVisible(true)}>
-            <ThemedText style={{ color: colors.tint, fontFamily: Fonts.medium }}>Edit</ThemedText>
+          <TouchableOpacity onPress={() => router.push('/profile')}>
+            <ThemedText>Edit</ThemedText>
           </TouchableOpacity>
         </TouchableOpacity>
 
@@ -275,7 +274,7 @@ export default function MoreScreen() {
         <View style={styles.section}>
           <View style={[styles.sectionBody, { marginTop: 10 }]}>
             <SettingRow
-              icon="arrow.right.rectangle"
+              icon="logout"
               label="Log Out"
               color={colors.text}
               onPress={handleLogout}
@@ -300,12 +299,6 @@ export default function MoreScreen() {
         <View style={{ height: 40 }} />
 
       </ScrollView>
-
-      {/* --- RENDER EDIT PROFILE MODAL --- */}
-      <EditProfileModal
-        visible={isEditModalVisible}
-        onClose={() => setIsEditModalVisible(false)}
-      />
 
       {/* --- RENDER CURRENCY SELECTION MODAL --- */}
       <CurrencySelectionModal

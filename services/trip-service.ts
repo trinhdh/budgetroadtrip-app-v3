@@ -5,6 +5,7 @@ import {
     addDoc,
     arrayUnion,
     collection,
+    collectionGroup,
     deleteDoc,
     deleteField,
     doc,
@@ -443,5 +444,88 @@ export const TripService = {
             console.error("Error adding activity:", error);
             throw error;
         }
-    }
+    },
+    /**
+     * Syncs the user's new Name and Avatar to:
+     * 1. All Trips where they are a member.
+     * 2. All Expenses they have added (across all trips).
+     */
+    async syncUserProfile(uid: string, newName: string, newAvatar: string | null) {
+        try {
+            console.log("Starting profile sync...");
+
+            // We'll collect all operations in a list of batches
+            // Firestore batches are limited to 500 ops, so we might need multiple.
+            const updates: any[] = [];
+
+            // --- 1. SYNC TRIPS (Members Array) ---
+            // Note: Efficiently finding trips where you are a "viewer" requires a 'memberIds' array.
+            // For now, we query trips created by the user (Owner).
+            const tripsQuery = query(collection(db, 'trips'), where('userId', '==', uid));
+            const tripsSnapshot = await getDocs(tripsQuery);
+
+            tripsSnapshot.docs.forEach((doc) => {
+                const tripData = doc.data();
+                const members = tripData.members || [];
+                let didUpdate = false;
+
+                const updatedMembers = members.map((member: any) => {
+                    if (member.uid === uid) {
+                        didUpdate = true;
+                        return {
+                            ...member,
+                            name: newName,
+                            avatar: newAvatar || member.avatar
+                        };
+                    }
+                    return member;
+                });
+
+                if (didUpdate) {
+                    // We push a "task" to update this document
+                    updates.push({ ref: doc.ref, data: { members: updatedMembers } });
+                }
+            });
+
+            // --- 2. SYNC EXPENSES (addedBy Field) ---
+            // "collectionGroup" searches all collections named 'expenses' inside the entire DB.
+            const expensesQuery = query(
+                collectionGroup(db, 'expenses'),
+                where('addedBy.uid', '==', uid)
+            );
+            const expensesSnapshot = await getDocs(expensesQuery);
+
+            expensesSnapshot.docs.forEach((doc) => {
+                const expenseData = doc.data();
+                // Merge new details into existing addedBy object
+                const newAddedBy = {
+                    ...expenseData.addedBy,
+                    name: newName,
+                    avatar: newAvatar || expenseData.addedBy.avatar
+                };
+                updates.push({ ref: doc.ref, data: { addedBy: newAddedBy } });
+            });
+
+            // --- 3. EXECUTE BATCHES (Chunking) ---
+            // Firestore allows max 500 writes per batch.
+            const CHUNK_SIZE = 450; // Safe margin
+            for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+                const chunk = updates.slice(i, i + CHUNK_SIZE);
+                const batch = writeBatch(db);
+
+                chunk.forEach(op => {
+                    batch.update(op.ref, op.data);
+                });
+
+                await batch.commit();
+                console.log(`Committed batch ${i / CHUNK_SIZE + 1} with ${chunk.length} updates.`);
+            }
+
+            console.log("Profile sync complete!");
+
+        } catch (error) {
+            console.error("Error syncing user profile:", error);
+            // Don't throw; we don't want to break the UI if this background task fails
+        }
+    },
 };

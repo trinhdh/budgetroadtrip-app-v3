@@ -62,13 +62,13 @@ const MAPPING = createMapping({
   'doc.text.fill': 'description',
   'doc.text': 'description',
   'trash.fill': 'delete',
-  'arrow.right.rectangle': 'logout',
   'lock.fill': 'lock',
   'exclamationmark.triangle.fill': 'warning',
   'circle.grid.2x2.fill': 'grid-view',
   'mappin.and.ellipse': 'add-location',
   'arrow.up.right': 'arrow-outward',
   'arrow.triangle.turn.up.right.diamond.fill': 'directions',
+  'logout': 'logout',
 
 });
 
