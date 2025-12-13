@@ -521,17 +521,30 @@ export default function DayDetailsScreen() {
         // CHECK: Did the order actually change?
         const hasChanged = data.some((item, index) => item.id !== currentTimeline[index]?.id);
 
-        if (!hasChanged) return; // Exit if no change
+        if (!hasChanged) return;
 
         setIsUpdatingOrder(true);
+        // 1. Assign new order numbers
         const reorderedData = data.map((item, index) => ({ ...item, order: index + 1 }));
 
-        // Optimistic update
-        const updatedTrip = { ...trip };
-        updatedTrip.itinerary[dayIndex].timeline = reorderedData;
+        // 2. CRITICAL FIX: Create a deep copy of the itinerary array
+        // We must NOT mutate 'trip.itinerary' directly.
+        const newItinerary = [...trip.itinerary];
+        newItinerary[dayIndex] = {
+            ...newItinerary[dayIndex],
+            timeline: reorderedData
+        };
+
+        const updatedTrip = {
+            ...trip,
+            itinerary: newItinerary
+        };
+
+        // 3. Update Local State
         setTrip(updatedTrip);
 
         try {
+            // 4. Update Backend
             await TripService.updateDayTimeline(tripId, dayIndex, reorderedData);
         } catch (e) {
             console.log("Error saving drag order", e);
