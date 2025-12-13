@@ -45,7 +45,7 @@ GoogleSignin.configure({
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
-
+    const [refreshKey, setRefreshKey] = useState(0);
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             setUser(user);
@@ -58,6 +58,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (auth.currentUser) {
             await auth.currentUser.reload();
             setUser(auth.currentUser);
+            setRefreshKey(prev => prev + 1);
         }
     };
     const signIn = async (email: string, pass: string) => {
