@@ -22,7 +22,7 @@ import {
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
-import MapView, { Callout, Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Callout, CalloutSubview, Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, {
     useAnimatedRef,
     useAnimatedScrollHandler,
@@ -787,15 +787,28 @@ export default function DayDetailsScreen() {
                                         </View>
 
                                         {/* --- CUSTOM CALLOUT --- */}
-                                        <Callout tooltip onPress={() => handleNavigateToItem(item)}>
+                                        <Callout tooltip>
                                             <View style={styles.calloutContainer}>
                                                 <View style={styles.calloutCard}>
                                                     <Text style={styles.calloutTitle}>{item.title}</Text>
-                                                    <Text style={styles.calloutAddress} numberOfLines={2}>{item.address}</Text>
-                                                    <View style={styles.calloutButton}>
-                                                        <Text style={styles.calloutButtonText}>Navigate</Text>
-                                                        <IconSymbol name="arrow.triangle.turn.up.right.diamond.fill" size={12} color="#fff" />
-                                                    </View>
+                                                    <Text style={styles.calloutAddress} numberOfLines={2}>
+                                                        {item.address}
+                                                    </Text>
+
+                                                    {/* 👇 Button-only press */}
+                                                    <CalloutSubview
+                                                        onPress={() => handleNavigateToItem(item)}
+                                                    >
+                                                        <View style={styles.calloutButton}>
+                                                            <Text style={styles.calloutButtonText}>Navigate</Text>
+                                                            <IconSymbol
+                                                                name="arrow.triangle.turn.up.right.diamond.fill"
+                                                                size={12}
+                                                                color="#fff"
+                                                            />
+                                                        </View>
+                                                    </CalloutSubview>
+
                                                 </View>
                                                 <View style={styles.calloutArrow} />
                                             </View>
@@ -1187,7 +1200,7 @@ const styles = StyleSheet.create({
     // --- CARD BUTTON ---
     navigateButton: {
         marginTop: 10,
-        backgroundColor: '#333',
+        backgroundColor: '#10B981',
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 6,

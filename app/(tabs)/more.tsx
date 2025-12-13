@@ -86,7 +86,6 @@ export default function MoreScreen() {
   const colors = Colors[theme];
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
 
   const [currentCurrency, setCurrentCurrency] = useState('USD ($)');
   const [currentUnits, setCurrentUnits] = useState('Imperial (mi/mpg)');
@@ -199,7 +198,7 @@ export default function MoreScreen() {
           </View>
           {/* --- EDIT BUTTON: Opens Modal --- */}
           <TouchableOpacity onPress={() => router.push('/profile')}>
-            <ThemedText>Edit</ThemedText>
+            <ThemedText style={styles.editBtn}>Edit</ThemedText>
           </TouchableOpacity>
         </TouchableOpacity>
 
@@ -360,6 +359,8 @@ const styles = StyleSheet.create({
   },
   editBtn: {
     padding: 8,
+    color: '#10B981',
+    fontFamily: Fonts.medium,
   },
 
   // Sections
