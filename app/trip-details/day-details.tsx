@@ -3,7 +3,7 @@ import { decode } from "@googlemaps/polyline-codec";
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { collection, doc, getDoc, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -268,15 +268,20 @@ export default function DayDetailsScreen() {
     useEffect(() => {
         if (!tripId) return;
 
-        const fetchTrip = async () => {
-            try {
-                const docRef = doc(db, 'trips', tripId);
-                const snapshot = await getDoc(docRef);
+        const tripRef = doc(db, 'trips', tripId);
 
+        const unsubscribe = onSnapshot(tripRef,
+            (snapshot) => {
                 if (snapshot.exists()) {
+                    // PREVENT CRASH:
+                    // If this update is from our own local write (which we already handled optimistically),
+                    // ignore it to prevent unnecessary re-renders during the drag animation.
+                    if (snapshot.metadata.hasPendingWrites) {
+                        return;
+                    }
+
                     const data = snapshot.data();
 
-                    // Manually handle Date conversions since we aren't using the Service wrapper
                     const startDate = data.startDate instanceof Timestamp
                         ? data.startDate.toDate()
                         : (data.startDate ? new Date(data.startDate) : null);
@@ -297,15 +302,14 @@ export default function DayDetailsScreen() {
                     Alert.alert("Error", "Trip not found");
                     router.back();
                 }
-            } catch (error) {
-                console.error("Error fetching trip:", error);
-                Alert.alert("Error", "Failed to load trip details");
-            } finally {
                 setLoading(false);
+            },
+            (error) => {
+                console.error("Error listening to trip:", error);
             }
-        };
+        );
 
-        fetchTrip();
+        return () => unsubscribe();
     }, [tripId]);
 
     // --- FETCH EXPENSES (KEEP REAL-TIME) ---
@@ -564,9 +568,8 @@ export default function DayDetailsScreen() {
 
         try {
             // 3. Fire and forget to backend
-            if (TripService.updateDayTimelineOrder) {
-                await TripService.updateDayTimelineOrder(tripId, dayIndex, newOrderIds);
-            }
+            await TripService.updateDayTimelineOrder(tripId, dayIndex, newOrderIds);
+
         } catch (e) {
             console.log("Error saving drag order", e);
         } finally {
