@@ -378,7 +378,38 @@ export default function DayDetailsScreen() {
 
     }, [trip, dayIndex]);
 
+    useEffect(() => {
+        // 1. Safety Checks
+        if (!trip || !trip.itinerary || !trip.itinerary[dayIndex]) return;
 
+        // 2. CONFLICT PREVENTION
+        // If we are currently dragging (optimistic update), DO NOT sync from props.
+        // This prevents the list from "jumping" under your finger.
+        if (isUpdatingOrder) return;
+
+        const dayData = trip.itinerary[dayIndex];
+        const order = dayData.timelineOrder || [];
+
+        // 3. Get your items (Assuming they live in 'activities' or similar on the day object)
+        // REPLACE 'activities' with whatever property holds your actual place objects
+        const unsortedItems = dayData.timeline || [];
+
+        // 4. Sort items based on the 'timelineOrder' array
+        const sortedItems = [...unsortedItems].sort((a, b) => {
+            const indexA = order.indexOf(a.id);
+            const indexB = order.indexOf(b.id);
+
+            // If an item is missing from the order list (e.g. just added), push to end
+            if (indexA === -1) return 1;
+            if (indexB === -1) return -1;
+
+            return indexA - indexB;
+        });
+
+        // 5. Update the UI state
+        setTimelineData(sortedItems);
+
+    }, [trip, dayIndex, isUpdatingOrder]);
     // --- ROUTE LOGIC ---
     useEffect(() => {
         const fetchDayRoute = async () => {
